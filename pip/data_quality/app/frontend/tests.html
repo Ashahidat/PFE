@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Tests Qualité</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/tests.css">
+</head>
+<body>
+<div class="container">
+    <h1>Choix des tests</h1>
+    <label><input type="checkbox" id="dupSensitive"> Doublons sensibles</label>
+    <label><input type="checkbox" id="dupFull"> Doublons ligne complète</label>
+    <label><input type="checkbox" id="regexTest"> Regex</label>
+
+    <div id="dupSensitive-columns" class="hidden columns-container">
+        <h3>Colonnes pour doublons sensibles :</h3>
+        <div id="dupSensitive-select"></div>
+    </div>
+
+    <div id="regex-columns" class="hidden columns-container">
+        <h3>Les regex et colonnes sur les quelles faut appliquer :</h3>
+        <div><strong>Email :</strong><div id="regex-email-select"></div></div>
+        <div><strong>Téléphone :</strong><div id="regex-phone-select"></div></div>
+        <div><strong>Code postal :</strong><div id="regex-postal-select"></div></div>
+    </div>
+
+    <button id="runDagBtn">Lancer les validations</button>
+    <!-- <div id="dagStatus" class="hidden">En cours d'exécution...</div> -->
+
+</div>
+<script src="js/tests.js"></script>
+</body>
+</html>

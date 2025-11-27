@@ -1,0 +1,31 @@
+#previewTable {
+    width: 100%;
+    margin-top: 20px;
+}
+
+#previewBtn {
+    margin-bottom: 20px;
+}
+
+button {
+    margin-top: 15px;
+}
+
+#previewN {
+    width: 400px;
+    padding: 8px;
+}
+
+#suivantBtn {
+    padding: 14px 24px !important;
+    border-radius: 6px !important;
+    border: none !important;
+    background-color: #3498db !important;
+    color: white !important;
+    cursor: pointer !important;
+}
+
+#suivantBtn:hover {
+    background-color: #2980b9;
+}
+
