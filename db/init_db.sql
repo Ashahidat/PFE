@@ -34,8 +34,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     department VARCHAR(100) NOT NULL,      -- ajouté !
     role VARCHAR(50) NOT NULL DEFAULT 'analyst',
-    business_unit VARCHAR(100) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    business_unit VARCHAR(100) NOT NULL
 );
 
 -- Donner tous les droits à pfe_user sur la table users
