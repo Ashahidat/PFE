@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Créer un utilisateur</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/auth.css">
+</head>
+<body>
+
+<div class="container">
+    <h1>Créer un compte</h1>
+
+    <input type="text" id="employee_id" placeholder="Matricule (employee_id)">
+    <input type="text" id="username" placeholder="Nom d'utilisateur">
+    <input type="password" id="password" placeholder="Mot de passe">
+    <input type="text" id="department" placeholder="Département">
+    <input type="text" id="business_unit" placeholder="Business Unit">
+
+    <button id="registerBtn">Créer le compte</button>
+
+    <p>Déjà inscrit ?  
+        <a href="login.html">→ Se connecter</a>
+    </p>
+
+    <div id="status" class="hidden"></div>
+</div>
+
+<script src="js/register.js"></script>
+</body>
+</html>

@@ -2,17 +2,27 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Upload CSV</title>
+    <title>Connexion</title>
     <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/upload.css">
+    <link rel="stylesheet" href="css/auth.css">
 </head>
 <body>
+
 <div class="container">
-    <h1>Upload CSV</h1>
-    <input type="file" id="csvFile">
-    <button id="uploadBtn">Uploader</button>
-    <div id="uploadStatus" class="hidden">En cours d'exécution...</div>
+    <h1>Connexion</h1>
+
+    <input type="text" id="employee_id" placeholder="Matricule (employee_id)">
+    <input type="password" id="password" placeholder="Mot de passe">
+
+    <button id="loginBtn">Se connecter</button>
+
+    <p>Pas de compte ?  
+        <a href="register.html">→ Créer un compte</a>
+    </p>
+
+    <div id="status" class="hidden"></div>
 </div>
-<script src="js/upload.js"></script>
+
+<script src="js/login.js"></script>
 </body>
 </html>

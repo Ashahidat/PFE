@@ -1,0 +1,36 @@
+/* --------- AUTH PAGES ---------- */
+
+input[type="text"],
+input[type="password"] {
+    width: 90%;
+    margin: 10px auto;
+    padding: 10px;
+    display: block;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+}
+
+#status {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 5px;
+}
+
+#status.error {
+    background-color: #ffdddd;
+    color: #a00;
+}
+
+#status.success {
+    background-color: #ddffdd;
+    color: #0a0;
+}
+
+a {
+    color: #4CAF50;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}

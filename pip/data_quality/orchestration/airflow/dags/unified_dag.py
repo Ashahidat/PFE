@@ -71,7 +71,7 @@ def run_modular_validations(**kwargs):
 
     # 🔹 Sauvegarde Postgres
     dag_run_id = kwargs.get("run_id")
-    save_results_to_postgres(results, dag_run_id)
+    # save_results_to_postgres(results, dag_run_id)
 
 
     spark.stop()
