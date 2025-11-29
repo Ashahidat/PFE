@@ -1,9 +1,0 @@
-id,email,phone,postal_code,date_naissance,nom,montant
-1,john.doe@example.com,0123456789,75001,1985-05-15,Dupont,100.5
-2,jane.smith@exemple,not_a_phone,7500A,15/05/1985,Smith,200
-3,bad_email@@example.com,1234567890,75002,1985/05/15,Martin,150.75
-4,alice@example.com,0987654321,,19850515,Lemoine,300
-5,bob@example,123-456-7890,75003,1985-13-01,Dubois,250
-6,,0001112222,75004,1985-05-15,Laurent,400
-7,julia.roberts@example.com,9876543210,75005,05-15-1985,Durand,350.25
-8,test.user@ex.com,5555555555,75006,1985-05-15,Moreau,

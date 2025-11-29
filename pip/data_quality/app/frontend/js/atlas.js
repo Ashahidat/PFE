@@ -3,39 +3,38 @@ const API_URL = "http://localhost:8000";
 document.addEventListener("DOMContentLoaded", () => {
   const button = document.getElementById("pushAtlasBtn");
   const statusDiv = document.getElementById("status");
-  const logs = document.getElementById("logs");
 
   button.onclick = async function() {
     statusDiv.innerText = "⏳ Envoi vers Atlas...";
-    logs.textContent = "";
 
     try {
       const res = await fetch(`${API_URL}/push-atlas`, { method: "POST" });
 
-      const text = await res.text(); // on loggue même si ce n’est pas JSON
-      logs.textContent = "Réponse brute :\n" + text;
+      const text = await res.text();
+
+      // 🔍 Tous les logs en console (non visibles pour l'utilisateur)
+      console.group("PUSH ATLAS - DEBUG");
+      console.log("Réponse brute backend:", text);
+      console.groupEnd();
 
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status} : ${text}`);
+        console.error("Erreur backend:", text);
+        statusDiv.innerHTML = "❌ Échec du push vers Atlas";
+        return;
       }
 
+      // Parse JSON si possible
       let data = {};
-      try {
-        data = JSON.parse(text);
-      } catch {
-        // ce n'est pas du JSON valide
-      }
+      try { data = JSON.parse(text); } catch {}
 
-      statusDiv.innerHTML = `
-        ✅ Succès !
-        <br>Message: ${data.message || "N/A"}
-        <br>DataSet GUID: ${data.dataset_guid || "N/A"}
-      `;
+      // ✔️ UI minimaliste
+      statusDiv.innerHTML =  `✅ Dataset envoyé vers Atlas avec succès !`;
+      console.log("Dataset GUID:", data.dataset_guid);
+
 
     } catch (err) {
-      console.error("Erreur push Atlas:", err);
-      statusDiv.innerText = "❌ Erreur lors de l'envoi vers Atlas";
-      logs.textContent += "\nErreur JS : " + err.message;
+      console.error("Erreur JS:", err);
+      statusDiv.innerHTML = "❌ Erreur lors de la communication avec Atlas";
     }
   };
 });

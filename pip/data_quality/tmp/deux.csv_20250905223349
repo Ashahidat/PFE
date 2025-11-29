@@ -1,8 +1,0 @@
-id,email,phone,postal_code,nom,montant
-1,john.doe@example.com,0123456789,75001,Dupont,100.5
-2,jane.smith@exemple.com,not_a_phone,7500A,Smith,200
-3,bad_email@example.com,1234567890,75002,Dupont,150
-4,john.doe@example.com,0123456789,75001,Dupont,100.5
-5,alice@test.com,+22312345678,12345,Alice,300
-6,bob@test.com,987654321,ABCDE,Bob,250
-5,alice@test.com,+22312345678,12345,Alice,300
