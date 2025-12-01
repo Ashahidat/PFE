@@ -10,13 +10,15 @@ from atlas.typedefs import typedefs_payload
 from atlas.datasets import create_dataset, link_versioning
 from atlas.columns import create_columns
 from atlas.signatures import find_smart_parent, calculate_dataset_signature
+from jwt_dependencies import get_current_user
+from fastapi import Request, HTTPException, Depends
 
 router = APIRouter()
 logger = logging.getLogger("push-atlas")
 logger.setLevel(logging.DEBUG)
 
 @router.post("/push-atlas")
-def push_atlas():
+def push_atlas(user=Depends(get_current_user)):
     file_path = None   # <-- IMPORTANT : on initialise AVANT tout
 
     try:

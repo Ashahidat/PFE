@@ -4,6 +4,7 @@ import sys
 sys.path.append("/home/ashahi/PFE/pip/data_quality/app/backend")
 from db.base import SessionLocal
 from db.users import User
+from jwt_manager import create_access_token
 
 router = APIRouter()
 pwd = CryptContext(schemes=["bcrypt"])
@@ -27,4 +28,14 @@ def login(data: dict):
     print("🔐 Mot de passe valide !")
     print("🎉 Login réussi pour:", user.username)
 
-    return {"message": "login ok"}
+    token = create_access_token({
+    "sub": user.employee_id,
+    "username": user.username})
+
+
+    #return {"message": "login ok"}
+    return {
+    "access_token": token,
+    "token_type": "bearer",
+    "username": user.username}
+

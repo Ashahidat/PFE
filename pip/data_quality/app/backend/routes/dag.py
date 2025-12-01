@@ -6,11 +6,13 @@ import os
 # Ajouter le chemin correct vers le dossier utils
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..'))
 from utils.airflow_utils import trigger_dag, get_dag_status
+from jwt_dependencies import get_current_user
+from fastapi import Request, HTTPException, Depends
 
 router = APIRouter()
 
 @router.post("/run-dag")
-async def run_dag(rules: dict):
+async def run_dag(rules: dict,user=Depends(get_current_user)):
     file_path = session_data.get("file_path")
     if not file_path:
         return {"error": "Aucun fichier uploadé"}
@@ -23,7 +25,7 @@ async def run_dag(rules: dict):
 
 # CORRECTION : Utilisez api_route pour gérer GET et OPTIONS
 @router.api_route("/dag-status", methods=["GET", "OPTIONS"])
-async def dag_status(request: Request, dag_run_id: str):
+async def dag_status(request: Request, dag_run_id: str, user=Depends(get_current_user)):
     if request.method == "OPTIONS":
         # Réponse vide pour la requête préflight CORS
         return {}

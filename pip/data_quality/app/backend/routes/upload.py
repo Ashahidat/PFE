@@ -7,12 +7,19 @@ import hashlib
 
 TMP_DIR = "/home/ashahi/PFE/pip/data_quality/tmp"
 os.makedirs(TMP_DIR, exist_ok=True)
+from jwt_dependencies import get_current_user
+from fastapi import Request, Depends
+
 
 router = APIRouter()
 
 # 📤 Upload CSV
 @router.post("/upload")
-async def upload_csv(file: UploadFile = File(...)):
+async def upload_csv(file: UploadFile = File(...), user=Depends(get_current_user)):
+    print("📤 Début upload CSV...")
+    print(f"👤 Utilisateur connecté : {user}")
+    print(f"📄 Fichier reçu : {file.filename}")
+
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     tmp_file_path = os.path.join(TMP_DIR, f"{file.filename}_{timestamp}.csv")
 
@@ -38,11 +45,12 @@ async def upload_csv(file: UploadFile = File(...)):
     session_data["hash"] = hash_value
     session_data["original_name"] = file.filename  # <-- ajouté
 
+    print("✅ Fichier uploadé avec succès")
     return {"message": "Fichier chargé", "columns": df.columns, "hash": hash_value, "original_name": file.filename}
 
 # 👀 Aperçu du dataset
 @router.get("/preview")
-def preview(n: int = 100):
+def preview(n: int = 100, user=Depends(get_current_user)):
     df = session_data.get("df")
     if df is None:
         raise HTTPException(status_code=400, detail="Aucun fichier uploadé")
@@ -50,7 +58,7 @@ def preview(n: int = 100):
 
 # 📑 Obtenir les colonnes
 @router.get("/get-columns")
-async def get_columns():
+async def get_columns(user=Depends(get_current_user)):
     df = session_data.get("df")
     if df is None:
         raise HTTPException(status_code=400, detail="Aucun fichier uploadé")
@@ -58,7 +66,7 @@ async def get_columns():
 
 # 📑 Obtenir colonnes + types Spark
 @router.get("/get-schema")
-async def get_schema():
+async def get_schema(user=Depends(get_current_user)):
     df = session_data.get("df")
     if df is None:
         raise HTTPException(status_code=400, detail="Aucun fichier uploadé")

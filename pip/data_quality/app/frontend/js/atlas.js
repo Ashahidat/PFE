@@ -8,7 +8,10 @@ document.addEventListener("DOMContentLoaded", () => {
     statusDiv.innerText = "⏳ Envoi vers Atlas...";
 
     try {
-      const res = await fetch(`${API_URL}/push-atlas`, { method: "POST" });
+      // 🔑 Récupération du token stocké après login
+      const token = localStorage.getItem("access_token");
+      const res = await fetch(`${API_URL}/push-atlas`, {  method: "POST",headers: { "Authorization": `Bearer ${token}`}});
+
 
       const text = await res.text();
 

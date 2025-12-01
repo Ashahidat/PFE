@@ -5,6 +5,9 @@ from fastapi.responses import JSONResponse
 
 RESULTS_DIR = "/home/ashahi/PFE/pip/data_quality/results"
 router = APIRouter()
+from jwt_dependencies import get_current_user
+from fastapi import Request, HTTPException, Depends
+
 
 def flatten_results(data):
     flat_results = []
@@ -26,7 +29,7 @@ def flatten_results(data):
     return flat_results
 
 @router.get("/results")
-def get_results():
+def get_results(user=Depends(get_current_user)):
     result_file = os.path.join(RESULTS_DIR, "validation.json")
     if not os.path.exists(result_file):
         return JSONResponse(content=[], status_code=200)

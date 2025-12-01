@@ -19,7 +19,8 @@ async function fetchResults() {
 
         while (state !== "success" && state !== "failed" && attempts < maxAttempts) {
             try {
-                const res = await fetch(`${API_URL}/dag-status?dag_run_id=${encodeURIComponent(dag_run_id)}`);
+                const token = localStorage.getItem("access_token");
+                const res = await fetch(`${API_URL}/dag-status?dag_run_id=${encodeURIComponent(dag_run_id)}`,{ method: "GET", headers: { "Authorization": `Bearer ${token}`}});
                 if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                 const data = await res.json();
                 state = data?.state || null;
@@ -46,7 +47,11 @@ async function fetchResults() {
             statusDiv.innerText = "DAG terminé avec succès, récupération des résultats...";
 
             try {
-                const res2 = await fetch(`${API_URL}/results`);
+                const token = localStorage.getItem("access_token");
+                const res2 = await fetch(`${API_URL}/results`, {
+                    method: "GET",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
                 if (!res2.ok) throw new Error(`HTTP error! status: ${res2.status}`);
                 const results = await res2.json();
                 console.log("Résultats reçus:", results);

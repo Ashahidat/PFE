@@ -4,7 +4,11 @@ window.columns = []; // initialisation
 // Chargement des colonnes depuis l'API
 async function loadColumns() {
     try {
-        const res = await fetch(`${API_URL}/get-columns`);
+        const token = localStorage.getItem("access_token");
+        const res = await fetch(`${API_URL}/get-columns`, {
+            method: "GET",
+            headers: { "Authorization": `Bearer ${token}` }
+        });
         const data = await res.json();
         if (data.columns && Array.isArray(data.columns)) {
             window.columns = data.columns;
@@ -85,9 +89,10 @@ document.getElementById("runDagBtn")?.addEventListener("click", async () => {
     };
 
     try {
+        const token = localStorage.getItem("access_token");
         const res = await fetch(`${API_URL}/run-dag`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
             body: JSON.stringify(rules)
         });
         const data = await res.json();
