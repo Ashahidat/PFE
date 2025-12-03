@@ -304,11 +304,11 @@ def find_smart_parent(df_current, dataset_name: str):
         else:
             print(f"   ❌ Aucun parent trouvé")
 
-        if best_parent and best_score > 0.50:
-            print(f"   📌 SEUIL ATTEINT (>0.50) - Retour du parent")
+        if best_parent and best_score >= 0.60:
+            print(f"   📌 SEUIL ATTEINT (>0.70) - Retour du parent")
             return best_parent["guid"], best_parent["attributes"]["qualifiedName"]
         else:
-            print(f"   📌 SEUIL NON ATTEINT (≤0.50) - Aucun parent retourné")
+            print(f"   📌 SEUIL NON ATTEINT (≤0.70) - Aucun parent retourné")
             return None, None
 
     except Exception as e:

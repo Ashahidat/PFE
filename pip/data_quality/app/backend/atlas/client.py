@@ -12,11 +12,20 @@ HEADERS = {"Content-Type": "application/json"}
 logger = logging.getLogger("atlas.client")
 
 
-def atlas_post(url: str, payload: dict):
-    logger.info(f"➡️ POST {url}")
-    res = requests.post(url, auth=AUTH, headers=HEADERS, json=payload)
-    res.raise_for_status()
-    logger.info(f"⬅️ Status: {res.status_code}")
+def atlas_post(url, payload):
+    res = requests.post(url, json=payload, auth=AUTH, headers=HEADERS)
+    if not res.ok:
+        # ⛔ Log détaillé et utile
+        logger.error(
+            f"[atlas_post] FAILED {url} "
+            f"status={res.status_code} "
+            f"text={res.text}"
+        )
+        try:
+            res.raise_for_status()
+        except Exception as e:
+            # Remonter une erreur compréhensible côté FastAPI
+            raise Exception(f"Atlas POST error {res.status_code}: {res.text}") from e
     return res
 
 
@@ -26,9 +35,17 @@ def atlas_get(url: str):
     res.raise_for_status()
     return res
 
-def atlas_put(url: str, payload: dict):
-    logger.info(f"➡️ PUT {url}")
-    res = requests.put(url, auth=AUTH, headers=HEADERS, json=payload)
-    res.raise_for_status()
-    logger.info(f"⬅️ Status: {res.status_code}")
+def atlas_put(url, payload):
+    res = requests.put(url, json=payload, auth=AUTH, headers=HEADERS)
+    if not res.ok:
+        logger.error(
+            f"[atlas_put] FAILED {url} "
+            f"status={res.status_code} "
+            f"text={res.text}"
+        )
+        try:
+            res.raise_for_status()
+        except Exception as e:
+            raise Exception(f"Atlas PUT error {res.status_code}: {res.text}") from e
     return res
+

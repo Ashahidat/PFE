@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 import logging
 import os
 import sys
+
 sys.path.append("/home/ashahi/PFE/pip/data_quality/app/backend")
 
 from session import session_data
@@ -11,7 +12,6 @@ from atlas.datasets import create_dataset, link_versioning
 from atlas.columns import create_columns
 from atlas.signatures import find_smart_parent, calculate_dataset_signature
 from jwt_dependencies import get_current_user
-from fastapi import Request, HTTPException, Depends
 
 router = APIRouter()
 logger = logging.getLogger("push-atlas")
@@ -19,16 +19,16 @@ logger.setLevel(logging.DEBUG)
 
 @router.post("/push-atlas")
 def push_atlas(user=Depends(get_current_user)):
-    file_path = None   # <-- IMPORTANT : on initialise AVANT tout
+    file_path = None  # initialisation
 
     try:
         # --- 0️⃣ Vérifier session_data ---
         if "df" not in session_data:
             raise HTTPException(status_code=400, detail="Aucun dataset chargé en session.")
-        
+
         df = session_data["df"]
         hash_value = session_data["hash"]
-        file_path = session_data["file_path"]     # <-- défini ici
+        file_path = session_data["file_path"]
         original_name = session_data["original_name"]
 
         # --- 1️⃣ Étendre DataSet natif ---
@@ -57,20 +57,33 @@ def push_atlas(user=Depends(get_current_user)):
         # --- 4️⃣ Parent ---
         parent_guid, parent_qn = find_smart_parent(df, original_name)
 
-        # --- 5️⃣ Créer dataset ---
+        # --- 5️⃣ Créer dataset (create_dataset renvoie déjà le GUID existant si doublon) ---
         dataset_guid = create_dataset(
             hash_value, original_name, file_path, parent_qn, df, signature
         )
 
-        # --- 6️⃣ Versioning ---
-        if parent_guid:
+        # Déterminer si c'est nouveau ou déjà existant
+        is_new = True
+        # Si GUID renvoyé existait déjà, alors c'est un dataset existant
+        if dataset_guid is not None and "existe déjà" in str(dataset_guid):
+            is_new = False
+
+        # --- 6️⃣ Versioning sécurisé ---
+        if parent_guid and parent_guid != dataset_guid:
             link_versioning(parent_guid, dataset_guid)
+        else:
+            logger.warning(
+                f"[push_atlas] Skipping versioning. parent_guid={parent_guid}, dataset_guid={dataset_guid}"
+            )
 
         # --- 7️⃣ Colonnes ---
         col_guids = create_columns(df, dataset_guid, hash_value)
 
+        # --- 8️⃣ Message user-friendly ---
+        message = "Dataset ajouté à Atlas avec succès !" if is_new else "Ce dataset existe déjà dans Atlas."
+
         return {
-            "message": f"Dataset + {len(col_guids)} colonnes créés.",
+            "message": message,
             "dataset_guid": dataset_guid,
             "parent_guid": parent_guid,
             "column_guids": col_guids
@@ -81,7 +94,6 @@ def push_atlas(user=Depends(get_current_user)):
 
     finally:
         TMP_DIR = "/home/ashahi/PFE/pip/data_quality/tmp"
-
         try:
             for f in os.listdir(TMP_DIR):
                 full = os.path.join(TMP_DIR, f)
@@ -90,4 +102,3 @@ def push_atlas(user=Depends(get_current_user)):
                     logger.info(f"🗑️ Fichier TMP supprimé : {full}")
         except Exception as err:
             logger.error(f"Impossible de nettoyer TMP : {err}")
-

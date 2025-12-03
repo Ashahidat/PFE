@@ -20,3 +20,11 @@ def verify_token(token: str):
         return None
 
 
+
+# -------------------------
+# Test rapide
+data = {"sub": "EMP001", "username": "chada"}
+token = create_access_token(data)
+print("Token généré :\n", token)
+payload = verify_token(token)
+print("Payload décodé :\n", payload)
