@@ -6,7 +6,7 @@ import sys
 sys.path.append("/home/ashahi/PFE/pip/data_quality/app/backend")
 
 from session import session_data
-from atlas.client import atlas_post, atlas_put, ATLAS_TYPEDEF_URL, ATLAS_RELATIONSHIP_URL
+from atlas.client import atlas_post, atlas_put, ATLAS_TYPEDEF_URL
 from atlas.typedefs import typedefs_payload
 from atlas.datasets import create_dataset, link_versioning
 from atlas.columns import create_columns
@@ -17,9 +17,10 @@ router = APIRouter()
 logger = logging.getLogger("push-atlas")
 logger.setLevel(logging.DEBUG)
 
+
 @router.post("/push-atlas")
 def push_atlas(user=Depends(get_current_user)):
-    file_path = None  # initialisation
+    file_path = None
 
     try:
         # --- 0️⃣ Vérifier session_data ---
@@ -57,18 +58,17 @@ def push_atlas(user=Depends(get_current_user)):
         # --- 4️⃣ Parent ---
         parent_guid, parent_qn = find_smart_parent(df, original_name)
 
-        # --- 5️⃣ Créer dataset (create_dataset renvoie déjà le GUID existant si doublon) ---
-        dataset_guid = create_dataset(
-            hash_value, original_name, file_path, parent_qn, df, signature
+        # --- 5️⃣ Créer dataset (nouveau retour guid, existed) ---
+        dataset_guid, existed = create_dataset(
+            hash_value,
+            original_name,
+            file_path,
+            parent_qn,
+            df,
+            signature
         )
 
-        # Déterminer si c'est nouveau ou déjà existant
-        is_new = True
-        # Si GUID renvoyé existait déjà, alors c'est un dataset existant
-        if dataset_guid is not None and "existe déjà" in str(dataset_guid):
-            is_new = False
-
-        # --- 6️⃣ Versioning sécurisé ---
+        # --- 6️⃣ Versioning ---
         if parent_guid and parent_guid != dataset_guid:
             link_versioning(parent_guid, dataset_guid)
         else:
@@ -80,7 +80,10 @@ def push_atlas(user=Depends(get_current_user)):
         col_guids = create_columns(df, dataset_guid, hash_value)
 
         # --- 8️⃣ Message user-friendly ---
-        message = "Dataset ajouté à Atlas avec succès !" if is_new else "Ce dataset existe déjà dans Atlas."
+        if existed:
+            message = "Ce dataset existe déjà dans Atlas."
+        else:
+            message = "Dataset ajouté à Atlas avec succès !"
 
         return {
             "message": message,

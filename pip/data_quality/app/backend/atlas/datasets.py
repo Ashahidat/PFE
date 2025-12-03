@@ -7,36 +7,54 @@ from atlas.signatures import calculate_dataset_signature, compute_similarity_sco
 logger = logging.getLogger("atlas.datasets")
 logger.setLevel(logging.DEBUG)
 
-def create_dataset(hash_value, original_name, file_path, parent_qualified_name, df, signature=None, force_unique=False):
+def create_dataset(
+    hash_value,
+    original_name,
+    file_path,
+    parent_qualified_name,
+    df,
+    signature=None,
+    force_unique=False
+):
     """
-    Crée un DataSet dans Atlas. Si un dataset avec le même qualifiedName existe,
-    renvoie son GUID au lieu de créer un doublon.
-    Si force_unique=True on ajoute un suffixe timestamp au qualifiedName.
+    Crée un DataSet dans Atlas. 
+    Si un dataset avec le même qualifiedName existe → renvoie son GUID et existed=True.
+    Sinon → crée le dataset et existed=False.
     """
+
     signature_json = json.dumps(signature) if signature else None
 
+    # Le qualifiedName reste EXACTEMENT comme tu l’avais
     qn = hash_value
     if force_unique:
         qn = f"{hash_value}_{int(time.time())}"
 
-    # 0) Vérifier s'il existe déjà (recherche par qualifiedName)
+    # ---------------------------------------------------------------------
+    # 0) Vérifier si un dataset existe déjà (via qualifiedName)
+    # ---------------------------------------------------------------------
     try:
-        # recherche simple — adapte la query selon ton Atlas (qualifiedName = ...)
         search_res = atlas_get(f"{ATLAS_SEARCH_URL}?typeName=DataSet&query=qualifiedName:{qn}")
+
         try:
             search_json = search_res.json()
             entities = search_json.get("entities", [])
-            if entities:
-                # retourne le GUID du dataset existant
-                existing_guid = entities[0].get("guid")
-                logger.info(f"create_dataset: dataset exists already -> {existing_guid}")
-                return existing_guid
-        except Exception:
-            # si parsing échoue, on continue vers création
-            logger.debug("create_dataset: parsing search response failed, try creating.")
-    except Exception as e:
-        logger.debug(f"create_dataset: search failed: {e} -- will attempt to create")
 
+            if entities:
+                existing_guid = entities[0].get("guid")
+                logger.info(f"create_dataset: dataset already exists -> {existing_guid}")
+
+                # 👉 Ajustement : on renvoie existed = True
+                return existing_guid, True
+
+        except Exception:
+            logger.debug("create_dataset: parsing search response failed, trying creation.")
+
+    except Exception as e:
+        logger.debug(f"create_dataset: search failed: {e} -- trying to create.")
+
+    # ---------------------------------------------------------------------
+    # 1) Création du dataset
+    # ---------------------------------------------------------------------
     payload = {
         "entities": [{
             "typeName": "DataSet",
@@ -44,7 +62,10 @@ def create_dataset(hash_value, original_name, file_path, parent_qualified_name, 
                 "qualifiedName": qn,
                 "name": original_name,
                 "description": f"Dataset importé depuis {file_path}",
-                "versionComment": f"Version dérivée de {parent_qualified_name}" if parent_qualified_name else "Version initiale",
+                "versionComment": (
+                    f"Version dérivée de {parent_qualified_name}"
+                    if parent_qualified_name else "Version initiale"
+                ),
                 "signature": signature_json,
                 "columnsCount": len(df.columns),
                 "columnsList": list(df.columns)
@@ -55,19 +76,21 @@ def create_dataset(hash_value, original_name, file_path, parent_qualified_name, 
 
     try:
         res = atlas_post(ATLAS_ENTITY_BULK_URL, payload)
-        # logger response for debugging
+
+        # Debug
         try:
-            res_json = res.json()
-            logger.debug(f"create_dataset: atlas response json: {res_json}")
-        except Exception:
+            logger.debug(f"create_dataset: atlas response json: {res.json()}")
+        except:
             logger.debug(f"create_dataset: atlas response text: {res.text}")
 
         guid = res.json().get("guidAssignments", {}).get("-100")
         if not guid:
-            # atlas peut renvoyer mapping diffèrent ou erreur
-            logger.error(f"create_dataset: no guidAssignments returned, full response: {res.text}")
-            raise Exception("Atlas did not return guid for created dataset.")
-        return guid
+            logger.error(f"create_dataset: no guidAssignments returned, response: {res.text}")
+            raise Exception("Atlas did not return GUID.")
+
+        # 👉 Renvoie existed=False car créé maintenant
+        return guid, False
+
     except Exception as e:
         logger.error(f"create_dataset: error creating dataset: {e}")
         raise
