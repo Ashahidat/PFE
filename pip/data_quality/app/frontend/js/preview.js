@@ -1,15 +1,29 @@
 const API_URL = "http://localhost:8000";
 
+// 🔒 Protection : empêcher d’ouvrir preview.html sans upload
+document.addEventListener("DOMContentLoaded", () => {
+    const id = localStorage.getItem("last_uploaded_dataset_id");
+    if (!id) {
+        alert("Aucun dataset chargé. Faites d'abord un upload.");
+        window.location.href = "index.html";
+    }
+});
+
 document.getElementById("previewBtn").addEventListener("click", async () => {
     const n = parseInt(document.getElementById("previewN").value || 100);
-    console.log(`👀 Demande preview de ${n} lignes`);
+
+    // 🔹 Dataset ID récupéré depuis localStorage
+    const dataset_id = localStorage.getItem("last_uploaded_dataset_id");
+    if (!dataset_id) return alert("Dataset ID manquant. Faites d'abord un upload !");
+
+    console.log(`👀 Demande preview de ${n} lignes pour dataset ${dataset_id}`);
 
     try {
         const token = localStorage.getItem("access_token");
         console.log("🔑 Token preview:", token ? `${token.substring(0, 20)}...` : "Token manquant");
 
-        console.log("🔄 Envoi requête GET /preview...");
-        const res = await fetch(`${API_URL}/preview?n=${n}`, {
+        // 🔹 Requête preview
+        const res = await fetch(`${API_URL}/preview/${dataset_id}?n=${n}`, {
             method: "GET",
             headers: {
                 "Authorization": `Bearer ${token}`
@@ -26,7 +40,7 @@ document.getElementById("previewBtn").addEventListener("click", async () => {
 
         const data = await res.json();
         console.log(`📊 Données preview reçues: ${data.length} lignes`);
-        
+
         renderPreviewTable(data);
         console.log("✅ Preview affiché avec succès");
     } catch (err) {

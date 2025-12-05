@@ -9,7 +9,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       const token = localStorage.getItem("access_token");
-      const res = await fetch(`${API_URL}/push-atlas`, {  
+      // 🔹 Récupérer automatiquement le dataset_id du dernier upload
+      const dataset_id = localStorage.getItem("last_uploaded_dataset_id");
+
+      if (!dataset_id) {
+        statusDiv.innerText = "❌ Aucun dataset disponible pour Atlas.";
+        return;
+      }
+
+      const res = await fetch(`${API_URL}/push-atlas/${dataset_id}`, {  
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -33,9 +41,7 @@ document.addEventListener("DOMContentLoaded", () => {
         console.error("Erreur parsing JSON:", e);
       }
 
-      // 🎯 Messages user-friendly - LOGIQUE CORRIGÉE
       if (data.message) {
-        // Ajoute juste une icône devant selon le type de message
         if (data.message.includes("existe déjà")) {
           statusDiv.innerHTML = `ℹ️ ${data.message}`;
         } else {

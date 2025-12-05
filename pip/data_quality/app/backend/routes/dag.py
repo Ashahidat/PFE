@@ -1,5 +1,9 @@
-from fastapi import APIRouter, Request
-from session import session_data
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
+import uuid
+from db.connexion_db import get_db
+from db.datasets import Dataset
+from db.dag_runs import DAGRun
 import sys
 import os
 
@@ -7,28 +11,50 @@ import os
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..'))
 from utils.airflow_utils import trigger_dag, get_dag_status
 from jwt_dependencies import get_current_user
-from fastapi import Request, HTTPException, Depends
+from fastapi import Request
+from pydantic import BaseModel
+from typing import Dict, Any
+
+class DAGRunRequest(BaseModel):
+    rules: Dict[str, Any]
+    dataset_id: str
+
 
 router = APIRouter()
 
 @router.post("/run-dag")
-async def run_dag(rules: dict,user=Depends(get_current_user)):
-    file_path = session_data.get("file_path")
-    if not file_path:
-        return {"error": "Aucun fichier uploadé"}
-    config = {"file_path": file_path, "rules": rules}
-    dag_run_id, resp = trigger_dag(config)
-    if dag_run_id:
-        session_data["dag_run_id"] = dag_run_id
-        return {"message": "DAG lancé", "dag_run_id": dag_run_id}
-    return {"error": "Erreur lors du lancement du DAG"}
+async def run_dag(request: DAGRunRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    dataset = db.query(Dataset).filter(Dataset.id == request.dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset introuvable")
 
-# CORRECTION : Utilisez api_route pour gérer GET et OPTIONS
-@router.api_route("/dag-status", methods=["GET", "OPTIONS"])
-async def dag_status(request: Request, dag_run_id: str, user=Depends(get_current_user)):
-    if request.method == "OPTIONS":
-        # Réponse vide pour la requête préflight CORS
-        return {}
-    
-    state = get_dag_status(dag_run_id)
+    config = {"file_path": dataset.file_path, "rules": request.rules}
+    dag_run_id, resp = trigger_dag(config)
+    if not dag_run_id:
+        raise HTTPException(status_code=500, detail="Erreur lancement DAG")
+
+    dag_run = DAGRun(
+        id=str(uuid.uuid4()),
+        dataset_id=dataset.id,
+        dag_run_id=dag_run_id,
+        rules=request.rules,
+        status="running"
+    )
+    db.add(dag_run)
+    db.commit()
+    db.refresh(dag_run)
+
+    return {"message": "DAG lancé", "dag_run_id": dag_run_id}
+
+
+@router.get("/dag-status/{dag_run_id}")
+async def dag_status(dag_run_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    dag_run = db.query(DAGRun).filter(DAGRun.dag_run_id == dag_run_id).first()
+    if not dag_run:
+        raise HTTPException(status_code=404, detail="DAG Run introuvable")
+
+    state = get_dag_status(dag_run.dag_run_id)
+    dag_run.status = state
+    db.commit()
     return {"state": state}
+

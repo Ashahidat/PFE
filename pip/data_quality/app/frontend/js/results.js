@@ -1,11 +1,12 @@
 const API_URL = "http://localhost:8000";
 
+// ===================== Fonction principale =====================
 async function fetchResults() {
     const statusDiv = document.getElementById("status");
     const resultsSection = document.getElementById("resultsSection");
 
     try {
-        const dag_run_id = localStorage.getItem("dag_run_id");
+        const dag_run_id = localStorage.getItem("last_dag_run_id");
         if (!dag_run_id) {
             alert("Pas de DAG en cours");
             return;
@@ -17,10 +18,14 @@ async function fetchResults() {
         let attempts = 0;
         const maxAttempts = 60;
 
+        // ===================== Polling état DAG =====================
         while (state !== "success" && state !== "failed" && attempts < maxAttempts) {
             try {
                 const token = localStorage.getItem("access_token");
-                const res = await fetch(`${API_URL}/dag-status?dag_run_id=${encodeURIComponent(dag_run_id)}`,{ method: "GET", headers: { "Authorization": `Bearer ${token}`}});
+                const res = await fetch(`${API_URL}/dag-status/${dag_run_id}`, {
+                    method: "GET",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
                 if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                 const data = await res.json();
                 state = data?.state || null;
@@ -48,7 +53,7 @@ async function fetchResults() {
 
             try {
                 const token = localStorage.getItem("access_token");
-                const res2 = await fetch(`${API_URL}/results`, {
+                const res2 = await fetch(`${API_URL}/results/${dag_run_id}`, {
                     method: "GET",
                     headers: { "Authorization": `Bearer ${token}` }
                 });
@@ -87,17 +92,15 @@ async function fetchResults() {
     }
 }
 
-// ✨ Nouvelle fonction pour le résumé
+// ===================== Rendu du résumé =====================
 function renderSummary(data) {
     const container = document.querySelector('.container');
 
-    // Supprimer l'ancien résumé s'il existe
     const oldSummary = document.getElementById('summary');
     if (oldSummary) oldSummary.remove();
 
     let total = 0, success = 0, failed = 0;
 
-    // Parcours récursif des résultats pour compter tous les tests
     function countTests(items) {
         if (!items) return;
         if (Array.isArray(items)) {
@@ -124,30 +127,21 @@ function renderSummary(data) {
     summaryDiv.style.fontWeight = 'bold';
     summaryDiv.style.color = '#fff';
     summaryDiv.style.fontSize = '16px';
-
-    // Couleur selon présence d'échecs
     summaryDiv.style.backgroundColor = failed > 0 ? '#e74c3c' : '#27ae60';
 
     summaryDiv.innerHTML = `
         Résumé du rapport : Total tests : ${total} | Réussis : ${success} | Échoués : ${failed} | Taux de réussite : ${total ? ((success/total)*100).toFixed(1)+'%' : 'N/A'}
     `;
 
-    // Insérer le résumé juste après le h1
     const h1 = container.querySelector('h1');
-    if (h1) {
-        h1.insertAdjacentElement('afterend', summaryDiv);
-    } else {
-        // fallback si le h1 n'existe pas
-        container.insertBefore(summaryDiv, container.firstChild);
-    }
+    if (h1) h1.insertAdjacentElement('afterend', summaryDiv);
+    else container.insertBefore(summaryDiv, container.firstChild);
 }
 
-
+// ===================== Rendu des résultats détaillés =====================
 function renderResultsJSON(data) {
     const resultsSection = document.getElementById("resultsSection");
     resultsSection.innerHTML = "";
-
-    console.log("Données à afficher:", data);
 
     function createCard(item) {
         const card = document.createElement("div");
@@ -243,30 +237,20 @@ function renderResultsJSON(data) {
     if (Array.isArray(data)) {
         data.forEach(item => createCard(item));
     } else if (typeof data === 'object' && data !== null) {
-        if (data.duplicates && Array.isArray(data.duplicates)) {
-            data.duplicates.forEach(item => createCard(item));
-        }
+        if (data.duplicates && Array.isArray(data.duplicates)) data.duplicates.forEach(item => createCard(item));
         if (data.regex) {
-            if (data.regex.regex && Array.isArray(data.regex.regex)) {
-                data.regex.regex.forEach(item => createCard(item));
-            } else if (Array.isArray(data.regex)) {
-                data.regex.forEach(item => createCard(item));
-            }
+            if (data.regex.regex && Array.isArray(data.regex.regex)) data.regex.regex.forEach(item => createCard(item));
+            else if (Array.isArray(data.regex)) data.regex.forEach(item => createCard(item));
         }
         Object.entries(data).forEach(([key, value]) => {
-            if (key !== 'duplicates' && key !== 'regex' && Array.isArray(value)) {
-                value.forEach(item => createCard(item));
-            }
+            if (key !== 'duplicates' && key !== 'regex' && Array.isArray(value)) value.forEach(item => createCard(item));
         });
     }
 
-    if (resultsSection.children.length === 0) {
-        resultsSection.innerHTML = '<div class="no-results">Aucun résultat à afficher</div>';
-        console.log("Structure des données reçues:", JSON.stringify(data, null, 2));
-    }
+    if (resultsSection.children.length === 0) resultsSection.innerHTML = '<div class="no-results">Aucun résultat à afficher</div>';
 }
 
-// 👉 Fonction pour ajouter le bouton Atlas
+// ===================== Bouton Atlas =====================
 function addPushAtlasButton() {
     if (document.getElementById('pushAtlasBtn')) return;
 
@@ -283,6 +267,7 @@ function addPushAtlasButton() {
     container.appendChild(pushButton);
 }
 
+// ===================== Initialisation =====================
 document.addEventListener('DOMContentLoaded', function() {
     console.log("Démarrage de la récupération des résultats...");
     fetchResults();

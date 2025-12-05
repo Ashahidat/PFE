@@ -12,7 +12,7 @@ logger = logging.getLogger("atlas.signatures")
 logger.setLevel(logging.DEBUG)
 
 # ----------------------------------------------
-# 1) SIGNATURE BIG DATA (100% SPARK, NO PANDAS)
+# 1) SIGNATURE BIG DATA 
 # ----------------------------------------------
 def calculate_dataset_signature(df, dataset_name: str, sample_size=200):
     print(f"🔧 DEBUT: calculate_dataset_signature pour '{dataset_name}'")

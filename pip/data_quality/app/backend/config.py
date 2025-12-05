@@ -1,8 +1,20 @@
 import os
+import signal
 from pyspark.sql import SparkSession
+import atexit
 
 # Spark
 spark = SparkSession.builder.appName("DataQualityApp").getOrCreate()
+
+# Fermeture propre
+def stop_spark():
+    try:
+        spark.stop()
+    except:
+        pass
+
+atexit.register(stop_spark)
+
 
 # Dossiers
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

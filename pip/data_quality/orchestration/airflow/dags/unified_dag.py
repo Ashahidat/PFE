@@ -65,13 +65,17 @@ def run_modular_validations(**kwargs):
     # Sauvegarde des résultats
     output_dir = "/home/ashahi/PFE/pip/data_quality/results"
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, "validation.json")
+    dag_run_id = kwargs.get("run_id")  # récupère le dag_run_id
+    output_path = os.path.join(output_dir, f"{dag_run_id}_validation.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    # 🔹 Sauvegarde Postgres
-    dag_run_id = kwargs.get("run_id")
-    # save_results_to_postgres(results, dag_run_id)
+    print(f"📄 Résultats sauvegardés dans : {output_path}")
+
+
+    # # 🔹 Sauvegarde Postgres
+    # dag_run_id = kwargs.get("run_id")
+    # # save_results_to_postgres(results, dag_run_id)
 
 
     spark.stop()
