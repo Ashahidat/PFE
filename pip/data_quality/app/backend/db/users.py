@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text
 import sys
 sys.path.append("/home/ashahi/PFE/pip/data_quality/app/backend")
-from db.base import Base
+from db.connexion_db import Base
 
 class User(Base):
     __tablename__ = "users"
