@@ -14,7 +14,8 @@ def create_dataset(
     parent_qualified_name,
     df,
     signature=None,
-    force_unique=False
+    force_unique=False,
+    owner_employee_id=None 
 ):
     """
     Crée un DataSet dans Atlas. 
@@ -63,16 +64,17 @@ def create_dataset(
                 "name": original_name,
                 "description": f"Dataset importé depuis {file_path}",
                 "versionComment": (
-                    f"Version dérivée de {parent_qualified_name}"
-                    if parent_qualified_name else "Version initiale"
+                    f"Version dérivée de {parent_qualified_name}" if parent_qualified_name else "Version initiale"
                 ),
                 "signature": signature_json,
                 "columnsCount": len(df.columns),
-                "columnsList": list(df.columns)
+                "columnsList": list(df.columns),
+                "owner": owner_employee_id   # <-- nouvel attribut
             },
             "guid": "-100"
         }]
     }
+
 
     try:
         res = atlas_post(ATLAS_ENTITY_BULK_URL, payload)

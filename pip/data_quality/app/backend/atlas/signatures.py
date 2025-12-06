@@ -6,6 +6,9 @@ from rapidfuzz import fuzz
 from atlas.client import atlas_get
 from atlas.client import atlas_post, atlas_put, ATLAS_TYPEDEF_URL, ATLAS_RELATIONSHIP_URL, ATLAS_SEARCH_URL
 
+from db.crud_dataset_signatures import create_dataset_signature
+from db.crud_column_signatures import create_column_signature
+from sqlalchemy.orm import Session
 
 
 logger = logging.getLogger("atlas.signatures")
@@ -85,6 +88,7 @@ def calculate_dataset_signature(df, dataset_name: str, sample_size=200):
     # Hash structure globale
     struct = [(col, signature["columns"][col]["dtype"]) for col in df.columns]
     signature["structure_hash"] = hashlib.sha256(str(sorted(struct)).encode()).hexdigest()
+    signature["rows_count"] = df.count()
 
     print(f"✅ FIN: calculate_dataset_signature - Structure hash: {signature['structure_hash'][:16]}...")
     print(f"   - Base name: {signature['name_base']}")
@@ -315,3 +319,34 @@ def find_smart_parent(df_current, dataset_name: str):
         print(f"❌ ERREUR dans find_smart_parent: {e}")
         logger.error(f"Erreur find_smart_parent (BIG DATA): {e}")
         return None, None
+
+
+# 4) PERSISTE LA SIGNATURE DANS LA BASE DE DONNÉES
+def persist_signature_to_db(db: Session, dataset_id: str, signature: dict):
+
+    # ✅ créer la signature dataset VIA LA FONCTION SERVICE
+    ds_sig = create_dataset_signature(
+        db=db,
+        dataset_id=dataset_id,
+        structure_hash=signature["structure_hash"],
+        signature=signature,
+        columns_count=signature.get("columns_count"),
+        rows_count=signature.get("rows_count"),
+        algo_version="v1"
+    )
+
+    # ✅ créer les signatures colonnes
+    for col_name, meta in signature["columns"].items():
+        create_column_signature(
+            db=db,
+            dataset_signature_id=str(ds_sig.id),
+            column_name=col_name,
+            data_type=meta["dtype"],
+            mean=meta.get("mean"),
+            std=meta.get("std"),
+            distinct_count=meta.get("ndist"),
+            sample_hash=meta.get("sample_hash")
+        )
+
+    return ds_sig
+

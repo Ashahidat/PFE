@@ -33,11 +33,21 @@ def run_modular_validations(**kwargs):
         .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.7-spark-3.3") \
         .getOrCreate()
 
-    # Lecture du fichier
-    if file_path.endswith(".csv"):
-        df = spark.read.option("header", "true").csv(file_path)
+    # # Lecture du fichier
+
+    # Cache simple pour éviter de relire le même dataset
+    spark_cache = {}  # clé = file_path, valeur = DataFrame
+
+    if file_path in spark_cache:
+        df = spark_cache[file_path]
     else:
-        df = spark.read.json(file_path)
+        df = spark.read.parquet(file_path)
+        spark_cache[file_path] = df
+
+    # if file_path.endswith(".csv"):
+    #     df = spark.read.option("header", "true").csv(file_path)
+    # else:
+    #     df = spark.read.json(file_path)
 
     results = {}
 

@@ -17,6 +17,6 @@ def verify_token(token: str):
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload   # le contenu du token : {"sub": employee_id, "username":} c'est ce que moi je vais y mettre
     except Exception:
-        return Nonse
+        return None
 
 

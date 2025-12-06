@@ -12,3 +12,6 @@ class Dataset(Base):
     file_path = Column(Text, nullable=False)
     hash = Column(Text, nullable=False)
     columns_list = Column(ARRAY(Text))
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())  # ajout timestamp
+    owner_employee_id = Column(String(50), nullable=True)                     # ajout owner
+    atlas_guid = Column(Text, nullable=True)                                  # ajout atlas_guid
