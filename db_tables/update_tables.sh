@@ -5,11 +5,11 @@ DEST_DIR="/tmp"
 DB_NAME="pfe_db"
 
 FILES=(
-    "users_db_permissions.sql"
     "datasets.sql"
     "dag_runs.sql"
     "dataset_signatures.sql"
     "column_signatures.sql"
+    "classifications_table.sql"
 )
 
 # Copier les fichiers vers /tmp avec l'utilisateur actuel
@@ -31,11 +31,11 @@ DEST_DIR="/tmp"
 
 # Liste des fichiers à exécuter (doit être redéfinie ici)
 FILES=(
-    "users_db_permissions.sql"
     "datasets.sql"
     "dag_runs.sql"
     "dataset_signatures.sql"
     "column_signatures.sql"
+    "classifications_table.sql"
 )
 
 # Exécution des fichiers SQL

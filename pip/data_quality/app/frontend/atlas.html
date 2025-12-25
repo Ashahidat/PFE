@@ -8,10 +8,31 @@
 <body>
   <div class="container">
     <h1>📤 Push vers Atlas</h1>
+
+    <!-- Bouton push vers Atlas -->
     <button id="pushAtlasBtn">Envoyer vers Atlas</button>
-    <div id="status" class="status">En attente...</div>
+    <p id="status" class="status">En attente...</p>
+
+    <!-- Section classification (cachée au début) -->
+    <div id="classificationSection" style="display:none; margin-top:20px;">
+      <h3>Classification du dataset</h3>
+
+      <select id="classificationSelect">
+        <option value="">-- Choisir --</option>
+        <option value="PUBLIC">PUBLIC</option>
+        <option value="INTERNAL">INTERNAL</option>
+        <option value="CONFIDENTIAL">CONFIDENTIAL</option>
+        <option value="PII">PII</option>
+      </select>
+
+      <div id="attributesContainer" style="margin-top:10px"></div>
+
+      <button id="applyClassificationBtn">Appliquer classification</button>
+    </div>
   </div>
 
+  <!-- Scripts -->
   <script src="js/atlas.js"></script>
+  <script src="js/classifications.js"></script>
 </body>
 </html>

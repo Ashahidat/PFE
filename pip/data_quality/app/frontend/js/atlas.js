@@ -4,7 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const button = document.getElementById("pushAtlasBtn");
   const statusDiv = document.getElementById("status");
 
-  button.onclick = async function() {
+  button.onclick = async function () {
     statusDiv.innerText = "⏳ Envoi vers Atlas...";
 
     try {
@@ -17,9 +17,9 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const res = await fetch(`${API_URL}/push-atlas/${dataset_id}`, {  
+      const res = await fetch(`${API_URL}/push-atlas/${dataset_id}`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` }
       });
 
       const text = await res.text();
@@ -35,8 +35,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       let data = {};
-      try { 
-        data = JSON.parse(text); 
+      try {
+        data = JSON.parse(text);
       } catch (e) {
         console.error("Erreur parsing JSON:", e);
       }
@@ -49,6 +49,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       } else {
         statusDiv.innerHTML = "✅ Dataset synchronisé avec Atlas.";
+      }
+
+      /* ==================================================
+         ✅ AJOUT STRICTEMENT NÉCESSAIRE (ET SEULEMENT LUIDA)
+         ================================================== */
+
+      if (data.dataset_guid) {
+        localStorage.setItem("last_atlas_guid", data.dataset_guid);
+
+        // Révéler l’UI de classification si elle existe
+        const section = document.getElementById("classificationSection");
+        if (section) section.style.display = "block";
       }
 
     } catch (err) {
