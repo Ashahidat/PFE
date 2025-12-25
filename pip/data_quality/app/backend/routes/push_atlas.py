@@ -60,6 +60,17 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
                 if "409" not in str(e):
                     raise
 
+        # ⭐⭐⭐ AJOUTE CETTE SECTION POUR LES CLASSIFICATIONS ⭐⭐⭐
+        for class_def in typedefs_payload["classificationDefs"]:
+            try:
+                atlas_post(ATLAS_TYPEDEF_URL, {"classificationDefs": [class_def]})
+                logger.info(f"✅ Classification créée: {class_def['name']}")  # Optionnel : ajoute un log
+            except Exception as e:
+                if "409" in str(e):
+                    logger.info(f"Classification déjà existante, on ignore: {class_def['name']}")
+                else:
+                    raise  # Note: j'ai corrigé "raisez" en "raise"
+
         # 4️⃣ Signature (sur df Parquet)
         signature = calculate_dataset_signature(df, original_name)
         persist_signature_to_db(db, dataset.id, signature)

@@ -26,13 +26,13 @@ def apply_classification_use_case(
     atlas_guid,
     classification_name,
     attributes,
-    user
+    user  # ← user est maintenant un dict
 ):
     logger.info(f"🚀 Début use_case - {entity_type}:{entity_id} -> {classification_name}")
+    logger.info(f"User dict: {user}")  # Pour debug
 
     try:
         with db.begin():
-
             # 1️⃣ Désactiver anciennes classifications
             rows_updated = disable_active_classifications(
                 db,
@@ -42,6 +42,11 @@ def apply_classification_use_case(
             logger.info(f"Anciennes classifications désactivées: {rows_updated}")
 
             # 2️⃣ Créer nouvelle classification
+            # EXTRACTION DES INFOS USER DU DICT
+            applied_by = user.get("employee_id") or user.get("sub")  # selon votre structure
+            department = user.get("department", "Unknown")
+            business_unit = user.get("business_unit", "Unknown")
+            
             classification = create_entity_classification(
                 db=db,
                 entity_type=entity_type,
@@ -49,12 +54,12 @@ def apply_classification_use_case(
                 atlas_guid=atlas_guid,
                 classification_name=classification_name,
                 classification_attributes=attributes,
-                applied_by=user.employee_id,
-                department=user.department,
-                business_unit=user.business_unit
+                applied_by=applied_by,
+                department=department,
+                business_unit=business_unit
             )
 
-            db.flush()  # force insertion
+            db.flush()
 
             # 3️⃣ Atlas
             atlas_response = add_classification(

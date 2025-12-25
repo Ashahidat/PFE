@@ -3,44 +3,57 @@
 from atlas.client import atlas_post
 import logging
 
-ATLAS_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/guid"
+# Deux endpoints possibles selon la version d'Atlas
+ATLAS_BULK_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/bulk/classification"
+ATLAS_ENTITY_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/guid"
 
 logger = logging.getLogger(__name__)
 
-print("-----------------------------------------------------------------------------------------------")
-print("⚠️  Module 'atlas/classifications.py' utilisé - Vérifiez la version Atlas (V2) pour la compatibilité ⚠️")
-print("-----------------------------------------------------------------------------------------------")
-
 def add_classification(entity_guid: str, classification_name: str, attributes: dict = None):
     """
-    Ajoute une classification Atlas sur une entité (Atlas V2)
-    Payload compatible V2 : {"classifications": [...]}
+    Version adaptative pour Atlas V2
+    Essaie d'abord l'endpoint single entity, puis bulk si besoin
     """
-    print("-----------------------------------------------------------------------------------------------")
-    print("⚠️  Fonction 'add_classification' utilisée - Vérifiez la version Atlas (V2) pour la compatibilité ⚠️")
-    print("-----------------------------------------------------------------------------------------------")
-    logger.debug(f"📤 Envoi classification à Atlas - GUID: {entity_guid}, Type: {classification_name}")
-
-    payload = {
-        "classifications": [
+    logger.info(f"📤 Envoi classification à Atlas - GUID: {entity_guid}, Type: {classification_name}")
+    
+    # ESSAI 1: Format single entity (le plus courant pour Atlas V2)
+    try:
+        url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{entity_guid}/classifications"
+        payload = [
             {
-                "typeName": classification_name
+                "typeName": classification_name,
+                "attributes": attributes or {}
             }
         ]
-    }
-
-    if attributes:
-        payload["classifications"][0]["attributes"] = attributes
-
-    logger.debug(f"Payload Atlas V2: {payload}")
-
-    url = f"{ATLAS_CLASSIFICATION_URL}/{entity_guid}/classification"
-    logger.debug(f"URL Atlas: {url}")
-
-    try:
+        
+        logger.debug(f"Essai 1 - URL: {url}")
+        logger.debug(f"Essai 1 - Payload: {payload}")
+        
         response = atlas_post(url, payload)
-        logger.debug(f"✅ Réponse Atlas: {response}")
-        return response
+        logger.info(f"✅ Classification ajoutée (format single) - Status: {response.status_code}")
+        return response.json()
+        
     except Exception as e:
-        logger.error(f"❌ Erreur Atlas: {str(e)}")
-        raise
+        logger.warning(f"⚠️ Format single échoué: {str(e)}. Essai format bulk...")
+        
+        # ESSAI 2: Format bulk
+        try:
+            url = ATLAS_BULK_CLASSIFICATION_URL
+            payload = {
+                "entityGuids": [entity_guid],
+                "classification": {
+                    "typeName": classification_name,
+                    "attributes": attributes or {}
+                }
+            }
+            
+            logger.debug(f"Essai 2 - URL: {url}")
+            logger.debug(f"Essai 2 - Payload: {payload}")
+            
+            response = atlas_post(url, payload)
+            logger.info(f"✅ Classification ajoutée (format bulk) - Status: {response.status_code}")
+            return response.json()
+            
+        except Exception as e2:
+            logger.error(f"❌ Les deux formats ont échoué: {str(e2)}")
+            raise Exception(f"Impossible d'ajouter la classification à Atlas: {str(e2)}")

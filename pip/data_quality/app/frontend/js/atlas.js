@@ -1,4 +1,6 @@
-const API_URL = "http://localhost:8000";
+if (typeof API_URL === 'undefined') {
+    const API_URL = "http://localhost:8000";
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   const button = document.getElementById("pushAtlasBtn");

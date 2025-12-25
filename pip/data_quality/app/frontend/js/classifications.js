@@ -1,8 +1,11 @@
 /* ============================
-   classifications.js - VERSION AVEC DEBUG
+   classifications.js - VERSION CORRIGÉE
    ============================ */
 
-const API_URL = "http://localhost:8000";
+// SOLUTION: Vérifier si API_URL existe déjà
+const API_URL = window.API_URL || "http://localhost:8000";
+
+console.log("✅ classifications.js chargé - API_URL:", API_URL);
 
 /* ----------------------------
    Définition des attributs
@@ -18,7 +21,7 @@ const CLASSIFICATION_ATTRIBUTES = {
    UI dynamique
 ----------------------------- */
 document.addEventListener("DOMContentLoaded", () => {
-  console.log("✅ classifications.js chargé");
+  console.log("✅ DOM Content Loaded - classifications.js");
   
   const select = document.getElementById("classificationSelect");
   const container = document.getElementById("attributesContainer");
@@ -34,6 +37,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   console.log("✅ Éléments DOM trouvés");
+
+  // TEST: Vérifiez que le bouton est bien attaché
+  console.log("🔗 Bouton applyBtn attaché:", applyBtn);
 
   select.onchange = () => {
     console.log("📝 Sélection changée:", select.value);
@@ -54,10 +60,10 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   /* ----------------------------
-     Apply classification
+     Apply classification - AVEC DEBOGAGE RENFORCÉ
   ----------------------------- */
   applyBtn.onclick = async () => {
-    console.log("🔄 Début application classification...");
+    console.log("🔄 CLICK DÉTECTÉ - Début application classification...");
     
     const token = localStorage.getItem("access_token");
     const datasetId = localStorage.getItem("last_uploaded_dataset_id");
@@ -69,6 +75,11 @@ document.addEventListener("DOMContentLoaded", () => {
       atlasGuid
     });
 
+    if (!token) {
+      alert("❌ Token manquant. Veuillez vous reconnecter.");
+      return;
+    }
+    
     if (!datasetId) {
       alert("❌ Dataset ID manquant. Veuillez d'abord uploader un dataset.");
       console.error("Dataset ID manquant dans localStorage");
@@ -95,28 +106,25 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
     
-    console.log("📤 Payload à envoyer:", {
+    const payload = {
       entity_type: "DATASET",
       entity_id: datasetId,
       atlas_guid: atlasGuid,
       classification_name: classification,
       attributes: Object.keys(attributes).length ? attributes : null
-    });
+    };
+    
+    console.log("📤 Payload à envoyer:", payload);
 
     try {
+      console.log("📨 Envoi vers:", `${API_URL}/apply-classification`);
       const res = await fetch(`${API_URL}/apply-classification`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
-          entity_type: "DATASET",
-          entity_id: datasetId,
-          atlas_guid: atlasGuid,
-          classification_name: classification,
-          attributes: Object.keys(attributes).length ? attributes : null
-        })
+        body: JSON.stringify(payload)
       });
 
       console.log("📨 Réponse du serveur:", {
@@ -147,4 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("❌ Erreur réseau: " + err.message);
     }
   };
+
+  // TEST: Simuler un clic pour vérifier
+  console.log("🧪 Test: Bouton prêt à être cliqué");
 });
