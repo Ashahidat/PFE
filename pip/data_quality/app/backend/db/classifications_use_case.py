@@ -26,24 +26,22 @@ def apply_classification_use_case(
     atlas_guid,
     classification_name,
     attributes,
-    user  # ← user est maintenant un dict
+    user
 ):
     logger.info(f"🚀 Début use_case - {entity_type}:{entity_id} -> {classification_name}")
-    logger.info(f"User dict: {user}")  # Pour debug
-
+    
     try:
         with db.begin():
-            # 1️⃣ Désactiver anciennes classifications
+            # 1️⃣ Désactiver anciennes classifications EN BASE
             rows_updated = disable_active_classifications(
                 db,
                 entity_type=entity_type,
                 entity_id=entity_id
             )
-            logger.info(f"Anciennes classifications désactivées: {rows_updated}")
+            logger.info(f"Anciennes classifications désactivées en base: {rows_updated}")
 
-            # 2️⃣ Créer nouvelle classification
-            # EXTRACTION DES INFOS USER DU DICT
-            applied_by = user.get("employee_id") or user.get("sub")  # selon votre structure
+            # 2️⃣ Créer nouvelle classification EN BASE
+            applied_by = user.get("employee_id") or user.get("sub")
             department = user.get("department", "Unknown")
             business_unit = user.get("business_unit", "Unknown")
             
@@ -61,14 +59,20 @@ def apply_classification_use_case(
 
             db.flush()
 
-            # 3️⃣ Atlas
+            # 3️⃣ Ajouter à ATLAS (si pas déjà présent)
             atlas_response = add_classification(
                 atlas_guid,
                 classification_name,
                 attributes
             )
+            
             logger.info(f"Atlas response: {atlas_response}")
-
+            
+            # 4️⃣ Si la classification existait déjà dans Atlas, c'est OK
+            # On a déjà enregistré en base, c'est suffisant
+            if atlas_response and atlas_response.get("status") == "already_exists":
+                logger.info("Classification déjà présente dans Atlas - Enregistrement en base OK")
+            
         return classification
 
     except IntegrityError as e:
@@ -76,3 +80,6 @@ def apply_classification_use_case(
         raise ValueError(
             "Une classification active existe déjà pour cette entité."
         ) from e
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de l'application de la classification: {str(e)}")
+        raise
