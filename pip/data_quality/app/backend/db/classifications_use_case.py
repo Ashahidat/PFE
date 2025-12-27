@@ -3,20 +3,12 @@ from db.classifications_crud import (
     disable_active_classifications,
     create_entity_classification
 )
-
+from db.users_crud import get_user_department_bu  # Import de la nouvelle fonction
 import logging
 
 logger = logging.getLogger(__name__)
 
 from sqlalchemy.exc import IntegrityError
-from atlas.classifications import add_classification
-from db.classifications_crud import (
-    disable_active_classifications,
-    create_entity_classification
-)
-import logging
-
-logger = logging.getLogger(__name__)
 
 def apply_classification_use_case(
     db,
@@ -32,6 +24,22 @@ def apply_classification_use_case(
     
     try:
         with db.begin():
+            # Récupérer l'employee_id depuis le token
+            employee_id = user.get("employee_id") or user.get("sub")
+            
+            if not employee_id:
+                raise ValueError("Identifiant utilisateur manquant dans le token")
+            
+            # Récupérer department et business_unit depuis la table users
+            dept_bu = get_user_department_bu(db, employee_id)
+            
+            if not dept_bu:
+                logger.error(f"❌ Utilisateur {employee_id} non trouvé dans la base de données")
+                raise ValueError(f"Utilisateur {employee_id} non trouvé dans la base de données")
+            
+            department, business_unit = dept_bu
+            logger.info(f"Utilisateur trouvé: {employee_id}, Département: {department}, Business Unit: {business_unit}")
+            
             # 1️⃣ Désactiver anciennes classifications EN BASE
             rows_updated = disable_active_classifications(
                 db,
@@ -41,10 +49,6 @@ def apply_classification_use_case(
             logger.info(f"Anciennes classifications désactivées en base: {rows_updated}")
 
             # 2️⃣ Créer nouvelle classification EN BASE
-            applied_by = user.get("employee_id") or user.get("sub")
-            department = user.get("department", "Unknown")
-            business_unit = user.get("business_unit", "Unknown")
-            
             classification = create_entity_classification(
                 db=db,
                 entity_type=entity_type,
@@ -52,7 +56,7 @@ def apply_classification_use_case(
                 atlas_guid=atlas_guid,
                 classification_name=classification_name,
                 classification_attributes=attributes,
-                applied_by=applied_by,
+                applied_by=employee_id,
                 department=department,
                 business_unit=business_unit
             )
@@ -69,7 +73,6 @@ def apply_classification_use_case(
             logger.info(f"Atlas response: {atlas_response}")
             
             # 4️⃣ Si la classification existait déjà dans Atlas, c'est OK
-            # On a déjà enregistré en base, c'est suffisant
             if atlas_response and atlas_response.get("status") == "already_exists":
                 logger.info("Classification déjà présente dans Atlas - Enregistrement en base OK")
             
