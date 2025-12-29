@@ -14,7 +14,7 @@ const CLASSIFICATION_ATTRIBUTES = {
   PUBLIC: [],
   INTERNAL: [],
   CONFIDENTIAL: ["level"],
-  PII: ["type"]
+  RESTRICTED: ["reason"]  
 };
 
 /* ----------------------------

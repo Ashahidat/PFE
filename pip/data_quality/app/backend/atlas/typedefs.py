@@ -81,10 +81,10 @@ typedefs_payload = {
             ]
         },
         {
-            "name": "PII",
+            "name": "RESTRICTED",  # Remplace PII
             "attributeDefs": [
                 {
-                    "name": "type",
+                    "name": "reason",
                     "typeName": "string",
                     "isOptional": False
                 }

@@ -35,9 +35,9 @@ def apply_classification(payload: dict, db: Session = Depends(get_db), user=Depe
         if field not in payload:
             logger.error(f"Champ manquant: {field}")
             raise HTTPException(status_code=400, detail=f"Champ manquant: {field}")
-    
+
     # Validation de la classification
-    valid_classifications = ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "PII"]
+    valid_classifications = ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
     if payload["classification_name"] not in valid_classifications:
         logger.error(f"Classification invalide: {payload['classification_name']}")
         raise HTTPException(status_code=400, detail=f"Classification invalide. Valides: {valid_classifications}")
