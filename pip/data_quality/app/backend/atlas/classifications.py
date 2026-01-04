@@ -2,6 +2,7 @@
 
 from atlas.client import atlas_post, atlas_get
 import logging
+import requests
 
 ATLAS_BULK_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/bulk/classification"
 ATLAS_ENTITY_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/guid"

@@ -5,10 +5,51 @@ from db.classifications_crud import (
 )
 from db.users_crud import get_user_department_bu  # Import de la nouvelle fonction
 import logging
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from sync_atlas_classifications import sync_entity_classifications
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
 from sqlalchemy.exc import IntegrityError
+
+def check_and_fix_classification_sync(
+    db: Session,
+    *,
+    entity_type: str,
+    entity_id: str,
+    atlas_guid: str,
+    user: dict
+):
+    """
+    Vérifie et corrige la synchronisation pour une entité spécifique
+    Utile après l'application d'une classification pour s'assurer de la cohérence
+    """
+    logger.info(f"🔧 Vérification synchronisation pour {entity_type}:{entity_id}")
+    
+    try:
+        # Forcer une synchronisation immédiate
+        result = sync_entity_classifications(
+            db=db,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            atlas_guid=atlas_guid
+        )
+        
+        if result:
+            logger.info(f"✅ Synchronisation vérifiée: {result}")
+            return result
+        else:
+            logger.warning("⚠ Synchronisation non nécessaire ou erreur")
+            return None
+
+    except Exception as e:
+        logger.error(f"❌ Erreur vérification synchronisation: {str(e)}")
+        return None
+
 
 def apply_classification_use_case(
     db,
