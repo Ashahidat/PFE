@@ -33,11 +33,21 @@ def run_modular_validations(**kwargs):
         .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.7-spark-3.3") \
         .getOrCreate()
 
-    # Lecture du fichier
-    if file_path.endswith(".csv"):
-        df = spark.read.option("header", "true").csv(file_path)
+    # # Lecture du fichier
+
+    # Cache simple pour éviter de relire le même dataset
+    spark_cache = {}  # clé = file_path, valeur = DataFrame
+
+    if file_path in spark_cache:
+        df = spark_cache[file_path]
     else:
-        df = spark.read.json(file_path)
+        df = spark.read.parquet(file_path)
+        spark_cache[file_path] = df
+
+    # if file_path.endswith(".csv"):
+    #     df = spark.read.option("header", "true").csv(file_path)
+    # else:
+    #     df = spark.read.json(file_path)
 
     results = {}
 
@@ -65,13 +75,17 @@ def run_modular_validations(**kwargs):
     # Sauvegarde des résultats
     output_dir = "/home/ashahi/PFE/pip/data_quality/results"
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, "validation.json")
+    dag_run_id = kwargs.get("run_id")  # récupère le dag_run_id
+    output_path = os.path.join(output_dir, f"{dag_run_id}_validation.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    # 🔹 Sauvegarde Postgres
-    dag_run_id = kwargs.get("run_id")
-    # save_results_to_postgres(results, dag_run_id)
+    print(f"📄 Résultats sauvegardés dans : {output_path}")
+
+
+    # # 🔹 Sauvegarde Postgres
+    # dag_run_id = kwargs.get("run_id")
+    # # save_results_to_postgres(results, dag_run_id)
 
 
     spark.stop()

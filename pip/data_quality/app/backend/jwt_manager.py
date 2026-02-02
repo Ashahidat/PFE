@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta
 from jose import jwt
 
-SECRET_KEY = "23HnfK4lP9zQeW8yXv7aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789AbCdEfGhIj" # clé random que j'ai écrite moi-même
+SECRET_KEY = "23HnfK4lP9zQeW8yXv7aBcD" # clé random que j'ai écrite moi-même
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60  # en minutes 
+ACCESS_TOKEN_EXPIRE_MINUTES = 180  # en minutes 
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -17,6 +17,15 @@ def verify_token(token: str):
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload   # le contenu du token : {"sub": employee_id, "username":} c'est ce que moi je vais y mettre
     except Exception:
-        return Nonse
+        return None
+
+
+# # -------------------------
+# # Test rapide
+# data = {"sub": "EMP001", "username": "chada"}
+# token = create_access_token(data)
+# print("Token généré :\n", token)
+# payload = verify_token(token)
+# print("Payload décodé :\n", payload)
 
 

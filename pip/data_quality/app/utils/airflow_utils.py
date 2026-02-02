@@ -10,21 +10,31 @@ AIRFLOW_USER = "admin"
 AIRFLOW_PASSWORD = "admin"
 
 
+
 def trigger_dag(config: dict):
+    print(f"🔗 Tentative de connexion à Airflow: {AIRFLOW_URL}")
+    print(f"👤 Utilisateur: {AIRFLOW_USER}")
+    print(f"🔑 Mot de passe: {AIRFLOW_PASSWORD}")
+    print(f"📦 Config envoyée: {config}")
+    
     response = requests.post(
         AIRFLOW_URL,
         auth=HTTPBasicAuth(AIRFLOW_USER, AIRFLOW_PASSWORD),
         headers={"Content-Type": "application/json"},
-        json={"conf": config}
+        json={"conf": config},
+        timeout=30  # Ajoutez un timeout
     )
-    print("trigger_dag status:", response.status_code, response.text)  # <-- Ajoute ça
-
+    
+    print(f"📡 Réponse HTTP: {response.status_code}")
+    print(f"📄 Corps de la réponse: {response.text[:200]}...")  # Premier 200 caractères
+    
     if response.status_code == 200:
         dag_run_id = response.json().get("dag_run_id")
-        print("DAGRun créé avec ID :", dag_run_id)  # <-- Ajoute ça
+        print(f"✅ DAGRun créé avec ID: {dag_run_id}")
         return dag_run_id, None
-
-    return None, response
+    else:
+        print(f"❌ Échec de l'appel Airflow: {response.status_code}")
+        return None, response
 
 
 

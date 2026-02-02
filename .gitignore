@@ -42,10 +42,10 @@ pip/data_quality/orchestration/airflow/*
 # ============================================
 # APACHE ATLAS SOURCES
 # ============================================
-pip/data_governance/apache-atlas-sources-2.4.0/*
+pip/data_governance/apache-atlas-2.4.0/*
 
 # Garder le dossier vide grâce au fichier .keep
-!pip/data_governance/apache-atlas-sources-2.4.0/.keep
+!pip/data_governance/apache-atlas-2.4.0/.keep
 
 # ============================================
 # LOGS / TEMP
@@ -77,6 +77,9 @@ datasets/
 
 # Logs
 *.log
+
+pip/data_quality/orchestration/airflow/dags/__pycache__/
+
 
 
 

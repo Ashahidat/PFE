@@ -5,7 +5,6 @@ console.log("🔍 Vérification token au chargement...");
 const token = localStorage.getItem("access_token");
 console.log("🔑 Token dans localStorage:", token ? `${token.substring(0, 20)}...` : "AUCUN TOKEN");
 
-
 document.getElementById("uploadBtn").addEventListener("click", async () => {
     const file = document.getElementById("csvFile").files[0];
     const statusDiv = document.getElementById("uploadStatus");
@@ -47,14 +46,18 @@ document.getElementById("uploadBtn").addEventListener("click", async () => {
             throw new Error(data.detail || "Erreur upload");
         }
 
+        // ✔ On sauvegarde dataset_id (opération synchrone)
+        localStorage.setItem("last_uploaded_dataset_id", data.dataset_id);
+
         if (data.columns) {
             window.columns = data.columns;
             console.log("✅ Upload réussi, colonnes:", data.columns);
             statusDiv.innerText = "Fichier uploadé !";
-            setTimeout(() => {
-                console.log("🔀 Redirection vers preview.html");
-                window.location.href = "preview.html";
-            }, 1000);
+
+            // ✔ Redirection immédiate et sûre
+            console.log("🔀 Redirection vers preview.html");
+            window.location.href = "preview.html";
+
         } else {
             console.warn("⚠️ Colonnes manquantes dans la réponse");
             statusDiv.innerText = "Erreur : colonnes introuvables";
