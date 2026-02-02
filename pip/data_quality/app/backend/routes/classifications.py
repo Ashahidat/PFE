@@ -14,16 +14,27 @@ except ImportError:
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
 @router.post("/apply-classification")
 def apply_classification(payload: dict, db: Session = Depends(get_db), user=Depends(get_current_user)):
     """
-    Payload envoyé par le frontend :
+    Payload pour datasets:
     {
-        "entity_type": "DATASET" | "COLUMN",
+        "entity_type": "DATASET",
         "entity_id": "...",
         "atlas_guid": "...",
-        "classification_name": "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "PII"
+        "classification_name": "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED"
         "attributes": { "level": "high" }  # pour CONFIDENTIAL
+    }
+    
+    Payload pour colonnes:
+    {
+        "entity_type": "COLUMN",
+        "entity_id": "dataset_id",  # ID du dataset parent
+        "atlas_guid": "...",  # GUID de la colonne dans Atlas
+        "classification_name": "PII_DIRECT" | "PII_QUASI" | "SENSITIVE" | "ENCRYPTED"
+        "column_name": "nom_de_la_colonne",
+        "attributes": {}
     }
     """
     logger.info("📨 Requête de classification reçue")
@@ -35,12 +46,11 @@ def apply_classification(payload: dict, db: Session = Depends(get_db), user=Depe
         if field not in payload:
             logger.error(f"Champ manquant: {field}")
             raise HTTPException(status_code=400, detail=f"Champ manquant: {field}")
-
-    # Validation de la classification
-    valid_classifications = ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
-    if payload["classification_name"] not in valid_classifications:
-        logger.error(f"Classification invalide: {payload['classification_name']}")
-        raise HTTPException(status_code=400, detail=f"Classification invalide. Valides: {valid_classifications}")
+    
+    # Validation spécifique pour les colonnes
+    if payload["entity_type"] == "COLUMN" and "column_name" not in payload:
+        logger.error("Champ manquant: column_name (requis pour les colonnes)")
+        raise HTTPException(status_code=400, detail="column_name est requis pour les classifications de colonne")
 
     try:
         result = apply_classification_use_case(
@@ -49,8 +59,9 @@ def apply_classification(payload: dict, db: Session = Depends(get_db), user=Depe
             entity_id=payload["entity_id"],
             atlas_guid=payload["atlas_guid"],
             classification_name=payload["classification_name"],
-            attributes=payload.get("attributes"),
-            user=user
+            attributes=payload.get("attributes", {}),
+            user=user,
+            column_name=payload.get("column_name")  # Nouveau paramètre
         )
         
         logger.info(f"✅ Classification appliquée avec succès. ID: {result.id}")

@@ -7,7 +7,6 @@ from sqlalchemy.sql import func
 from db.connexion_db import Base
 
 
-
 class EntityClassification(Base):
     __tablename__ = "entity_classifications"
 
@@ -25,6 +24,9 @@ class EntityClassification(Base):
 
     atlas_guid = Column(Text, nullable=False)
 
+    # AJOUTEZ CE CHAMP MANQUANT :
+    column_name = Column(Text, nullable=True)  # <-- MANQUANT !
+
     classification_name = Column(Text, nullable=False)
     classification_attributes = Column(JSONB)
 
@@ -38,4 +40,3 @@ class EntityClassification(Base):
     )
 
     is_active = Column(Boolean, default=True)
-

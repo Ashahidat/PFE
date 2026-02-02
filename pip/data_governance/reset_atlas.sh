@@ -1,7 +1,7 @@
 #!/bin/bash
-# 🚀 Script pour réinitialiser les données Apache Atlas (HBase + Solr)
+# 🚀 Script pour réinitialiser Apache Atlas
 
-ATLAS_HOME="/home/ashahi/PFE/pip/data_governance/apache-atlas-sources-2.4.0/distro/target/apache-atlas-2.4.0"
+ATLAS_HOME="/home/ashahi/PFE/pip/data_governance/apache-atlas-2.4.0"
 HBASE_DIR="$ATLAS_HOME/hbase"
 SOLR_DIR="$ATLAS_HOME/solr/data"
 
@@ -21,7 +21,7 @@ EOF
 echo "➡️  [3/4] Arrêt de HBase..."
 $HBASE_DIR/bin/stop-hbase.sh
 
-echo "➡️  [4/4] Nettoyage des données Solr..."
-rm -rf $SOLR_DIR/*
+echo "➡️  [4/4] Nettoyage Solr..."
+rm -rf "$SOLR_DIR"/*
 
-echo "✅ Réinitialisation Atlas terminée !"
+echo "✅ Réinitialisation Atlas terminée"

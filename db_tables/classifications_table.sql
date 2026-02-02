@@ -1,6 +1,7 @@
 \c pfe_db;
 
-CREATE TABLE entity_classifications (
+-- Créer la table si elle n'existe pas déjà
+CREATE TABLE IF NOT EXISTS entity_classifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     entity_type TEXT NOT NULL CHECK (entity_type IN ('DATASET', 'COLUMN')),
@@ -16,10 +17,12 @@ CREATE TABLE entity_classifications (
     business_unit VARCHAR(100) NOT NULL,
 
     applied_at TIMESTAMP DEFAULT NOW(),
-    is_active BOOLEAN DEFAULT TRUE
+    is_active BOOLEAN DEFAULT TRUE,
+
+    column_name TEXT  -- ajouté directement ici
 );
 
--- ✅ ICI, JUSTE APRÈS
-CREATE UNIQUE INDEX one_active_classification
-ON entity_classifications (entity_type, entity_id)
+-- Créer l'index unique partiel si il n'existe pas déjà
+CREATE UNIQUE INDEX IF NOT EXISTS one_active_classification
+ON entity_classifications (entity_type, entity_id, column_name)
 WHERE is_active = TRUE;

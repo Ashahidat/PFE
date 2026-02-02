@@ -2,6 +2,8 @@ if (typeof API_URL === 'undefined') {
     const API_URL = "http://localhost:8000";
 }
 
+console.log("✅ atlas.js chargé");
+
 document.addEventListener("DOMContentLoaded", () => {
   const button = document.getElementById("pushAtlasBtn");
   const statusDiv = document.getElementById("status");
@@ -11,7 +13,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       const token = localStorage.getItem("access_token");
-      // 🔹 Récupérer automatiquement le dataset_id du dernier upload
       const dataset_id = localStorage.getItem("last_uploaded_dataset_id");
 
       if (!dataset_id) {
@@ -54,15 +55,29 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       /* ==================================================
-         ✅ AJOUT STRICTEMENT NÉCESSAIRE (ET SEULEMENT LUIDA)
+         ✅ STOCKER TOUTES LES DONNÉES IMPORTANTES
          ================================================== */
 
       if (data.dataset_guid) {
         localStorage.setItem("last_atlas_guid", data.dataset_guid);
+        console.log("📊 Dataset GUID stocké:", data.dataset_guid);
+      }
+      
+      // ✅ STOCKER LES GUIDs DES COLONNES (CRITIQUE !)
+      if (data.column_guids && typeof data.column_guids === 'object') {
+        localStorage.setItem("last_column_guids", JSON.stringify(data.column_guids));
+        console.log("📊 GUIDs colonnes stockés:", data.column_guids);
+      } else {
+        console.warn("⚠️ Pas de column_guids dans la réponse:", data);
+        // Initialiser un objet vide pour éviter les erreurs
+        localStorage.setItem("last_column_guids", JSON.stringify({}));
+      }
 
-        // Révéler l’UI de classification si elle existe
-        const section = document.getElementById("classificationSection");
-        if (section) section.style.display = "block";
+      // Révéler l'UI de classification
+      const section = document.getElementById("classificationSection");
+      if (section) {
+        section.style.display = "block";
+        console.log("✅ Section classification affichée");
       }
 
     } catch (err) {

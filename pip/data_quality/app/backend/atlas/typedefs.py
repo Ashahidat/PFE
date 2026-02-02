@@ -4,16 +4,16 @@ typedefs_payload = {
             "name": "DataSet",
             "superTypes": ["Asset"],
             "attributeDefs": [
-                { "name": "signature", "typeName": "string", "isOptional": True },
-                { "name": "columnsCount", "typeName": "int", "isOptional": True },
-                { "name": "columnsList", "typeName": "array<string>", "isOptional": True }
+                {"name": "signature", "typeName": "string", "isOptional": True},
+                {"name": "columnsCount", "typeName": "int", "isOptional": True},
+                {"name": "columnsList", "typeName": "array<string>", "isOptional": True}
             ]
         },
         {
             "name": "Column",
             "superTypes": ["Asset"],
             "attributeDefs": [
-                { "name": "type", "typeName": "string", "isOptional": True },
+                {"name": "type", "typeName": "string", "isOptional": True},
                 {
                     "name": "dataset",
                     "typeName": "DataSet",
@@ -62,33 +62,27 @@ typedefs_payload = {
     ],
 
     "classificationDefs": [
-        {
-            "name": "PUBLIC",
-            "superTypes": []
-        },
-        {
-            "name": "INTERNAL",
-            "superTypes": []
-        },
+        {"name": "PUBLIC", "description": "Accès public sans restriction", "superTypes": []},
+        {"name": "INTERNAL", "description": "Usage interne à l'organisation", "superTypes": []},
         {
             "name": "CONFIDENTIAL",
+            "description": "Données confidentielles, accès restreint",
+            "superTypes": [],
             "attributeDefs": [
-                {
-                    "name": "level",
-                    "typeName": "string",
-                    "isOptional": False
-                }
+                {"name": "level", "typeName": "string", "isOptional": True, "defaultValue": "1"}
             ]
         },
         {
-            "name": "RESTRICTED",  # Remplace PII
+            "name": "RESTRICTED",
+            "description": "Données hautement sensibles, accès très contrôlé",
+            "superTypes": [],
             "attributeDefs": [
-                {
-                    "name": "reason",
-                    "typeName": "string",
-                    "isOptional": False
-                }
+                {"name": "reason", "typeName": "string", "isOptional": True}
             ]
-        }
+        },
+        {"name": "PII_DIRECT", "description": "Identifiants directs", "superTypes": []},
+        {"name": "PII_QUASI", "description": "Quasi-identifiants", "superTypes": []},
+        {"name": "SENSITIVE", "description": "Données sensibles", "superTypes": []},
+        {"name": "ENCRYPTED", "description": "Données chiffrées", "superTypes": []}
     ]
 }
