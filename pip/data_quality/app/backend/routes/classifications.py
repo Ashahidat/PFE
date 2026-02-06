@@ -5,11 +5,8 @@ from jwt_dependencies import get_current_user
 import logging
 
 # IMPORT CORRECT du use case
-try:
-    from db.classifications_use_case import apply_classification_use_case
-except ImportError:
-    # Essayez un autre chemin si nécessaire
-    from services.classifications_service import apply_classification_use_case
+from db.classifications_use_case import apply_classification_use_case
+
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -77,3 +74,5 @@ def apply_classification(payload: dict, db: Session = Depends(get_db), user=Depe
     except Exception as e:
         logger.error(f"❌ Erreur lors de l'application de la classification: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+

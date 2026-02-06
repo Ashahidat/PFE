@@ -11,22 +11,22 @@ pwd = CryptContext(schemes=["bcrypt"])
 
 @router.post("/login")
 def login(data: dict):
-    print("📩 Login reçu:", data)
+    # print("📩 Login reçu:", data)
 
     db = SessionLocal()
 
     user = db.query(User).filter_by(employee_id=data["employee_id"]).first()
-    print("🔍 Recherche dans la DB →", user)
+    # print("🔍 Recherche dans la DB →", user)
 
     if not user:
         raise HTTPException(400, "Identifiants incorrects")
 
     if not pwd.verify(data["password"], user.password_hash):
-        print("❌ Mot de passe incorrect")
+        # print("❌ Mot de passe incorrect")
         raise HTTPException(400, "Identifiants incorrects")
 
-    print("🔐 Mot de passe valide !")
-    print("🎉 Login réussi pour:", user.username)
+    # print("🔐 Mot de passe valide !")
+    # print("🎉 Login réussi pour:", user.username)
 
     token = create_access_token({
     "sub": user.employee_id,

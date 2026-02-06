@@ -25,7 +25,7 @@ async def upload_csv(
     user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    print(f"📄 Fichier reçu : {file.filename}")
+    # print(f"📄 Fichier reçu : {file.filename}")
 
     # 1️⃣ Sauvegarde temporaire CSV
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -52,7 +52,7 @@ async def upload_csv(
     # 4️⃣ SUPPRESSION du CSV
     try:
         os.remove(csv_path)
-        print(f"🗑️ CSV supprimé : {csv_path}")
+        # print(f"🗑️ CSV supprimé : {csv_path}")
     except Exception as e:
         print("Erreur suppression CSV :", e)
 
@@ -72,7 +72,7 @@ async def upload_csv(
     db.refresh(db_dataset)
 
 
-    print("✅ Parquet créé et métadonnées enregistrées")
+    # print("✅ Parquet créé et métadonnées enregistrées")
     return {
         "message": "Dataset chargé (converti en Parquet)",
         "columns": columns_list,

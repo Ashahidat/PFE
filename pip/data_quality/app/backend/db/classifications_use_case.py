@@ -17,7 +17,71 @@ from atlas.classifications_validations import (
     validate_dataset_columns_consistency,
     ClassificationValidationError
 )
+from datetime import datetime 
+from atlas.client import atlas_post, ATLAS_ENTITY_BULK_URL, ATLAS_RELATIONSHIP_URL
+import sys
+sys.path.append("/home/ashahi/PFE/pip/data_quality/app/backend")
+from atlas.classifications import track_classification_lineage
 
+
+def track_classification_event(entity_type, entity_atlas_guid, classification_name, user_id):
+    """
+    Fonction simple pour tracker une classification dans Atlas
+    """
+    try:
+        # Créer un ID unique pour le processus
+        process_id = f"classification_{entity_atlas_guid}_{int(datetime.now().timestamp())}"
+        
+        # 1. Créer le processus de classification
+        process_payload = {
+            "entities": [{
+                "typeName": "ClassificationProcess",
+                "attributes": {
+                    "qualifiedName": process_id,
+                    "name": f"Classification: {classification_name}",
+                    "classificationType": entity_type,
+                    "classificationName": classification_name,
+                    "executedBy": user_id,
+                    "executionTimestamp": datetime.now().isoformat()
+                },
+                "guid": f"-{process_id}"
+            }]
+        }
+        
+        # Envoyer à Atlas
+        res = atlas_post(ATLAS_ENTITY_BULK_URL, process_payload)
+        process_guid = res.json().get("guidAssignments", {}).get(f"-{process_id}")
+        
+        if not process_guid:
+            logger.warning("❌ Impossible de créer le processus de classification")
+            return None
+        
+        # 2. Lier le processus à l'entité (dataset ou colonne)
+        # Déterminer le type Atlas
+        if entity_type == "DATASET":
+            atlas_entity_type = "DataSet"
+        else:  # COLUMN
+            atlas_entity_type = "Column"
+        
+        # Créer la relation
+        relationship_payload = {
+            "typeName": "entity_classified_by",
+            "end1": {"guid": process_guid, "typeName": "ClassificationProcess"},
+            "end2": {"guid": entity_atlas_guid, "typeName": atlas_entity_type},
+            "attributes": {}
+        }
+        
+        atlas_post(ATLAS_RELATIONSHIP_URL, relationship_payload)
+        
+        # logger.info(f"✅ Classification trackée: {entity_atlas_guid} ← {process_guid}")
+        return process_guid
+        
+    except Exception as e:
+        logger.warning(f"⚠️ Tracking classification échoué (non bloquant): {str(e)[:100]}")
+        return None
+
+
+# db/classification_use_case.py - MODIFIER la fonction apply_classification_use_case
 
 def apply_classification_use_case(
     db,
@@ -28,7 +92,7 @@ def apply_classification_use_case(
     classification_name,
     attributes,
     user,
-    column_name: str = None  # Nouveau paramètre optionnel
+    column_name: str = None
 ):
     logger.info(f"🚀 Début use_case - {entity_type}:{entity_id} -> {classification_name}")
     
@@ -38,18 +102,15 @@ def apply_classification_use_case(
         
         # Si c'est une classification de colonne, valider la cohérence avec le dataset
         if entity_type == "COLUMN" and column_name:
-            # Pour une colonne, entity_id est le dataset_id
-            # Valider la cohérence
             validate_dataset_columns_consistency(
                 db, 
                 entity_id,  # dataset_id
                 {column_name: classification_name}
             )
         
-        # ⚠️ SUPPRIMER: with db.begin(): 
-        # ✅ AJOUTER: Vérifier et nettoyer la transaction
+        # Vérifier et nettoyer la transaction
         if db.in_transaction():
-            logger.warning("⚠️ Transaction déjà active - rollback")
+            # logger.warning("⚠️ Transaction déjà active - rollback")
             db.rollback()
         
         # Récupérer l'employee_id depuis le token
@@ -58,7 +119,7 @@ def apply_classification_use_case(
         if not employee_id:
             raise ValueError("Identifiant utilisateur manquant dans le token")
         
-        # Récupérer department et business_unit depuis la table users
+        # Récupérer department et business_unit
         dept_bu = get_user_department_bu(db, employee_id)
         
         if not dept_bu:
@@ -66,16 +127,16 @@ def apply_classification_use_case(
             raise ValueError(f"Utilisateur {employee_id} non trouvé dans la base de données")
         
         department, business_unit = dept_bu
-        logger.info(f"Utilisateur trouvé: {employee_id}, Département: {department}, Business Unit: {business_unit}")
+        # logger.info(f"Utilisateur trouvé: {employee_id}, Département: {department}, Business Unit: {business_unit}")
         
-        # 1️⃣ Désactiver anciennes classifications EN BASE
+        # 1️⃣ Désactiver anciennes classifications
         rows_updated = disable_active_classifications(
             db,
             entity_type=entity_type,
             entity_id=entity_id,
-            column_name=column_name  # Nouveau paramètre
+            column_name=column_name
         )
-        logger.info(f"Anciennes classifications désactivées en base: {rows_updated}")
+        # logger.info(f"Anciennes classifications désactivées en base: {rows_updated}")
 
         # 2️⃣ Créer nouvelle classification EN BASE
         classification = create_entity_classification(
@@ -88,7 +149,7 @@ def apply_classification_use_case(
             applied_by=employee_id,
             department=department,
             business_unit=business_unit,
-            column_name=column_name  # Nouveau paramètre
+            column_name=column_name
         )
 
         db.flush()
@@ -100,15 +161,23 @@ def apply_classification_use_case(
             attributes
         )
         
-        logger.info(f"Atlas response: {atlas_response}")
+        /logger.info(f"Atlas response: {atlas_response}")
         
-        # 4️⃣ Si la classification existait déjà dans Atlas, c'est OK
-        if atlas_response and atlas_response.get("status") == "already_exists":
-            logger.info("Classification déjà présente dans Atlas - Enregistrement en base OK")
+        # 4️⃣ CRÉER LE LINEAGE DANS ATLAS
+        user_id = user.get("sub", "unknown") if user else "system"
+        process_guid = track_classification_lineage(
+            entity_type=entity_type,
+            entity_atlas_guid=atlas_guid,
+            classification_name=classification_name,
+            user_id=user_id
+        )
         
-        # ✅ AJOUTER: Commit manuel
+        if process_guid:
+            # logger.info(f"✅ Lineage classification créé: {process_guid}")
+        
+        # Commit
         db.commit()
-        
+
         return classification
 
     except ClassificationValidationError as e:

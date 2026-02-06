@@ -43,7 +43,7 @@ def add_classification(entity_guid: str, classification_name: str, attributes: d
     """
     Essaie plusieurs fois avec des délais car Atlas est asynchrone
     """
-    logger.info(f"📤 Envoi classification à Atlas - GUID: {entity_guid}, Type: {classification_name}")
+    # logger.info(f"📤 Envoi classification à Atlas - GUID: {entity_guid}, Type: {classification_name}")
     
     retries = 3
     
@@ -70,16 +70,16 @@ def add_classification(entity_guid: str, classification_name: str, attributes: d
                     "entityGuids": [entity_guid]
                 }
                 
-                logger.debug(f"Essai bulk - Tentative {attempt+1}")
+                # logger.debug(f"Essai bulk - Tentative {attempt+1}")
                 response = atlas_post(ATLAS_BULK_CLASSIFICATION_URL, payload)
                 
                 if response.status_code == 204:
-                    logger.info(f"✅ Classification ajoutée (bulk)")
+                    # logger.info(f"✅ Classification ajoutée (bulk)")
                     return {"status": "added", "message": "Classification ajoutée"}
                 
                 # Si 400 "already associated", c'est OK
                 if response.status_code == 400 and "already associated" in response.text:
-                    logger.info("✅ Classification déjà associée")
+                    # logger.info("✅ Classification déjà associée")
                     return {"status": "already_exists", "message": "Classification déjà présente"}
                     
                 # Sinon, essayer format single
@@ -132,3 +132,87 @@ def add_classification(entity_guid: str, classification_name: str, attributes: d
                     raise Exception(f"Impossible d'ajouter la classification à Atlas après {retries} tentatives: {str(e)}")
     
     return {"status": "error", "message": "Échec après plusieurs tentatives"}
+
+
+
+
+def track_classification_lineage(entity_type: str, entity_atlas_guid: str, classification_name: str, user_id: str):
+    """
+    Crée un lineage pour une classification dans Atlas
+    """
+    try:
+        # logger.info(f"🎯 Création lineage classification pour {entity_atlas_guid}")
+        
+        # Déterminer le type d'entité Atlas
+        if entity_type == "DATASET":
+            atlas_entity_type = "DataSet"
+            entity_name = "Dataset"
+        else:  # COLUMN
+            atlas_entity_type = "Column"
+            entity_name = "Column"
+        
+        # 1. Créer un processus de classification
+        classification_process_id = f"classification_{entity_atlas_guid}_{int(datetime.now().timestamp())}"
+        
+        classification_process_payload = {
+            "entities": [{
+                "typeName": "ClassificationProcess",
+                "attributes": {
+                    "qualifiedName": classification_process_id,
+                    "name": f"Classification: {classification_name} sur {entity_name}",
+                    "classificationType": entity_type,
+                    "classificationName": classification_name,
+                    "executedBy": user_id,
+                    "executionTimestamp": datetime.now().isoformat()
+                },
+                "guid": f"-classification-{classification_process_id}"
+            }]
+        }
+        
+        # logger.info(f"📤 Création processus classification: {classification_process_payload}")
+        
+        res = atlas_post(ATLAS_ENTITY_BULK_URL, classification_process_payload)
+        
+        if res.status_code != 200:
+            logger.error(f"❌ Erreur création processus classification: {res.status_code} - {res.text}")
+            return None
+        
+        res_data = res.json()
+        process_guid = res_data.get("guidAssignments", {}).get(f"-classification-{classification_process_id}")
+        
+        if not process_guid:
+            logger.error(f"❌ Pas de GUID assigné pour le processus classification")
+            return None
+        
+        # logger.info(f"✅ Processus classification créé: {process_guid}")
+        
+        # 2. Lier à l'entité
+        relationship_payload = {
+            "typeName": "entity_classified_by",
+            "end1": {
+                "guid": process_guid,
+                "typeName": "ClassificationProcess",
+                "uniqueAttributes": {"qualifiedName": classification_process_id}
+            },
+            "end2": {
+                "guid": entity_atlas_guid,
+                "typeName": atlas_entity_type
+            },
+            "label": "classified_by",
+            "attributes": {}
+        }
+        
+        # logger.info(f"🔗 Création relation classification: {relationship_payload}")
+        
+        rel_res = atlas_post(ATLAS_RELATIONSHIP_URL, relationship_payload)
+        
+        if rel_res.status_code in [200, 204]:
+            # logger.info(f"✅ Relation classification créée: {process_guid} → {entity_atlas_guid}")
+            return process_guid
+        else:
+            logger.error(f"❌ Erreur création relation classification: {rel_res.status_code} - {rel_res.text}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ Erreur création lineage classification: {e}", exc_info=True)
+        return None
