@@ -104,7 +104,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         if parent_guid and parent_guid != dataset_guid:
             process_guid = create_import_process(
                 dataset_inputs=parent_guid,
-                dataset_output=dataset_guid,
+                dataset_output_guid=dataset_guid,
                 operation="TRANSFORMATION",
                 description=f"Version dérivée de {parent_qn}"
             )
