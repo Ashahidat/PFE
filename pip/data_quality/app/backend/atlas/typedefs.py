@@ -21,7 +21,20 @@ typedefs_payload = {
                     "cardinality": "SINGLE"
                 }
             ]
-        }
+        },
+        {
+            "name": "SourceFile",
+            "superTypes": ["Asset"],
+            "attributeDefs": [
+                {"name": "originalName", "typeName": "string", "isOptional": False},
+                {"name": "filePath", "typeName": "string", "isOptional": True},
+                {"name": "fileHash", "typeName": "string", "isOptional": False},
+                {"name": "fileSize", "typeName": "long", "isOptional": True},
+                {"name": "uploadDate", "typeName": "string", "isOptional": True},
+                {"name": "uploader", "typeName": "string", "isOptional": True}
+            ]
+        },
+
     ],
 
     "relationshipDefs": [
@@ -58,7 +71,26 @@ typedefs_payload = {
                 "isContainer": False,
                 "cardinality": "SINGLE"
             }
-        }
+        },
+        {
+            "name": "source_of",
+            "typeVersion": "1.0",
+            "relationshipCategory": "ASSOCIATION",
+            "endDef1": {
+                "type": "SourceFile",
+                "name": "generated_datasets",
+                "isContainer": False,
+                "cardinality": "SET"
+            },
+            "endDef2": {
+                "type": "DataSet",
+                "name": "source_file",
+                "isContainer": False,
+                "cardinality": "SINGLE"
+            }
+        },
+
+        
     ],
 
     "classificationDefs": [
