@@ -14,6 +14,7 @@ typedefs_payload = {
             "superTypes": ["Asset"],
             "attributeDefs": [
                 {"name": "type", "typeName": "string", "isOptional": True},
+                {"name": "logicalColumnId", "typeName": "string", "isOptional": False},
                 {
                     "name": "dataset",
                     "typeName": "DataSet",
@@ -23,6 +24,33 @@ typedefs_payload = {
             ]
         },
 
+        # 🆕 ENTITÉ HISTORIQUE DE CLASSIFICATION
+        {
+            "name": "ClassificationHistory",
+            "superTypes": ["Asset"],  
+            "attributeDefs": [
+                {
+                    "name": "classificationType",
+                    "typeName": "string",
+                    "isOptional": False
+                },
+                {
+                    "name": "appliedAt",
+                    "typeName": "date",
+                    "isOptional": False
+                },
+                {
+                    "name": "appliedBy",
+                    "typeName": "string",
+                    "isOptional": False
+                },
+                {
+                    "name": "status",
+                    "typeName": "string",
+                    "isOptional": False  # ACTIVE / INACTIVE
+                }
+            ]
+        }
     ],
 
     "relationshipDefs": [
@@ -60,7 +88,43 @@ typedefs_payload = {
                 "cardinality": "SINGLE"
             }
         },
-        
+
+        # 🆕 RELATION HISTORIQUE ↔ COLONNE
+        {
+            "name": "has_classification_history",
+            "typeVersion": "1.0",
+            "relationshipCategory": "ASSOCIATION",
+            "endDef1": {
+                "type": "Column",
+                "name": "classificationHistory",
+                "isContainer": False,
+                "cardinality": "SET"
+            },
+            "endDef2": {
+                "type": "ClassificationHistory",
+                "name": "appliedToColumn",
+                "isContainer": False,
+                "cardinality": "SINGLE"
+            }
+        },
+
+        {
+            "name": "classification_history_lineage",
+            "typeVersion": "1.0",
+            "relationshipCategory": "ASSOCIATION",
+            "endDef1": {
+                "type": "ClassificationHistory",
+                "name": "previous",
+                "isContainer": False,
+                "cardinality": "SINGLE"
+            },
+            "endDef2": {
+                "type": "ClassificationHistory",
+                "name": "next",
+                "isContainer": False,
+                "cardinality": "SINGLE"
+            }
+        }
     ],
 
     "classificationDefs": [
@@ -71,7 +135,12 @@ typedefs_payload = {
             "description": "Données confidentielles, accès restreint",
             "superTypes": [],
             "attributeDefs": [
-                {"name": "level", "typeName": "string", "isOptional": True, "defaultValue": "1"}
+                {
+                    "name": "level",
+                    "typeName": "string",
+                    "isOptional": True,
+                    "defaultValue": "1"
+                }
             ]
         },
         {

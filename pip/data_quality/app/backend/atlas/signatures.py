@@ -18,20 +18,20 @@ logger.setLevel(logging.DEBUG)
 # 1) SIGNATURE BIG DATA 
 # ----------------------------------------------
 def calculate_dataset_signature(df, dataset_name: str, sample_size=200):
-    print(f"🔧 DEBUT: calculate_dataset_signature pour '{dataset_name}'")
-    print(f"   - Nombre de colonnes: {len(df.columns)}")
-    print(f"   - Colonnes: {df.columns}")
+    # print(f"🔧 DEBUT: calculate_dataset_signature pour '{dataset_name}'")
+    # print(f"   - Nombre de colonnes: {len(df.columns)}")
+    # print(f"   - Colonnes: {df.columns}")
     
     # Sample Spark (max sample_size lignes)
     sample_df = df.orderBy(F.rand()).limit(sample_size)
-    print(f"   - Échantillonnage: {sample_size} lignes aléatoires")
+    # print(f"   - Échantillonnage: {sample_size} lignes aléatoires")
 
     # Collecte des samples pour hash
     sample_data = {
         col: [str(row[col]) for row in sample_df.select(col).limit(20).collect() if row[col] is not None]
         for col in df.columns
     }
-    print(f"   - Échantillons collectés pour {len(sample_data)} colonnes")
+    # print(f"   - Échantillons collectés pour {len(sample_data)} colonnes")
 
     # Stats Spark groupées
     agg_exprs = []
@@ -46,9 +46,9 @@ def calculate_dataset_signature(df, dataset_name: str, sample_size=200):
             ]
         agg_exprs.append(F.approx_count_distinct(c).alias(f"{c}_ndist"))
 
-    print(f"   - Calcul des statistiques avec {len(agg_exprs)} expressions d'agrégation")
+    # print(f"   - Calcul des statistiques avec {len(agg_exprs)} expressions d'agrégation")
     stats_row = df.agg(*agg_exprs).collect()[0]
-    print("   - Statistiques calculées avec succès")
+    # print("   - Statistiques calculées avec succès")
 
     # Construire signature
     signature = {
@@ -90,9 +90,9 @@ def calculate_dataset_signature(df, dataset_name: str, sample_size=200):
     signature["structure_hash"] = hashlib.sha256(str(sorted(struct)).encode()).hexdigest()
     signature["rows_count"] = df.count()
 
-    print(f"✅ FIN: calculate_dataset_signature - Structure hash: {signature['structure_hash'][:16]}...")
-    print(f"   - Base name: {signature['name_base']}")
-    print(f"   - Nombre de colonnes dans signature: {len(signature['columns'])}")
+    # print(f"✅ FIN: calculate_dataset_signature - Structure hash: {signature['structure_hash'][:16]}...")
+    # print(f"   - Base name: {signature['name_base']}")
+    # print(f"   - Nombre de colonnes dans signature: {len(signature['columns'])}")
     
     return signature
 
@@ -100,9 +100,9 @@ def calculate_dataset_signature(df, dataset_name: str, sample_size=200):
 # 2) MATCH FLEXIBLE ENTRE COLONNES
 # ---------------------------------------------------
 def match_columns(sig_current, sig_old):
-    print(f"🔧 DEBUT: match_columns")
-    print(f"   - Colonnes actuelles: {list(sig_current['columns'].keys())}")
-    print(f"   - Colonnes anciennes: {list(sig_old['columns'].keys())}")
+    # print(f"🔧 DEBUT: match_columns")
+    # print(f"   - Colonnes actuelles: {list(sig_current['columns'].keys())}")
+    # print(f"   - Colonnes anciennes: {list(sig_old['columns'].keys())}")
     
     matches = {}
     used = set()
@@ -138,8 +138,8 @@ def match_columns(sig_current, sig_old):
                 std_sim = sim(sc["std"], so["std"])
                 score += 0.1 * mean_sim
                 score += 0.1 * std_sim
-                print(f"       📊 Similarité moyenne: {mean_sim:.3f} (+{0.1 * mean_sim:.3f})")
-                print(f"       📊 Similarité écart-type: {std_sim:.3f} (+{0.1 * std_sim:.3f})")
+                # print(f"       📊 Similarité moyenne: {mean_sim:.3f} (+{0.1 * mean_sim:.3f})")
+                # print(f"       📊 Similarité écart-type: {std_sim:.3f} (+{0.1 * std_sim:.3f})")
 
             # Score échantillons
             sample_match = sc["sample_hash"] == so["sample_hash"]
@@ -163,16 +163,16 @@ def match_columns(sig_current, sig_old):
         else:
             print(f"   ❌ AUCUN MATCH pour '{col_c}' (meilleur score: {best_score:.3f})")
 
-    print(f"✅ FIN: match_columns - {len(matches)} matches trouvés: {matches}")
-    return matches
+    # print(f"✅ FIN: match_columns - {len(matches)} matches trouvés: {matches}")
+    # return matches
 
 # ---------------------------------------------------
 # 3) SCORE GLOBAL
 # ---------------------------------------------------
 def compute_similarity_score(sig_current, sig_old, verbose=True):
-    print(f"\n🔧 DEBUT: compute_similarity_score")
-    print(f"   - Dataset courant: {sig_current['name_base']}")
-    print(f"   - Dataset ancien: {sig_old['name_base']}")
+    # print(f"\n🔧 DEBUT: compute_similarity_score")
+    # print(f"   - Dataset courant: {sig_current['name_base']}")
+    # print(f"   - Dataset ancien: {sig_old['name_base']}")
     
     # Calcul Jaccard
     cols_new = set(sig_current["columns"].keys())
@@ -184,26 +184,26 @@ def compute_similarity_score(sig_current, sig_old, verbose=True):
     common = cols_new & cols_old
     type_matches = sum(1 for c in common if sig_current["columns"][c]["dtype"] == sig_old["columns"][c]["dtype"])
     type_score = type_matches / max(len(common), 1)
-    print(f"   📊 Type score: {type_score:.3f} ({type_matches}/{len(common)} types correspondants)")
+    # print(f"   📊 Type score: {type_score:.3f} ({type_matches}/{len(common)} types correspondants)")
 
     # Score structure
     structure_score = 0.60 * (0.7 * jaccard + 0.3 * type_score)
-    print(f"   📊 Structure score: {structure_score:.3f} (0.60 * (0.7*{jaccard:.3f} + 0.3*{type_score:.3f}))")
+    # print(f"   📊 Structure score: {structure_score:.3f} (0.60 * (0.7*{jaccard:.3f} + 0.3*{type_score:.3f}))")
 
     # Score nom
     name_similarity = fuzz.partial_ratio(sig_current["name_base"], sig_old["name_base"]) / 100.0
     name_score = 0.30 * name_similarity
-    print(f"   📊 Name similarity: {name_similarity:.3f} -> Name score: {name_score:.3f}")
+    # print(f"   📊 Name similarity: {name_similarity:.3f} -> Name score: {name_score:.3f}")
 
     # Score données (échantillons)
     sample_matches = sum(1 for c in common if sig_current["columns"][c]["sample_hash"] == sig_old["columns"][c]["sample_hash"])
     data_ratio = sample_matches / max(len(common), 1)
     data_score = data_ratio * 0.10
-    print(f"   📊 Data score: {data_score:.3f} ({sample_matches}/{len(common)} hash d'échantillons identiques)")
+    # print(f"   📊 Data score: {data_score:.3f} ({sample_matches}/{len(common)} hash d'échantillons identiques)")
 
     # Score final
     final = structure_score + name_score + data_score
-    print(f"   🎯 SCORE FINAL: {final:.3f} = {structure_score:.3f} + {name_score:.3f} + {data_score:.3f}")
+    # print(f"   🎯 SCORE FINAL: {final:.3f} = {structure_score:.3f} + {name_score:.3f} + {data_score:.3f}")
     
     return final
 
@@ -211,18 +211,18 @@ def find_smart_parent(df_current, dataset_name: str):
     """
     Recherche intelligente du parent d'un dataset via signature Big Data.
     """
-    print(f"\n🎯 DEBUT: find_smart_parent pour '{dataset_name}'")
-    print("=" * 60)
+    # print(f"\n🎯 DEBUT: find_smart_parent pour '{dataset_name}'")
+    # print("=" * 60)
     
     try:
         # --- 1) Récupérer tous les datasets existants (résumé uniquement)
-        print("📥 Étape 1: Récupération des datasets existants...")
+        # print("📥 Étape 1: Récupération des datasets existants...")
         res = atlas_get(f"{ATLAS_SEARCH_URL}?typeName=DataSet&query=*")
         entities = res.json().get("entities", [])
-        print(f"   ✅ {len(entities)} datasets existants récupérés")
+        # print(f"   ✅ {len(entities)} datasets existants récupérés")
 
         # --- 2) Calculer la signature du dataset courant
-        print(f"\n📊 Étape 2: Calcul de la signature du dataset courant...")
+        # print(f"\n📊 Étape 2: Calcul de la signature du dataset courant...")
         sig_current = calculate_dataset_signature(df_current, dataset_name)
 
         best_score = 0
@@ -230,7 +230,7 @@ def find_smart_parent(df_current, dataset_name: str):
         all_scores = []
 
         # --- 3) Récupérer la version COMPLÈTE de chaque entité
-        print(f"\n📥 Étape 3: Récupération des signatures complètes...")
+        # print(f"\n📥 Étape 3: Récupération des signatures complètes...")
         full_entities = []
         for i, e in enumerate(entities):
             guid = e.get("guid")
@@ -245,11 +245,11 @@ def find_smart_parent(df_current, dataset_name: str):
             else:
                 full_entities.append(full)
                 
-        print(f"   ✅ {len(full_entities)} entités complètes récupérées")
+        # print(f"   ✅ {len(full_entities)} entités complètes récupérées")
 
         # --- 4) Comparer chaque dataset existant
-        print(f"\n🔍 Étape 4: Comparaison avec les datasets existants...")
-        print("-" * 50)
+        # print(f"\n🔍 Étape 4: Comparaison avec les datasets existants...")
+        # print("-" * 50)
         
         for i, ds in enumerate(full_entities):
             # Exclure si supprimé
@@ -272,8 +272,8 @@ def find_smart_parent(df_current, dataset_name: str):
                 print(f"   ⚠️  Pas de signature pour {ds_name}")
                 continue
 
-            print(f"\n   Comparaison {i+1}/{len(full_entities)}: '{dataset_name}' vs '{ds_name}'")
-            print(f"   {'-' * 40}")
+            # print(f"\n   Comparaison {i+1}/{len(full_entities)}: '{dataset_name}' vs '{ds_name}'")
+            # print(f"   {'-' * 40}")
 
             # Calcul du score
             score = compute_similarity_score(sig_current, sig_old)
@@ -281,9 +281,9 @@ def find_smart_parent(df_current, dataset_name: str):
 
             # Vérifier structure hash
             structure_match = sig_current['structure_hash'] == sig_old.get('structure_hash')
-            print(f"   🔗 Structure hash identique: {structure_match}")
+            # print(f"   🔗 Structure hash identique: {structure_match}")
 
-            print(f"   🎯 SCORE FINAL pour '{ds_name}': {score:.3f}")
+            # print(f"   🎯 SCORE FINAL pour '{ds_name}': {score:.3f}")
 
             # meilleur score
             if score > best_score:
@@ -293,14 +293,14 @@ def find_smart_parent(df_current, dataset_name: str):
             print(f"   {'-' * 40}")
 
         # --- 5) Résultats finaux
-        print(f"\n📊 Étape 5: Analyse des résultats...")
-        print(f"   Nombre de datasets comparés: {len(all_scores)}")
-        print(f"   Scores obtenus:")
+        # print(f"\n📊 Étape 5: Analyse des résultats...")
+        # print(f"   Nombre de datasets comparés: {len(all_scores)}")
+        # print(f"   Scores obtenus:")
         for ds_name, score in sorted(all_scores, key=lambda x: x[1], reverse=True)[:5]:
             print(f"     - {ds_name}: {score:.3f}")
 
-        print(f"\n🎯 RÉSULTAT FINAL:")
-        print(f"   🏆 Meilleur score global: {best_score:.3f}")
+        # print(f"\n🎯 RÉSULTAT FINAL:")
+        # print(f"   🏆 Meilleur score global: {best_score:.3f}")
         
         if best_parent:
             parent_name = best_parent.get("attributes", {}).get("qualifiedName", "Unknown")

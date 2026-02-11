@@ -3,13 +3,7 @@ from sqlalchemy.orm import Session
 from db.connexion_db import get_db
 from jwt_dependencies import get_current_user
 import logging
-
-# IMPORT CORRECT du use case
-try:
-    from db.classifications_use_case import apply_classification_use_case
-except ImportError:
-    # Essayez un autre chemin si nécessaire
-    from services.classifications_service import apply_classification_use_case
+from db.classifications_use_case import apply_classification_use_case
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -37,8 +31,8 @@ def apply_classification(payload: dict, db: Session = Depends(get_db), user=Depe
         "attributes": {}
     }
     """
-    logger.info("📨 Requête de classification reçue")
-    logger.info(f"Payload: {payload}")
+    # logger.info("📨 Requête de classification reçue")
+    # logger.info(f"Payload: {payload}")
     
     # Validation du payload
     required_fields = ["entity_type", "entity_id", "atlas_guid", "classification_name"]
@@ -64,7 +58,7 @@ def apply_classification(payload: dict, db: Session = Depends(get_db), user=Depe
             column_name=payload.get("column_name")  # Nouveau paramètre
         )
         
-        logger.info(f"✅ Classification appliquée avec succès. ID: {result.id}")
+        # logger.info(f"✅ Classification appliquée avec succès. ID: {result.id}")
         return {
             "success": True, 
             "classification_id": str(result.id),

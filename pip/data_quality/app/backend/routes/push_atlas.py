@@ -1,8 +1,9 @@
+# routes/push_atlas.py
+
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 import logging
 import os
-import time
 
 from config import spark
 from db.connexion_db import get_db
@@ -11,7 +12,7 @@ from atlas.client import atlas_post, atlas_put, atlas_get, ATLAS_TYPEDEF_URL, AT
 from atlas.typedefs import typedefs_payload
 from atlas.datasets import create_dataset, link_versioning
 from atlas.columns import create_columns
-from atlas.signatures import find_smart_parent, calculate_dataset_signature, persist_signature_to_db
+from atlas.signatures import calculate_dataset_signature, persist_signature_to_db, find_smart_parent
 from atlas.processes import create_import_process
 from atlas.versioning import find_latest_version
 from jwt_dependencies import get_current_user
@@ -38,7 +39,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         # 2️⃣ Lire le PARQUET
         df = spark.read.parquet(file_path)
 
-        # 3️⃣ Déployer typedefs Atlas (ignorer 409)
+        # 3️⃣ Déployer typedefs Atlas (inchangé)
         for idx, entityDef in enumerate(typedefs_payload["entityDefs"]):
             try:
                 if idx == 0:
@@ -58,11 +59,9 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
                 if "409" not in str(e):
                     raise
 
-        # Déployer classifications
         for class_def in typedefs_payload["classificationDefs"]:
             try:
                 atlas_post(ATLAS_TYPEDEF_URL, {"classificationDefs": [class_def]})
-                logger.info(f"✅ Classification créée: {class_def['name']}")
             except Exception as e:
                 if "409" in str(e):
                     logger.info(f"Classification déjà existante: {class_def['name']}")
@@ -76,7 +75,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         # 5️⃣ Parent intelligent pour versioning
         parent_guid = None
         parent_qn = None
-        base_url = ATLAS_SEARCH_URL.split("/search")[0]  # -> http://localhost:21000/api/atlas/v2
+        base_url = ATLAS_SEARCH_URL.split("/search")[0]
 
         if dataset.atlas_guid:
             parent_guid = find_latest_version(dataset.atlas_guid)
@@ -99,7 +98,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         dataset.atlas_guid = dataset_guid
         db.commit()
 
-        # 7️⃣ Créer Process seulement si version précédente
+        # 7️⃣ Créer Process et versioning si parent existe
         process_guid = None
         if parent_guid and parent_guid != dataset_guid:
             process_guid = create_import_process(
@@ -110,8 +109,39 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             )
             link_versioning(parent_guid, dataset_guid)
 
-        # 8️⃣ Colonnes → toujours créer/récupérer
-        column_guids = create_columns(df, dataset_guid, hash_value)
+        # 8️⃣ 🆕 CRITIQUE : Colonnes avec logique intelligente basée sur le versioning
+        logger.info(f"🎯 Création des colonnes avec matching intelligent...")
+        
+        if parent_guid and parent_guid != dataset_guid:
+            # 🟢 CAS VERSIONNÉ : Dataset a un parent → matching intelligent
+            logger.info(f"🔗 Dataset versionné: parent={parent_guid[:8]}...")
+            logger.info("   Utilisation du matching intelligent pour les logicalColumnId")
+            
+            # IMPORTANT: logical_column_ids=None pour déclencher le matching auto
+            column_guids = create_columns(
+                df=df,
+                dataset_guid=dataset_guid,
+                dataset_qualified_name=original_name,
+                logical_column_ids=None,  # 🆕 None = matching auto
+                parent_dataset_guid=parent_guid  # 🆕 Paramètre crucial !
+            )
+        else:
+            # 🔵 CAS INITIAL : Pas de parent → création standard
+            logger.info(f"🆕 Dataset initial (pas de parent)")
+            logical_column_ids = {col: f"{dataset.id}:{col}" for col in df.columns}
+            column_guids = create_columns(
+                df=df,
+                dataset_guid=dataset_guid,
+                dataset_qualified_name=original_name,
+                logical_column_ids=logical_column_ids,
+                parent_dataset_guid=None  # Pas de matching
+            )
+
+        # Vérification des résultats
+        if not column_guids:
+            logger.warning("⚠️ Aucun GUID de colonne retourné")
+        else:
+            logger.info(f"✅ {len(column_guids)} colonnes créées avec succès")
 
         message = "Ce dataset existe déjà dans Atlas." if dataset_existed else "Dataset ajouté à Atlas avec succès !"
 
@@ -124,6 +154,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         }
 
     except Exception as e:
+        logger.error(f"❌ Erreur dans push_atlas: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:

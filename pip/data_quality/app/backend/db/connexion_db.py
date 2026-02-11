@@ -21,6 +21,4 @@ def get_db():
         db.close()
 
 
-
-
 print("📌 [DB] Connexion initialisée.")
