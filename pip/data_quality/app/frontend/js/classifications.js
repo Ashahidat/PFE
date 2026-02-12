@@ -1,5 +1,5 @@
 /* ============================
-   classifications.js - VERSION COMPLÈTE AVEC DEBUG
+   classifications.js - SIMPLIFIÉ
    ============================ */
 
 const API_URL = window.API_URL || "http://localhost:8000";
@@ -7,21 +7,17 @@ const API_URL = window.API_URL || "http://localhost:8000";
 console.log("✅ classifications.js chargé - API_URL:", API_URL);
 
 /* ----------------------------
-   Définition des attributs
+   Définition des attributs - AUCUN ATTRIBUT
 ----------------------------- */
 const CLASSIFICATION_ATTRIBUTES = {
-  PUBLIC: [],
-  INTERNAL: [],
-  CONFIDENTIAL: ["level"],
-  RESTRICTED: ["reason"]
+  PUBLIC: [],      // No attributes
+  RESTRICTED: []   // NO mandatory department attribute - just the name indicates restriction
 };
 
-// Classifications pour colonnes
+// Classifications pour colonnes - SIMPLIFIÉES
 const COLUMN_CLASSIFICATIONS = {
-  PII_DIRECT: { label: "PII Direct (email, téléphone, nom)", attributes: [] },
-  PII_QUASI: { label: "PII Quasi (âge, code postal)", attributes: [] },
-  SENSITIVE: { label: "Sensible (médicale, financière)", attributes: [] },
-  ENCRYPTED: { label: "Chiffrée", attributes: [] }
+  PII: { label: "PII (email, téléphone, nom, etc.)", attributes: [] },
+  SENSITIVE: { label: "Sensible (médicale, financière)", attributes: [] }
 };
 
 /* ----------------------------
@@ -33,10 +29,10 @@ async function applyColumnClassification(columnName, classification, datasetId, 
   const payload = {
     entity_type: "COLUMN",
     entity_id: datasetId,
-    atlas_guid: atlasGuid,  // GUID de la COLONNE
+    atlas_guid: atlasGuid,
     classification_name: classification,
     column_name: columnName,
-    attributes: {}
+    attributes: {}  // No attributes for PII/SENSITIVE
   };
   
   console.log("📤 Application classification colonne:", payload);
@@ -90,12 +86,10 @@ async function getAllowedClassifications(datasetId) {
 }
 
 /* ----------------------------
-   UI dynamique - Version corrigée
+   UI dynamique
 ----------------------------- */
 document.addEventListener("DOMContentLoaded", () => {
   console.log("✅ DOM Content Loaded - classifications.js");
-  
-  // Initialisation de l'UI dataset
   initDatasetUI();
 });
 
@@ -109,19 +103,14 @@ function initDatasetUI() {
     return;
   }
 
+  // Définir RESTRICTED comme valeur par défaut
+  select.value = "RESTRICTED";
+  
+  // NO ATTRIBUTES - container remains empty
+  container.innerHTML = "";  // Empty - no mandatory department field
+
   select.onchange = () => {
-    container.innerHTML = "";
-    const attrs = CLASSIFICATION_ATTRIBUTES[select.value] || [];
-    
-    attrs.forEach(attr => {
-      const input = document.createElement("input");
-      input.placeholder = attr;
-      input.dataset.attr = attr;
-      input.style.display = "block";
-      input.style.marginBottom = "6px";
-      input.className = "attr-input";
-      container.appendChild(input);
-    });
+    container.innerHTML = "";  // Always empty - no attributes for either classification
   };
 
   applyBtn.onclick = async () => {
@@ -130,12 +119,6 @@ function initDatasetUI() {
     const token = localStorage.getItem("access_token");
     const datasetId = localStorage.getItem("last_uploaded_dataset_id");
     const atlasGuid = localStorage.getItem("last_atlas_guid");
-
-    // DEBUG: Vérifier ce qui est stocké
-    console.log("🔍 DEBUG - localStorage:");
-    console.log("  - datasetId:", datasetId);
-    console.log("  - atlasGuid:", atlasGuid);
-    console.log("  - columnGuids:", JSON.parse(localStorage.getItem("last_column_guids") || "{}"));
 
     if (!token) {
       alert("❌ Token manquant. Veuillez vous reconnecter.");
@@ -158,20 +141,15 @@ function initDatasetUI() {
       return;
     }
 
-    // Collecter les attributs
+    // NO ATTRIBUTES - always empty object
     const attributes = {};
-    container.querySelectorAll(".attr-input").forEach(i => {
-      if (i.value.trim()) {
-        attributes[i.dataset.attr] = i.value.trim();
-      }
-    });
     
     const payload = {
       entity_type: "DATASET",
       entity_id: datasetId,
       atlas_guid: atlasGuid,
       classification_name: classification,
-      attributes: Object.keys(attributes).length ? attributes : {}
+      attributes: attributes  // Always empty
     };
     
     console.log("📤 Payload dataset à envoyer:", payload);
@@ -197,7 +175,7 @@ function initDatasetUI() {
       try {
         const data = JSON.parse(text);
         console.log("✅ Classification appliquée:", data);
-        alert("✅ Classification du dataset appliquée avec succès!");
+        alert(`✅ Classification ${classification} du dataset appliquée avec succès!`);
         
         // APRÈS classification dataset, afficher les colonnes
         console.log("🔄 Appel de initColumnUI pour dataset:", datasetId);
@@ -214,7 +192,7 @@ function initDatasetUI() {
 }
 
 /* ----------------------------
-   UI COLONNES (NOUVEAU AVEC DEBUG)
+   UI COLONNES - SIMPLIFIÉE
 ----------------------------- */
 async function initColumnUI(datasetId) {
   console.log("🔄 DEBUT initColumnUI pour dataset:", datasetId);
@@ -246,15 +224,7 @@ async function initColumnUI(datasetId) {
     
     // 2. Récupérer GUIDs depuis localStorage
     const columnGuidsRaw = localStorage.getItem("last_column_guids");
-    console.log("🔍 Raw columnGuids from localStorage:", columnGuidsRaw);
-    
     const columnGuids = JSON.parse(columnGuidsRaw || "{}");
-    console.log("📊 GUIDs colonnes parsés:", columnGuids);
-    
-    // Vérifier chaque colonne
-    columnNames.forEach(colName => {
-      console.log(`  - ${colName}:`, columnGuids[colName] || "❌ PAS DE GUID");
-    });
     
     // 3. Récupérer classifications autorisées
     const allowedData = await getAllowedClassifications(datasetId);
@@ -262,17 +232,9 @@ async function initColumnUI(datasetId) {
     
     // 4. Afficher la section
     columnSection.style.display = "block";
-    console.log("✅ Section colonnes affichée");
     
-    // 5. Si dataset est PUBLIC, afficher message
-    if (allowedData.dataset_classification === "PUBLIC") {
-      columnsListDiv.innerHTML = `
-        <div style="background: #fff3cd; padding: 10px; border-radius: 5px; border: 1px solid #ffeaa7; margin: 10px 0;">
-          ⚠️ Ce dataset est <strong>PUBLIC</strong> - Aucune colonne ne peut être classifiée
-        </div>
-      `;
-      return;
-    }
+    // 5. BOTH PUBLIC AND RESTRICTED can have classified columns
+    // No special message for PUBLIC - they can also classify columns
     
     // 6. Afficher les colonnes
     columnsListDiv.innerHTML = "";
@@ -285,11 +247,6 @@ async function initColumnUI(datasetId) {
     // Créer l'interface pour chaque colonne
     columnNames.forEach((colName, index) => {
       const colGuid = columnGuids[colName] || "";
-      console.log(`📝 Création UI pour ${colName}:`, colGuid ? "✅ Avec GUID" : "❌ Sans GUID");
-      
-      const colGuidDisplay = colGuid ? 
-        `<small style="color: #666; font-family: monospace; display: block; margin-top: 2px;">${colGuid.substring(0, 12)}...</small>` : 
-        `<small style="color: #ff9800;">⚠️ Pas de GUID (re-poussez vers Atlas)</small>`;
       
       const colDiv = document.createElement("div");
       colDiv.className = "column-item";
@@ -304,7 +261,6 @@ async function initColumnUI(datasetId) {
       colDiv.innerHTML = `
         <div style="margin-bottom: 8px;">
           <strong>${index + 1}. ${colName}</strong>
-          ${colGuidDisplay}
         </div>
         
         <div style="display: flex; align-items: center; gap: 10px;">
@@ -313,10 +269,8 @@ async function initColumnUI(datasetId) {
                   data-column="${colName}" 
                   data-guid="${colGuid}">
             <option value="">-- Pas de classification --</option>
-            ${allowedData.allowed.map(cls => {
-              const clsInfo = COLUMN_CLASSIFICATIONS[cls] || { label: cls };
-              return `<option value="${cls}">${clsInfo.label}</option>`;
-            }).join('')}
+            <option value="PII">PII (email, téléphone, nom, etc.)</option>
+            <option value="SENSITIVE">Sensible (médicale, financière)</option>
           </select>
           
           <button class="apply-col-btn" 
@@ -329,7 +283,6 @@ async function initColumnUI(datasetId) {
         </div>
         
         <div style="margin-top: 8px; font-size: 12px; display: none;" class="col-status" id="status-${colName.replace(/\s+/g, '-')}">
-          <!-- Message de statut -->
         </div>
       `;
       
@@ -345,8 +298,7 @@ async function initColumnUI(datasetId) {
     columnsListDiv.innerHTML = `
       <div style="background: #f8d7da; color: #721c24; padding: 10px; border-radius: 5px;">
         <strong>❌ Erreur lors du chargement des colonnes</strong><br>
-        ${error.message}<br>
-        <small>Vérifiez la console pour plus de détails</small>
+        ${error.message}
       </div>
     `;
   }
@@ -363,8 +315,6 @@ function setupColumnEvents(datasetId) {
       const select = this.parentElement.querySelector(".column-class-select");
       const classification = select.value;
       const statusDiv = document.getElementById(`status-${columnName.replace(/\s+/g, '-')}`);
-      
-      console.log(`🖱️ Clic sur Appliquer pour ${columnName}:`, { classification, columnGuid });
       
       if (!classification) {
         alert(`❌ Veuillez sélectionner une classification pour "${columnName}"`);
@@ -398,8 +348,6 @@ function setupColumnEvents(datasetId) {
           statusDiv.style.color = "#28a745";
         }
         
-        console.log(`✅ Succès colonne "${columnName}":`, result);
-        
       } catch (error) {
         this.innerHTML = "❌ Erreur";
         this.style.background = "#dc3545";
@@ -409,9 +357,6 @@ function setupColumnEvents(datasetId) {
           statusDiv.style.color = "#dc3545";
         }
         
-        console.error(`❌ Erreur colonne "${columnName}":`, error);
-        
-        // Réactiver après 3 secondes
         setTimeout(() => {
           this.innerHTML = "Appliquer";
           this.style.background = "#4CAF50";
@@ -420,9 +365,4 @@ function setupColumnEvents(datasetId) {
       }
     });
   });
-}
-
-// Fonction pour mettre à jour l'UI colonnes
-async function updateColumnClassificationsUI(datasetId) {
-  await initColumnUI(datasetId);
 }

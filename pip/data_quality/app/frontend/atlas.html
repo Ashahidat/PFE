@@ -16,22 +16,34 @@
     <!-- Section classification (cachée au début) -->
     <div id="classificationSection" style="display:none; margin-top:20px;">
       <h3>Classification du dataset</h3>
+      <p style="color: #666; font-size: 14px;">
+        <strong>RESTRICTED</strong> (par défaut) - Accès limité au département<br>
+        <strong>PUBLIC</strong> (exception) - Accès public sans restriction
+      </p>
+      <p style="color: #666; font-size: 13px; font-style: italic;">
+        Les deux types de datasets peuvent avoir des colonnes PII ou SENSITIVE
+      </p>
 
       <select id="classificationSelect">
-        <option value="">-- Choisir --</option>
-        <option value="PUBLIC">PUBLIC</option>
-        <option value="INTERNAL">INTERNAL</option>
-        <option value="CONFIDENTIAL">CONFIDENTIAL</option>
-        <option value="RESTRICTED">RESTRICTED</option>
+        <option value="RESTRICTED" selected>RESTRICTED (par défaut)</option>
+        <option value="PUBLIC">PUBLIC (exception)</option>
       </select>
 
+      <!-- No attributes container - no mandatory fields -->
       <div id="attributesContainer" style="margin-top:10px"></div>
-      <button id="applyClassificationBtn">Appliquer classification</button>
+      
+      <button id="applyClassificationBtn" style="margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+        Appliquer classification
+      </button>
     </div>
 
     <!-- Section classification par colonne -->
     <div id="columnClassificationSection" style="display:none; margin-top:30px;">
       <h3>Classification par colonne</h3>
+      <p style="color: #666; font-size: 14px;">
+        <strong>PII</strong> - Données personnelles identifiables (email, téléphone, nom, etc.)<br>
+        <strong>SENSITIVE</strong> - Données sensibles (médicales, financières)
+      </p>
       <div id="columnsList"></div>
     </div>
   </div>

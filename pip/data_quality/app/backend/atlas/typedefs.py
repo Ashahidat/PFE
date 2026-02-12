@@ -22,7 +22,6 @@ typedefs_payload = {
                 }
             ]
         },
-
     ],
 
     "relationshipDefs": [
@@ -60,31 +59,32 @@ typedefs_payload = {
                 "cardinality": "SINGLE"
             }
         },
-        
     ],
 
     "classificationDefs": [
-        {"name": "PUBLIC", "description": "Accès public sans restriction", "superTypes": []},
-        {"name": "INTERNAL", "description": "Usage interne à l'organisation", "superTypes": []},
-        {
-            "name": "CONFIDENTIAL",
-            "description": "Données confidentielles, accès restreint",
-            "superTypes": [],
-            "attributeDefs": [
-                {"name": "level", "typeName": "string", "isOptional": True, "defaultValue": "1"}
-            ]
-        },
+        # Dataset classifications - ONLY TWO
         {
             "name": "RESTRICTED",
-            "description": "Données hautement sensibles, accès très contrôlé",
-            "superTypes": [],
-            "attributeDefs": [
-                {"name": "reason", "typeName": "string", "isOptional": True}
-            ]
+            "description": "Accès restreint au département uniquement (par défaut)",
+            "superTypes": []
+            # NO ATTRIBUTES - just the name indicates department-only
         },
-        {"name": "PII_DIRECT", "description": "Identifiants directs", "superTypes": []},
-        {"name": "PII_QUASI", "description": "Quasi-identifiants", "superTypes": []},
-        {"name": "SENSITIVE", "description": "Données sensibles", "superTypes": []},
-        {"name": "ENCRYPTED", "description": "Données chiffrées", "superTypes": []}
+        {
+            "name": "PUBLIC",
+            "description": "Accès public sans restriction (exception)",
+            "superTypes": []
+        },
+        
+        # Column classifications - PII/SENSITIVE only
+        {
+            "name": "PII",
+            "description": "Personally Identifiable Information",
+            "superTypes": []
+        },
+        {
+            "name": "SENSITIVE",
+            "description": "Données sensibles (médicales, financières, etc.)",
+            "superTypes": []
+        }
     ]
 }
