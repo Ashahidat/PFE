@@ -11,8 +11,8 @@ from atlas.classifications_validations import (
 )
 import logging
 from sqlalchemy.exc import IntegrityError
-from atlas.client import atlas_get, ATLAS_SEARCH_URL  # 🆕 IMPORT AJOUTÉ
-from db.datasets import Dataset  # 🆕 IMPORT AJOUTÉ
+from atlas.client import atlas_get, ATLAS_SEARCH_URL
+from db.datasets import Dataset
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ def apply_classification_use_case(
     attributes,
     user,
     column_name: str = None,
-    dataset_id: str = None  # 🆕 utilisé pour logical_column_id
+    dataset_id: str = None  # utilisé pour logical_column_id
 ):
     logger.info(f"🚀 Début use_case - {entity_type}:{entity_id} -> {classification_name}")
 
@@ -110,14 +110,14 @@ def apply_classification_use_case(
                     # Fallback: utiliser juste le nom de colonne
                     logical_column_id = column_name.lower().strip()
                 
-                # 🆕 Appeler avec dataset_guid en plus
+                # 🆕 Appeler avec dataset_guid en plus (NECESSAIRE POUR LE VERSIONING)
                 history_guid = create_col_classifications_history_in_atlas(
                     column_guid=atlas_guid,
                     classification_name=classification_name,
                     user_id=employee_id,
                     status="ACTIVE",
                     logical_column_id=logical_column_id,
-                    dataset_guid=dataset_atlas_guid  # 🆕 Nouveau paramètre
+                    dataset_guid=dataset_atlas_guid  # 🆕 Nouveau paramètre CRITIQUE
                 )
                 
                 if history_guid:

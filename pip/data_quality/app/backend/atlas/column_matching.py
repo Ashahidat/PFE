@@ -20,7 +20,9 @@ class ColumnMatcher:
     def propagate_logical_column_id(self, temp_column_entity: Dict, parent_dataset_guid: str) -> Optional[str]:
         """
         Si une colonne correspondante est trouvée dans le parent,
-        propage son logicalColumnId à la colonne actuelle
+        propage son logicalColumnId à la colonne actuelle.
+        
+        À utiliser quand une colonne n'a pas été trouvée dans le mapping manuel.
         """
         try:
             # Récupérer le nom et type de la colonne actuelle
@@ -39,12 +41,11 @@ class ColumnMatcher:
                 logger.info(f"ℹ️ Aucune colonne trouvée dans le dataset parent")
                 return None
             
-            logger.info(f"🔍 Matching pour '{col_name}' parmi {len(parent_columns)} colonnes parent...")
+            logger.info(f"🔍 Matching intelligent pour '{col_name}' parmi {len(parent_columns)} colonnes parent...")
             
             # Calculer les scores pour chaque colonne parent
-            best_match = None
-            best_score = 0
             best_logical_id = None
+            best_score = 0
             best_match_details = {}
             
             for col in parent_columns:
@@ -102,7 +103,6 @@ class ColumnMatcher:
         """Récupère toutes les colonnes d'un dataset"""
         try:
             # Chercher directement les colonnes associées au dataset
-            # Cette requête est plus efficace que de tout charger
             search_query = f'__typeName:"Column" AND dataset.guid:"{dataset_guid}"'
             res = atlas_get(f"{ATLAS_SEARCH_URL}?typeName=Column&query={search_query}")
             dataset_columns = res.json().get("entities", [])
