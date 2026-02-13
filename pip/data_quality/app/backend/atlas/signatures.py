@@ -101,14 +101,37 @@ def compute_similarity_score(sig_current, sig_old):
 
 def ensure_parent_columns(parent_guid, parent_name, parent_qualified_name):
     """
-    Crée les colonnes du parent ET retourne (entities, column_mapping avec VRAIS GUIDs)
+    Crée les colonnes du parent SEULEMENT SI ELLES N'EXISTENT PAS
+    ET retourne (entities, column_mapping avec VRAIS GUIDs)
     """
     from db.connexion_db import get_db
     from db.datasets import Dataset
+    from atlas.column_matching import ColumnMatcher
     
-    logger.info(f"🔧 CRÉATION IMMÉDIATE des colonnes pour parent {parent_name}")
+    logger.info(f"🔧 VÉRIFICATION des colonnes pour parent {parent_name}")
     logger.info(f"   GUID: {parent_guid}")
-    logger.info(f"   QualifiedName: {parent_qualified_name}")
+    
+    # 🔥 ÉTAPE 1: Vérifier si les colonnes existent déjà dans Atlas
+    matcher = ColumnMatcher()
+    existing_columns = matcher._get_dataset_columns(parent_guid)
+    
+    if existing_columns:
+        logger.info(f"✅ Les colonnes existent déjà pour {parent_name} ({len(existing_columns)} trouvées)")
+        
+        # Construire le mapping à partir des colonnes existantes
+        column_mapping = {}
+        for col in existing_columns:
+            attrs = col.get("attributes", {})
+            col_name = attrs.get("name")
+            col_guid = col.get("guid")
+            if col_name and col_guid:
+                column_mapping[col_name] = col_guid
+                logger.info(f"   - {col_name}: {col_guid} (logicalId: {attrs.get('logicalColumnId', 'N/A')})")
+        
+        return existing_columns, column_mapping
+    
+    # Si on arrive ici, les colonnes n'existent pas - on les crée
+    logger.warning(f"⚠️ Colonnes non trouvées pour {parent_name}, création...")
     
     # Chercher le parent dans la DB
     db = next(get_db())
@@ -117,14 +140,10 @@ def ensure_parent_columns(parent_guid, parent_name, parent_qualified_name):
     # Par atlas_guid
     if parent_guid:
         parent_dataset = db.query(Dataset).filter(Dataset.atlas_guid == parent_guid).first()
-        if parent_dataset:
-            logger.info(f"✅ Parent trouvé par atlas_guid: {parent_dataset.name}")
     
     # Par nom
     if not parent_dataset and parent_name:
         parent_dataset = db.query(Dataset).filter(Dataset.name == parent_name).first()
-        if parent_dataset:
-            logger.info(f"✅ Parent trouvé par nom: {parent_dataset.name}")
     
     if not parent_dataset:
         logger.error(f"❌ Parent {parent_name} non trouvé dans DB")
@@ -140,7 +159,7 @@ def ensure_parent_columns(parent_guid, parent_name, parent_qualified_name):
         parent_df = spark.read.parquet(parent_dataset.file_path)
         logger.info(f"📊 {len(parent_df.columns)} colonnes dans le fichier parent")
         
-        # Créer les colonnes du parent
+        # 🔥 CRÉER LES COLONNES DU PARENT
         logger.info(f"📝 Création de {len(parent_df.columns)} colonnes pour parent...")
         column_mapping, parent_entities = create_columns(
             parent_df,
@@ -154,20 +173,13 @@ def ensure_parent_columns(parent_guid, parent_name, parent_qualified_name):
         logger.info(f"✅ {len(column_mapping)} colonnes créées pour parent")
         logger.info(f"📋 Mapping colonnes parent: {column_mapping}")
         
-        # 🔥 PAUSE OBLIGATOIRE - Atlas a besoin de temps pour indexer
+        # 🔥 PAUSE POUR INDEXATION
         logger.info(f"⏳ Pause de 3 secondes pour indexation Atlas...")
         time.sleep(3)
         
         # Vérifier que les colonnes sont visibles
-        matcher = ColumnMatcher()
         verification = matcher._get_dataset_columns(parent_guid)
         logger.info(f"🔍 Vérification: {len(verification)} colonnes maintenant visibles dans Atlas")
-        
-        if len(verification) == 0:
-            logger.warning(f"⚠️ Aucune colonne visible après 3 secondes, tentative de pause supplémentaire...")
-            time.sleep(2)
-            verification = matcher._get_dataset_columns(parent_guid)
-            logger.info(f"🔍 Vérification après 5 secondes: {len(verification)} colonnes visibles")
         
         return parent_entities, column_mapping
         
@@ -179,7 +191,7 @@ def ensure_parent_columns(parent_guid, parent_name, parent_qualified_name):
 
 def find_smart_parent(df_current, dataset_name: str, dataset_id: str = None, db: Session = None):
     """
-    Recherche le parent ET crée ses colonnes immédiatement
+    Recherche le parent ET récupère ses colonnes (les crée si nécessaire)
     Retourne (parent_guid, parent_qn, parent_columns, parent_column_mapping)
     """
     print(f"\n{'='*60}")
@@ -243,26 +255,31 @@ def find_smart_parent(df_current, dataset_name: str, dataset_id: str = None, db:
                 best_parent_guid = ds_guid
                 best_parent_qn = ds_qn
         
-        # Si parent trouvé avec bon score
+        # ✅ Si parent trouvé avec bon score
         if best_parent and best_score >= 0.60:
             parent_name = best_parent.get("attributes", {}).get("name", "Unknown")
             print(f"\n🏆 PARENT TROUVÉ: {parent_name} (score: {best_score:.3f})")
             print(f"   GUID: {best_parent_guid}")
             print(f"   QualifiedName: {best_parent_qn}")
             
-            # 🔥 CRÉATION IMMÉDIATE DES COLONNES DU PARENT
-            parent_columns, parent_column_mapping = ensure_parent_columns(best_parent_guid, parent_name, best_parent_qn)
+            # 🔥 ensure_parent_columns vérifie d'abord si les colonnes existent
+            parent_columns, parent_column_mapping = ensure_parent_columns(
+                best_parent_guid,
+                parent_name,
+                best_parent_qn
+            )
             
             if parent_columns:
-                print(f"✅ {len(parent_columns)} colonnes parent créées et prêtes")
+                print(f"✅ {len(parent_columns)} colonnes parent récupérées")
                 print(f"✅ {len(parent_column_mapping)} mappings colonnes disponibles")
                 print(f"📋 Mappings: {parent_column_mapping}")
             else:
-                print(f"⚠️ Échec création colonnes parent")
+                print(f"⚠️ Échec récupération colonnes parent")
                 parent_columns = []
                 parent_column_mapping = {}
             
             return best_parent_guid, best_parent_qn, parent_columns, parent_column_mapping
+        
         else:
             print(f"\n❌ AUCUN PARENT TROUVÉ")
             return None, None, [], {}
@@ -272,6 +289,7 @@ def find_smart_parent(df_current, dataset_name: str, dataset_id: str = None, db:
         import traceback
         traceback.print_exc()
         return None, None, [], {}
+
 
 def persist_signature_to_db(db: Session, dataset_id: str, signature: dict):
     ds_sig = create_dataset_signature(
