@@ -14,6 +14,8 @@ typedefs_payload = {
             "superTypes": ["Asset"],
             "attributeDefs": [
                 {"name": "type", "typeName": "string", "isOptional": True},
+                {"name": "position", "typeName": "int", "isOptional": True},
+                {"name": "logicalColumnId", "typeName": "string", "isOptional": True},
                 {
                     "name": "dataset",
                     "typeName": "DataSet",
@@ -59,23 +61,37 @@ typedefs_payload = {
                 "cardinality": "SINGLE"
             }
         },
+        # 🔥 RELATION DE VERSIONING ENTRE COLONNES
+        {
+            "name": "column_versioning",
+            "typeVersion": "1.0",
+            "relationshipCategory": "ASSOCIATION",
+            "endDef1": {
+                "type": "Column",
+                "name": "previous_version",
+                "isContainer": False,
+                "cardinality": "SINGLE"
+            },
+            "endDef2": {
+                "type": "Column",
+                "name": "next_version",
+                "isContainer": False,
+                "cardinality": "SINGLE"
+            }
+        }
     ],
 
     "classificationDefs": [
-        # Dataset classifications - ONLY TWO
         {
             "name": "RESTRICTED",
             "description": "Accès restreint au département uniquement (par défaut)",
             "superTypes": []
-            # NO ATTRIBUTES - just the name indicates department-only
         },
         {
             "name": "PUBLIC",
             "description": "Accès public sans restriction (exception)",
             "superTypes": []
         },
-        
-        # Column classifications - PII/SENSITIVE only
         {
             "name": "PII",
             "description": "Personally Identifiable Information",
