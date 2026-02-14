@@ -10,6 +10,10 @@ FILES=(
     "dataset_signatures.sql"
     "column_signatures.sql"
     "classifications_table.sql"
+    "dataset_versions.sql"
+    "column_lineage.sql"
+    "processes.sql"
+    "push_history.sql"
 )
 
 # Copier les fichiers vers /tmp avec l'utilisateur actuel
@@ -29,13 +33,16 @@ sudo -i -u postgres bash <<'EOF'
 DB_NAME="pfe_db"
 DEST_DIR="/tmp"
 
-# Liste des fichiers à exécuter (doit être redéfinie ici)
 FILES=(
     "datasets.sql"
     "dag_runs.sql"
     "dataset_signatures.sql"
     "column_signatures.sql"
     "classifications_table.sql"
+    "dataset_versions.sql"
+    "column_lineage.sql"
+    "processes.sql"
+    "push_history.sql"
 )
 
 # Exécution des fichiers SQL
@@ -55,8 +62,5 @@ EOF
 echo "Mise à jour des tables terminée avec succès."
 
 
-
-
-# pour lancer ce script : bash db_tables/update_tables.sh
 # faut d'abord le rendre exécutable : chmod +x db_tables/update_tables.sh
 # puis l'éxuter : ./db_tables/update_tables.sh

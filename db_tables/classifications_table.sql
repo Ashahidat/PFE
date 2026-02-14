@@ -26,3 +26,9 @@ CREATE TABLE IF NOT EXISTS entity_classifications (
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_classification
 ON entity_classifications (entity_type, entity_id, column_name)
 WHERE is_active = TRUE;
+
+-- Ajouter à entity_classifications existante
+-- ALTER TABLE entity_classifications 
+-- ADD COLUMN IF NOT EXISTS validated_by VARCHAR(50) REFERENCES users(employee_id),
+-- ADD COLUMN IF NOT EXISTS validated_at TIMESTAMP,
+-- ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
