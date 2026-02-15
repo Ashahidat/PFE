@@ -211,34 +211,20 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         )
         logger.info(f"📌 Nouvelle version créée: v{new_version_number}")
 
-        # ----------------------
-        # 7️⃣ Lien versioning + Process Atlas versionné
-        # ----------------------
+        # 7️⃣ Lien versioning datasets avec enregistrement du processus en base
         process_guid = None
         if parent_guid and parent_guid != dataset_guid:
-            logger.info(f"🔗 Gestion du lien versioning datasets et création Process Atlas...")
-
-            # Vérifier si un Process existe déjà
-            try:
-                search_res = atlas_get(f"{base_url}/v2/search/basic", params={
-                    "query": f"Process AND inputs.guid:{parent_guid} AND outputs.guid:{dataset_guid}"
-                })
-                existing_processes = search_res.json().get("entities", [])
-                if existing_processes:
-                    process_guid = existing_processes[0]["guid"]
-                    logger.info(f"ℹ️ Process existant trouvé: {process_guid}")
-                else:
-                    # Créer Process versionné
-                    process_guid = create_import_process(
-                        dataset_inputs=parent_guid,
-                        dataset_output_guid=dataset_guid,
-                        operation="TRANSFORMATION",
-                        description=f"Version {new_version_number} dérivée de {parent_qn}"
-                    )
-                    logger.info(f"✅ Nouveau Process créé: {process_guid}")
-                
-                # ENREGISTRER LE PROCESS EN BASE
-                if process_guid:
+            logger.info(f"🔗 Création du lien versioning datasets...")
+            process_guid = create_import_process(
+                dataset_inputs=parent_guid,
+                dataset_output_guid=dataset_guid,
+                operation="TRANSFORMATION",
+                description=f"Version dérivée de {parent_qn}"
+            )
+            
+            # ✅ ENREGISTRER LE PROCESS EN BASE
+            if process_guid:
+                try:
                     create_process_record(
                         db=db,
                         atlas_process_guid=process_guid,
@@ -252,10 +238,9 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
                         metadata={"parent_qn": parent_qn}
                     )
                     logger.info(f"✅ Process enregistré en base")
-            except Exception as e:
-                logger.warning(f"⚠️ Impossible de créer/enregistrer Process: {e}")
-
-            # Créer le lien versioning
+                except Exception as e:
+                    logger.warning(f"⚠️ Impossible d'enregistrer le Process en base: {e}")
+            
             link_versioning(parent_guid, dataset_guid)
             logger.info(f"✅ Lien versioning datasets créé")
 
