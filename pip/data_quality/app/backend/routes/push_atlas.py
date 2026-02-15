@@ -217,23 +217,26 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         logger.info(f"📌 Nouvelle version créée: v{new_version_number}")
 
         # 7️⃣ Lien versioning datasets avec enregistrement du processus en base
+        # 7️⃣ Lien versioning datasets avec enregistrement du processus en base
         process_guid = None
+        process_name = None
         if parent_guid and parent_guid != dataset_guid:
             logger.info(f"🔗 Création du lien versioning datasets...")
-            process_guid = create_import_process(
+            # Récupérer à la fois le GUID et le nom du process
+            process_guid, process_name = create_import_process(
                 dataset_inputs=parent_guid,
                 dataset_output_guid=dataset_guid,
                 operation="TRANSFORMATION",
                 description=f"Version dérivée de {parent_qn}"
             )
             
-            # ✅ ENREGISTRER LE PROCESS EN BASE
+            # ✅ ENREGISTRER LE PROCESS EN BASE AVEC LE VRAI NOM
             if process_guid:
                 try:
                     create_process_record(
                         db=db,
                         atlas_process_guid=process_guid,
-                        process_name=f"Version {new_version_number}",
+                        process_name=process_name,  # Utiliser le vrai nom du process
                         operation_type="TRANSFORMATION",
                         output_dataset_version_id=str(new_version.id),
                         input_dataset_version_id=parent_version_id,
@@ -242,7 +245,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
                         status="SUCCESS",
                         metadata={"parent_qn": parent_qn}
                     )
-                    logger.info(f"✅ Process enregistré en base")
+                    logger.info(f"✅ Process enregistré en base avec le nom: {process_name}")
                 except Exception as e:
                     logger.warning(f"⚠️ Impossible d'enregistrer le Process en base: {e}")
             
