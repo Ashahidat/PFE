@@ -123,16 +123,12 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         parent_columns = []
         parent_column_mapping = {}
         parent_version_id = None
+        parent_version_number = 0
         similarity_score = 0
         base_url = ATLAS_SEARCH_URL.split("/search")[0]
 
-        # Récupérer la dernière version en base si elle existe
-        latest_version = None
-        if dataset.atlas_guid:
-            latest_version = get_latest_version(db, dataset.id)
-            if latest_version:
-                logger.info(f"📌 Dernière version en base: v{latest_version.version_number}")
-
+        # 🔥 CORRECTION: Ne pas utiliser get_latest_version avec le dataset_id actuel
+        # car c'est un nouveau dataset dans la table datasets
         if dataset.atlas_guid:
             logger.info(f"🔗 Dataset déjà lié, recherche dernière version...")
             try:
@@ -144,6 +140,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
                 parent_version = get_version_by_atlas_guid(db, parent_guid)
                 if parent_version:
                     parent_version_id = str(parent_version.id)
+                    parent_version_number = parent_version.version_number
                     logger.info(f"✅ Dernière version trouvée: {parent_qn} (v{parent_version.version_number})")
             except Exception as e:
                 logger.warning(f"⚠️ Erreur recherche dernière version: {e}")
@@ -152,12 +149,14 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             logger.info(f"🔍 Recherche intelligente du parent...")
             parent_guid, parent_qn, parent_columns, parent_column_mapping = find_smart_parent(df, original_name, dataset_id, db)
             if parent_guid:
-                # Calculer le score de similarité pour le tracking
-                sig_current = calculate_dataset_signature(df, original_name)
+                # 🔥 Récupérer la version du parent pour le numéro de version
                 parent_version = get_version_by_atlas_guid(db, parent_guid)
                 if parent_version:
                     parent_version_id = str(parent_version.id)
-                    # Récupérer la signature parent depuis la DB
+                    parent_version_number = parent_version.version_number
+                    
+                    # Calculer le score de similarité pour le tracking
+                    sig_current = calculate_dataset_signature(df, original_name)
                     parent_sig_record = db.query(DatasetSignature)\
                         .join(DatasetVersion, DatasetVersion.dataset_id == DatasetSignature.dataset_id)\
                         .filter(DatasetVersion.atlas_guid == parent_guid)\
@@ -194,11 +193,17 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         db.commit()
         logger.info(f"✅ Dataset créé: {dataset_guid}")
 
-        # CRÉER LA NOUVELLE VERSION EN BASE
-        new_version_number = 1
-        if latest_version:
-            new_version_number = latest_version.version_number + 1
+        # 🔥 CORRECTION: Déterminer le numéro de version basé sur le parent, pas sur dataset.id
+        if parent_version_id and parent_version_number > 0:
+            # Héritage du parent : version = version_parent + 1
+            new_version_number = parent_version_number + 1
+            logger.info(f"📌 Héritage du parent: v{parent_version_number} -> v{new_version_number}")
+        else:
+            # Pas de parent ou parent non trouvé en base : version 1
+            new_version_number = 1
+            logger.info(f"📌 Nouveau dataset racine: version 1")
         
+        # Créer la nouvelle version en base
         new_version = create_dataset_version(
             db=db,
             dataset_id=dataset.id,
@@ -324,6 +329,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             "version_number": new_version_number,
             "parent_guid": parent_guid,
             "parent_qualified_name": parent_qn,
+            "parent_version_number": parent_version_number if parent_version_number > 0 else None,
             "process_guid": process_guid,
             "column_guids": column_guids,
             "columns_count": len(column_guids),
