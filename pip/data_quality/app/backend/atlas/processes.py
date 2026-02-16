@@ -58,6 +58,12 @@ def get_next_process_version(parent_guid: str) -> int:
 
 
 def create_import_process(dataset_inputs, dataset_output_guid, operation="Reupload", description=None):
+    """
+    Crée un processus d'import et retourne le GUID et le nom du process créé
+    
+    Returns:
+        tuple: (process_guid, process_name)
+    """
     if not isinstance(dataset_inputs, list):
         dataset_inputs = [dataset_inputs]
 
@@ -93,6 +99,6 @@ def create_import_process(dataset_inputs, dataset_output_guid, operation="Reuplo
     if "CREATE" in mutated and mutated["CREATE"]:
         process_guid = mutated["CREATE"][0]["guid"]
         logger.info(f"✅ Process créé avec GUID: {process_guid}, version: {version}")
-        return process_guid
+        return process_guid, process_name
 
     raise Exception(f"Process non créé correctement: {data}")
