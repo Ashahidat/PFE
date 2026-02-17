@@ -13,6 +13,7 @@ from datetime import datetime as dt
 # CONFIGURATION DU PYTHON PATH
 # -----------------------------
 PROJECT_ROOT = "/home/ashahi/PFE/pip/data_quality"
+
 paths_to_add = [
     PROJECT_ROOT,
     os.path.join(PROJECT_ROOT, "app/backend"),
@@ -28,12 +29,6 @@ for path in paths_to_add:
 # IMPORTS APRES AJOUT AU PATH
 # -----------------------------
 from utils.db_utils import save_results_to_postgres
-from db.models.data_quality_results import DataQualityResult
-from db.crud.data_quality_results import (
-    create_result,
-    get_results_by_dag_run,
-    update_result_status,
-)
 
 
 def run_modular_validations(**kwargs):
@@ -96,19 +91,24 @@ def run_modular_validations(**kwargs):
         "checks": []
     }
 
+    # 🔥 MAPPING EN FRANÇAIS
     def map_status(statut):
-        if statut == "réussi":
-            return "PASS"
-        elif statut == "échoué":
-            return "FAIL"
-        elif statut == "skipped":
-            return "SKIPPED"
+        if not statut:
+            return "inconnu"
+
+        statut = statut.strip().lower()
+
+        if statut in ["réussi", "pass"]:
+            return "réussi"
+        elif statut in ["échoué", "fail"]:
+            return "échoué"
+        elif statut in ["skipped"]:
+            return "ignoré"
         else:
-            return "UNKNOWN"
+            return "inconnu"
 
     for validation_type, validation_output in results.items():
 
-        # Ignorer erreurs globales
         if isinstance(validation_output, dict) and "error" in validation_output:
             continue
 
@@ -127,7 +127,7 @@ def run_modular_validations(**kwargs):
                 })
 
         # -----------------------------
-        # CAS 2 : DICT IMBRIQUE (ex: regex)
+        # CAS 2 : DICT IMBRIQUE
         # -----------------------------
         elif isinstance(validation_output, dict):
             for subkey, subtests in validation_output.items():
