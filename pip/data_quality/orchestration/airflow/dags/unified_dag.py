@@ -7,20 +7,17 @@ import sys
 import json
 import importlib
 from pyspark.sql import SparkSession
-import uuid
+from datetime import datetime as dt
 
 # -----------------------------
 # CONFIGURATION DU PYTHON PATH
 # -----------------------------
-# Racine du projet Data Quality
 PROJECT_ROOT = "/home/ashahi/PFE/pip/data_quality"
-
-# Ajouter les dossiers principaux à sys.path
 paths_to_add = [
-    PROJECT_ROOT,                                   # /data_quality
-    os.path.join(PROJECT_ROOT, "app/backend"),     # backend + db, models, crud
-    os.path.join(PROJECT_ROOT, "orchestration"),   # orchestration DAGs
-    os.path.join(PROJECT_ROOT, "utils")            # utils pour db_utils
+    PROJECT_ROOT,
+    os.path.join(PROJECT_ROOT, "app/backend"),
+    os.path.join(PROJECT_ROOT, "orchestration"),
+    os.path.join(PROJECT_ROOT, "utils")
 ]
 
 for path in paths_to_add:
@@ -30,10 +27,7 @@ for path in paths_to_add:
 # -----------------------------
 # IMPORTS APRES AJOUT AU PATH
 # -----------------------------
-# db_utils doit exister dans /utils
-from utils.db_utils import save_results_to_postgres  
-
-# Modèles et CRUD SQLAlchemy
+from utils.db_utils import save_results_to_postgres
 from db.models.data_quality_results import DataQualityResult
 from db.crud.data_quality_results import (
     create_result,
@@ -42,45 +36,40 @@ from db.crud.data_quality_results import (
 )
 
 
-
 def run_modular_validations(**kwargs):
     dag_run = kwargs.get("dag_run")
     conf = dag_run.conf or {}
 
     file_path = conf.get("file_path")
     rules = conf.get("rules", {})
-    
-    # UUIDs obligatoires pour PostgreSQL
-    dag_run_uuid = conf.get("dag_run_uuid")
+
+    dag_run_uuid = conf.get("dag_run_uuid") or str(dag_run.run_id)
     dataset_version_id = conf.get("dataset_version_id")
-    
-    if not dag_run_uuid:
-        # Si non fourni, on peut le récupérer depuis Airflow
-        dag_run_uuid = str(kwargs.get("dag_run").run_id)  # À adapter selon ta BDD
-    
-    if not dataset_version_id:
-        raise ValueError("dataset_version_id est requis dans la configuration pour PostgreSQL")
 
     if not file_path or not rules:
         raise ValueError(f"Paramètres manquants : file_path={file_path}, rules={rules}")
 
-    # Initialisation Spark
+    # -----------------------------
+    # INITIALISATION SPARK
+    # -----------------------------
     spark = SparkSession.builder \
         .master("local[*]") \
         .appName("ModularValidation") \
         .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.7-spark-3.3") \
         .getOrCreate()
 
-    # Lecture du fichier (sans cache inutile)
     df = spark.read.parquet(file_path)
 
     results = {}
 
-    # Exécution dynamique des validateurs
+    # -----------------------------
+    # EXECUTION DYNAMIQUE DES VALIDATORS
+    # -----------------------------
     for validation_type, validation_rules in rules.items():
         try:
             module_name = f"validators.{validation_type}_validator"
             module = importlib.import_module(module_name)
+
             print(f"🚀 Exécution du validator '{validation_type}'")
 
             if hasattr(module, "run") and callable(module.run):
@@ -88,48 +77,114 @@ def run_modular_validations(**kwargs):
                     results[validation_type] = module.run(spark, df, validation_rules)
                 except TypeError:
                     results[validation_type] = module.run(df, validation_rules)
+
             print(f"✅ Validator '{validation_type}' terminé")
+
         except ModuleNotFoundError:
             print(f"⚠️ Module '{module_name}' introuvable. Ignoré.")
         except Exception as e:
             print(f"❌ Erreur dans '{validation_type}': {e}")
             results[validation_type] = {"error": str(e)}
 
-    # Sauvegarde JSON
+    # -----------------------------
+    # STANDARDISATION DES RESULTATS
+    # -----------------------------
+    standardized = {
+        "dag_run_id": dag_run_uuid,
+        "dataset_version_id": dataset_version_id,
+        "execution_date": dt.utcnow().isoformat(),
+        "checks": []
+    }
+
+    def map_status(statut):
+        if statut == "réussi":
+            return "PASS"
+        elif statut == "échoué":
+            return "FAIL"
+        elif statut == "skipped":
+            return "SKIPPED"
+        else:
+            return "UNKNOWN"
+
+    for validation_type, validation_output in results.items():
+
+        # Ignorer erreurs globales
+        if isinstance(validation_output, dict) and "error" in validation_output:
+            continue
+
+        # -----------------------------
+        # CAS 1 : LISTE
+        # -----------------------------
+        if isinstance(validation_output, list):
+            for r in validation_output:
+                standardized["checks"].append({
+                    "rule_type": r.get("type de test", validation_type.upper()),
+                    "column_name": r.get("colonne testée"),
+                    "status": map_status(r.get("statut")),
+                    "error_count": r.get("nombre", 0),
+                    "ratio": r.get("ratio", "0/0"),
+                    "examples": r.get("exemples", [])
+                })
+
+        # -----------------------------
+        # CAS 2 : DICT IMBRIQUE (ex: regex)
+        # -----------------------------
+        elif isinstance(validation_output, dict):
+            for subkey, subtests in validation_output.items():
+                if isinstance(subtests, list):
+                    for r in subtests:
+                        standardized["checks"].append({
+                            "rule_type": r.get("type de test", validation_type.upper()),
+                            "column_name": r.get("colonne testée"),
+                            "status": map_status(r.get("statut")),
+                            "error_count": r.get("nombre", 0),
+                            "ratio": r.get("ratio", "0/0"),
+                            "examples": r.get("exemples", [])
+                        })
+
+    # -----------------------------
+    # SAUVEGARDE JSON
+    # -----------------------------
     output_dir = "/home/ashahi/PFE/pip/data_quality/results"
     os.makedirs(output_dir, exist_ok=True)
-    dag_run_id = kwargs.get("run_id")
-    output_path = os.path.join(output_dir, f"{dag_run_id}_validation.json")
+
+    output_path = os.path.join(output_dir, f"{dag_run_uuid}_validation.json")
+
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
+        json.dump(standardized, f, ensure_ascii=False, indent=2)
 
-    print(f"📄 Résultats sauvegardés dans : {output_path}")
+    print(f"📄 Résultats standardisés sauvegardés dans : {output_path}")
 
-    # 🔹 Sauvegarde PostgreSQL (seulement les résultats valides)
-    try:
-        # Filtrer les erreurs
-        valid_results = {k: v for k, v in results.items() 
-                        if isinstance(v, (list, dict)) and "error" not in v}
-        
-        if valid_results:
-            saved = save_results_to_postgres(
-                results=valid_results,
-                dag_run_uuid=dag_run_uuid,
-                dataset_version_id=dataset_version_id
-            )
-            print(f"✅ {len(saved)} résultats sauvegardés dans PostgreSQL")
-        else:
-            print("⚠️ Aucun résultat valide à sauvegarder dans PostgreSQL")
-            
-    except Exception as e:
-        print(f"❌ Erreur sauvegarde PostgreSQL: {e}")
-        # On continue, le fichier JSON est déjà sauvegardé
+    # -----------------------------
+    # SAUVEGARDE POSTGRESQL
+    # -----------------------------
+    if dataset_version_id:
+        try:
+            valid_results = {
+                k: v for k, v in results.items()
+                if isinstance(v, (list, dict)) and "error" not in v
+            }
+
+            if valid_results:
+                saved = save_results_to_postgres(
+                    results=valid_results,
+                    dag_run_uuid=dag_run_uuid,
+                    dataset_version_id=dataset_version_id
+                )
+                print(f"✅ {len(saved)} résultats sauvegardés dans PostgreSQL")
+            else:
+                print("⚠️ Aucun résultat valide à sauvegarder")
+
+        except Exception as e:
+            print(f"❌ Erreur sauvegarde PostgreSQL: {e}")
 
     spark.stop()
-    return results
+    return standardized
 
 
-# Définition du DAG
+# -----------------------------
+# DEFINITION DU DAG
+# -----------------------------
 with DAG(
     dag_id="modular_validation_dag",
     start_date=datetime(2025, 1, 1),

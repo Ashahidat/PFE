@@ -99,4 +99,6 @@ def run(df: DataFrame, user_selection: Dict[str, List[str]]) -> Dict[str, List[D
                     "error": str(e)
                 })
 
-    return {"regex": results}
+    # return {"regex": results}
+    return results
+

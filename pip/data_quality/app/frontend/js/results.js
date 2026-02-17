@@ -29,7 +29,6 @@ async function fetchResults() {
                 if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                 const data = await res.json();
                 state = data?.state || null;
-                console.log("État actuel du DAG:", state);
 
                 if (state === "running" || !state) {
                     statusDiv.innerText = `DAG en cours d'exécution... (tentative ${attempts + 1}/${maxAttempts})`;
@@ -46,8 +45,6 @@ async function fetchResults() {
             }
         }
 
-        console.log("État final:", state, "Tentatives:", attempts);
-
         if (state === "success") {
             statusDiv.innerText = "DAG terminé avec succès, récupération des résultats...";
 
@@ -59,7 +56,6 @@ async function fetchResults() {
                 });
                 if (!res2.ok) throw new Error(`HTTP error! status: ${res2.status}`);
                 const results = await res2.json();
-                console.log("Résultats reçus:", results);
 
                 if (!results || results.length === 0) {
                     statusDiv.innerText = "Aucun résultat disponible !";
@@ -101,22 +97,13 @@ function renderSummary(data) {
 
     let total = 0, success = 0, failed = 0;
 
-    function countTests(items) {
-        if (!items) return;
-        if (Array.isArray(items)) {
-            items.forEach(i => {
-                if (i.statut) {
-                    total++;
-                    if (i.statut === 'réussi') success++;
-                    else if (i.statut === 'échoué') failed++;
-                }
-            });
-        } else if (typeof items === 'object') {
-            Object.values(items).forEach(v => countTests(v));
+    data.forEach(item => {
+        if (item.status) {
+            total++;
+            if (item.status.toUpperCase() === 'PASS') success++;
+            else if (item.status.toUpperCase() === 'FAIL') failed++;
         }
-    }
-
-    countTests(data);
+    });
 
     const summaryDiv = document.createElement('div');
     summaryDiv.id = 'summary';
@@ -152,13 +139,13 @@ function renderResultsJSON(data) {
 
         const title = document.createElement("div");
         title.className = "card-title";
-        title.innerText = item["alerte"] || item["type de test"] || "Test de validation";
+        title.innerText = item.rule_type || "Test de validation";
 
         const status = document.createElement("div");
         status.className = "status " +
-            (item.statut === "réussi" ? "status-success" :
-             item.statut === "échoué" ? "status-failed" : "status-running");
-        status.innerText = item.statut || "N/A";
+            (item.status?.toUpperCase() === "PASS" ? "status-success" :
+             item.status?.toUpperCase() === "FAIL" ? "status-failed" : "status-running");
+        status.innerText = item.status || "N/A";
 
         header.appendChild(title);
         header.appendChild(status);
@@ -167,7 +154,7 @@ function renderResultsJSON(data) {
         const infoDiv = document.createElement("div");
         infoDiv.className = "card-info";
 
-        const keysToSkip = ["exemples", "type de test", "alerte", "statut"];
+        const keysToSkip = ["exemples", "rule_type", "status"];
         Object.entries(item).forEach(([key, val]) => {
             if (!keysToSkip.includes(key) && val !== undefined && val !== null) {
                 const infoRow = document.createElement("div");
@@ -188,67 +175,16 @@ function renderResultsJSON(data) {
         });
 
         card.appendChild(infoDiv);
-
-        if (item.exemples && item.exemples.length > 0) {
-            const examplesDiv = document.createElement("div");
-            examplesDiv.className = "examples-section";
-
-            const examplesTitle = document.createElement("h4");
-            examplesTitle.textContent = "Exemples:";
-            examplesDiv.appendChild(examplesTitle);
-
-            item.exemples.forEach(example => {
-                const exampleDiv = document.createElement("div");
-                exampleDiv.className = "example-item";
-
-                if (typeof example === "object" && example !== null) {
-                    Object.entries(example).forEach(([exKey, exVal]) => {
-                        const exRow = document.createElement("div");
-                        exRow.className = "example-row";
-
-                        const exKeySpan = document.createElement("span");
-                        exKeySpan.className = "example-key";
-                        exKeySpan.textContent = exKey + ":";
-
-                        const exValueSpan = document.createElement("span");
-                        exValueSpan.className = "example-value";
-                        exValueSpan.textContent = exVal !== null && exVal !== undefined ? exVal.toString() : "N/A";
-
-                        exRow.appendChild(exKeySpan);
-                        exRow.appendChild(exValueSpan);
-                        exampleDiv.appendChild(exRow);
-                    });
-                } else {
-                    const simpleExample = document.createElement("div");
-                    simpleExample.className = "simple-example";
-                    simpleExample.textContent = example !== null && example !== undefined ? example.toString() : "N/A";
-                    exampleDiv.appendChild(simpleExample);
-                }
-
-                examplesDiv.appendChild(exampleDiv);
-            });
-
-            card.appendChild(examplesDiv);
-        }
-
         resultsSection.appendChild(card);
     }
 
-    if (Array.isArray(data)) {
+    if (Array.isArray(data) && data.length > 0) {
         data.forEach(item => createCard(item));
-    } else if (typeof data === 'object' && data !== null) {
-        if (data.duplicates && Array.isArray(data.duplicates)) data.duplicates.forEach(item => createCard(item));
-        if (data.regex) {
-            if (data.regex.regex && Array.isArray(data.regex.regex)) data.regex.regex.forEach(item => createCard(item));
-            else if (Array.isArray(data.regex)) data.regex.forEach(item => createCard(item));
-        }
-        Object.entries(data).forEach(([key, value]) => {
-            if (key !== 'duplicates' && key !== 'regex' && Array.isArray(value)) value.forEach(item => createCard(item));
-        });
+    } else {
+        resultsSection.innerHTML = '<div class="no-results">Aucun résultat à afficher</div>';
     }
-
-    if (resultsSection.children.length === 0) resultsSection.innerHTML = '<div class="no-results">Aucun résultat à afficher</div>';
 }
+
 
 // ===================== Bouton Atlas =====================
 function addPushAtlasButton() {
