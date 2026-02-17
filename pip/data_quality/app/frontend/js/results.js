@@ -131,90 +131,63 @@ function renderResultsJSON(data) {
     resultsSection.innerHTML = "";
 
     function createCard(item) {
-
         const statusValue = item.status?.toLowerCase();
 
         const card = document.createElement("div");
         card.className = "result-card";
+        if (statusValue === "réussi") card.classList.add("card-success");
+        else if (statusValue === "échoué") card.classList.add("card-failed");
 
-        if (statusValue === "réussi") {
-            card.classList.add("card-success");
-        } else if (statusValue === "échoué") {
-            card.classList.add("card-failed");
-        }
-
+        // Header
         const header = document.createElement("div");
         header.className = "header";
-
         const title = document.createElement("div");
         title.className = "card-title";
         title.innerText = item.rule_type || "Test";
-
         const status = document.createElement("div");
-
-        if (statusValue === "réussi") {
-            status.className = "status status-success";
-        } else if (statusValue === "échoué") {
-            status.className = "status status-failed";
-        } else {
-            status.className = "status status-running";
-        }
-
+        status.className = statusValue === "réussi" ? "status status-success" :
+                           statusValue === "échoué" ? "status status-failed" :
+                           "status status-running";
         status.innerText = item.status || "N/A";
-
-        header.appendChild(title);
-        header.appendChild(status);
+        header.append(title, status);
         card.appendChild(header);
 
+        // Info
         const infoDiv = document.createElement("div");
         infoDiv.className = "card-info";
-
         Object.entries(item).forEach(([key, val]) => {
-
-            if (key === "examples") {
-
-                if (statusValue === "échoué" && Array.isArray(val) && val.length > 0) {
-
-                    const exampleDiv = document.createElement("div");
-                    exampleDiv.className = "examples-section";
-
-                    const title = document.createElement("h4");
-                    title.innerText = "Exemples d'erreurs";
-                    exampleDiv.appendChild(title);
-
-                    val.forEach(ex => {
-                        const exItem = document.createElement("div");
-                        exItem.className = "simple-example";
-                        exItem.innerText = JSON.stringify(ex);
-                        exampleDiv.appendChild(exItem);
-                    });
-
-                    card.appendChild(exampleDiv);
-                }
-                return;
-            }
-
-            if (["rule_type", "status"].includes(key)) return;
-
+            if (["rule_type","status","examples"].includes(key)) return;
             if (val !== undefined && val !== null) {
                 const infoRow = document.createElement("div");
                 infoRow.className = "info-row";
-
                 const keySpan = document.createElement("span");
                 keySpan.className = "info-key";
                 keySpan.textContent = key + ":";
-
                 const valueSpan = document.createElement("span");
                 valueSpan.className = "info-value";
                 valueSpan.textContent = val;
-
-                infoRow.appendChild(keySpan);
-                infoRow.appendChild(valueSpan);
+                infoRow.append(keySpan, valueSpan);
                 infoDiv.appendChild(infoRow);
             }
         });
-
         card.appendChild(infoDiv);
+
+        // Exemples d'erreurs en bas
+        if (statusValue === "échoué" && Array.isArray(item.examples) && item.examples.length > 0) {
+            const exampleDiv = document.createElement("div");
+            exampleDiv.className = "examples-section";
+            const title = document.createElement("h4");
+            title.innerText = "Exemples d'erreurs";
+            exampleDiv.appendChild(title);
+            item.examples.forEach(ex => {
+                const exItem = document.createElement("div");
+                exItem.className = "simple-example";
+                exItem.innerText = JSON.stringify(ex);
+                exampleDiv.appendChild(exItem);
+            });
+            card.appendChild(exampleDiv); // ← maintenant après toutes les infos
+        }
+
         resultsSection.appendChild(card);
     }
 
