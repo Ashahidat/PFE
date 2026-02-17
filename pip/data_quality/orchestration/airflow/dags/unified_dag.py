@@ -12,9 +12,6 @@ from pyspark.sql import SparkSession
 # Ajouter le chemin racine du projet pour trouver les validators
 sys.path.append("/home/ashahi/PFE/pip/data_quality/orchestration")
 sys.path.append("/home/ashahi/PFE/pip/data_quality")
-from utils.db_utils import save_results_to_postgres
-# from utils.atlas_entities import get_or_create_dataset, get_or_create_column
-
 
 def run_modular_validations(**kwargs):
     dag_run = kwargs.get("dag_run")
@@ -44,10 +41,6 @@ def run_modular_validations(**kwargs):
         df = spark.read.parquet(file_path)
         spark_cache[file_path] = df
 
-    # if file_path.endswith(".csv"):
-    #     df = spark.read.option("header", "true").csv(file_path)
-    # else:
-    #     df = spark.read.json(file_path)
 
     results = {}
 
@@ -81,11 +74,6 @@ def run_modular_validations(**kwargs):
         json.dump(results, f, ensure_ascii=False, indent=2)
 
     print(f"📄 Résultats sauvegardés dans : {output_path}")
-
-
-    # # 🔹 Sauvegarde Postgres
-    # dag_run_id = kwargs.get("run_id")
-    # # save_results_to_postgres(results, dag_run_id)
 
 
     spark.stop()
