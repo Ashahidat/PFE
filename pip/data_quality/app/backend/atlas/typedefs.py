@@ -24,6 +24,22 @@ typedefs_payload = {
                 }
             ]
         },
+
+        # ✅ NOUVELLE ENTITY : DataQualityCheck
+        {
+            "name": "DataQualityCheck",
+            "superTypes": ["Asset"],
+            "attributeDefs": [
+                {"name": "checkType", "typeName": "string", "isOptional": False},
+                {"name": "columnName", "typeName": "string", "isOptional": True},
+                {"name": "status", "typeName": "string", "isOptional": False},
+                {"name": "errorCount", "typeName": "int", "isOptional": True},
+                {"name": "ratio", "typeName": "double", "isOptional": True},
+                {"name": "executionDate", "typeName": "date", "isOptional": False},
+                {"name": "dagRunId", "typeName": "string", "isOptional": False},
+                {"name": "examples", "typeName": "string", "isOptional": True}
+            ]
+        },
     ],
 
     "relationshipDefs": [
@@ -61,7 +77,6 @@ typedefs_payload = {
                 "cardinality": "SINGLE"
             }
         },
-        # 🔥 RELATION DE VERSIONING ENTRE COLONNES
         {
             "name": "column_versioning",
             "typeVersion": "1.0",
@@ -75,6 +90,25 @@ typedefs_payload = {
             "endDef2": {
                 "type": "Column",
                 "name": "next_version",
+                "isContainer": False,
+                "cardinality": "SINGLE"
+            }
+        },
+
+        # ✅ RELATION DATASET VERSION -> DQ CHECKS
+        {
+            "name": "datasetversion_dqchecks",
+            "typeVersion": "1.0",
+            "relationshipCategory": "COMPOSITION",
+            "endDef1": {
+                "type": "DataSet",
+                "name": "dqChecks",
+                "isContainer": True,
+                "cardinality": "SET"
+            },
+            "endDef2": {
+                "type": "DataQualityCheck",
+                "name": "datasetVersion",
                 "isContainer": False,
                 "cardinality": "SINGLE"
             }

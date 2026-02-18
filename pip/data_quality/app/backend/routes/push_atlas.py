@@ -5,6 +5,7 @@ import logging
 import os
 import time
 import uuid
+import shutil
 
 from config import spark
 from db.connexion_db import get_db
@@ -29,13 +30,17 @@ from atlas.processes import create_import_process
 from atlas.versioning import find_latest_version
 from jwt_dependencies import get_current_user
 from db.dataset_versions import DatasetVersion
+from atlas.data_quality import create_data_quality_checks_from_json
+
 
 router = APIRouter()
 logger = logging.getLogger("push-atlas")
 logger.setLevel(logging.DEBUG)
 
 TMP_DIR = "/home/ashahi/PFE/pip/data_quality/tmp"
+RESULTS_DIR = "/home/ashahi/PFE/pip/data_quality/results"
 os.makedirs(TMP_DIR, exist_ok=True)
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
 @router.post("/push-atlas/{dataset_id}")
 def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
@@ -217,7 +222,6 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         logger.info(f"📌 Nouvelle version créée: v{new_version_number}")
 
         # 7️⃣ Lien versioning datasets avec enregistrement du processus en base
-        # 7️⃣ Lien versioning datasets avec enregistrement du processus en base
         process_guid = None
         process_name = None
         if parent_guid and parent_guid != dataset_guid:
@@ -308,6 +312,45 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             logger.info(f"🏷️ {propagated}/{len(column_guids)} logicalColumnId propagés du parent")
 
         # ----------------------
+        # 🔥 10️⃣ ENVOYER LES RÉSULTATS DE QUALITÉ VERS ATLAS
+        # ----------------------
+        results_dir = RESULTS_DIR
+        
+        if os.path.exists(results_dir):
+            logger.info(f"📁 Dossier results existe: {results_dir}")
+            
+            # Lister tous les fichiers du dossier
+            all_files = os.listdir(results_dir)
+            logger.info(f"📁 Tous les fichiers dans results: {all_files}")
+            
+            # ✅ SOLUTION 1: Prendre tous les fichiers JSON du dossier
+            json_files = [f for f in all_files if f.endswith('.json')]
+            logger.info(f"🔍 Fichiers JSON trouvés: {json_files}")
+            
+            # Alternative: Si vous voulez seulement les fichiers de validation
+            # json_files = [f for f in all_files if f.endswith('_validation.json')]
+            # logger.info(f"🔍 Fichiers de validation trouvés: {json_files}")
+        else:
+            logger.error(f"❌ Le dossier {results_dir} n'existe pas!")
+            json_files = []
+
+        dq_guids = []
+        for jf in json_files:
+            json_path = os.path.join(results_dir, jf)
+            try:
+                logger.info(f"📤 Traitement du fichier: {jf}")
+                guids = create_data_quality_checks_from_json(
+                    dataset_version_guid=new_version.atlas_guid,
+                    json_path=json_path
+                )
+                dq_guids.extend(guids)
+                logger.info(f"✅ {len(guids)} DataQualityChecks créés depuis {jf}")
+            except Exception as e:
+                logger.warning(f"⚠️ Impossible de créer DataQualityChecks pour {jf}: {e}")
+
+        logger.info(f"📊 TOTAL: {len(dq_guids)} DataQualityChecks envoyés à Atlas")
+
+        # ----------------------
         # 9️⃣ ENREGISTRER L'HISTORIQUE DE PUSH
         # ----------------------
         execution_time = int((time.time() - start_time) * 1000)
@@ -338,7 +381,8 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             "columns_count": len(column_guids),
             "propagated_columns": propagated,
             "execution_time_ms": execution_time,
-            "similarity_score": similarity_score
+            "similarity_score": similarity_score,
+            "data_quality_checks_count": len(dq_guids)
         }
 
     except Exception as e:
@@ -362,7 +406,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        # Nettoyage
+        # 🧹 NETTOYAGE DU DOSSIER TMP
         try:
             for f in os.listdir(TMP_DIR):
                 full = os.path.join(TMP_DIR, f)
@@ -371,3 +415,22 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             logger.debug("🧹 Nettoyage tmp effectué")
         except Exception as e:
             logger.warning(f"⚠️ Erreur nettoyage tmp: {e}")
+        
+        # 🧹 NETTOYAGE DU DOSSIER RESULTS
+        try:
+            # Option 1: Supprimer tous les fichiers du dossier results
+            for f in os.listdir(RESULTS_DIR):
+                full = os.path.join(RESULTS_DIR, f)
+                if os.path.isfile(full):
+                    os.remove(full)
+            logger.debug("🧹 Nettoyage results effectué (tous les fichiers supprimés)")
+            
+            # Option 2: Si vous voulez garder une trace, vous pouvez déplacer vers une archive
+            # archive_dir = os.path.join(RESULTS_DIR, "archive")
+            # os.makedirs(archive_dir, exist_ok=True)
+            # for f in json_files:  # Utilisez json_files de la section 10
+            #     shutil.move(os.path.join(RESULTS_DIR, f), os.path.join(archive_dir, f))
+            # logger.debug(f"📦 Fichiers JSON déplacés vers archive: {json_files}")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur nettoyage results: {e}")
