@@ -6,6 +6,7 @@ import os
 import time
 import uuid
 import shutil
+import json
 
 from config import spark
 from db.connexion_db import get_db
@@ -31,6 +32,7 @@ from atlas.versioning import find_latest_version
 from jwt_dependencies import get_current_user
 from db.dataset_versions import DatasetVersion
 from atlas.data_quality import create_data_quality_checks_from_json
+from db.data_quality_to_db import save_data_quality_results_from_json
 
 
 router = APIRouter()
@@ -51,6 +53,12 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
     if not employee_id:
         logger.error("❌ Identifiant utilisateur manquant dans le token")
         raise HTTPException(status_code=400, detail="Identifiant utilisateur manquant")
+    
+    # Variables à suivre dans le finally
+    json_files = []
+    dq_guids = []
+    dq_db_ids = []
+    processed_files = []
     
     try:
         # ----------------------
@@ -312,43 +320,71 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             logger.info(f"🏷️ {propagated}/{len(column_guids)} logicalColumnId propagés du parent")
 
         # ----------------------
-        # 🔥 10️⃣ ENVOYER LES RÉSULTATS DE QUALITÉ VERS ATLAS
+        # 🔥 10️⃣ ENVOYER LES RÉSULTATS DE QUALITÉ
+        #       → Atlas
+        #       → PostgreSQL
+        #       → Archivage
         # ----------------------
-        results_dir = RESULTS_DIR
-        
-        if os.path.exists(results_dir):
-            logger.info(f"📁 Dossier results existe: {results_dir}")
-            
-            # Lister tous les fichiers du dossier
-            all_files = os.listdir(results_dir)
-            logger.info(f"📁 Tous les fichiers dans results: {all_files}")
-            
-            # ✅ SOLUTION 1: Prendre tous les fichiers JSON du dossier
-            json_files = [f for f in all_files if f.endswith('.json')]
-            logger.info(f"🔍 Fichiers JSON trouvés: {json_files}")
-            
-            # Alternative: Si vous voulez seulement les fichiers de validation
-            # json_files = [f for f in all_files if f.endswith('_validation.json')]
-            # logger.info(f"🔍 Fichiers de validation trouvés: {json_files}")
-        else:
-            logger.error(f"❌ Le dossier {results_dir} n'existe pas!")
-            json_files = []
+        print("--------------------------------------------------------------------------------------------------")
 
+        logger.info(f"📤 Envoi des résultats de qualité...")
+
+
+        archive_dir = os.path.join(RESULTS_DIR, "archive")
+        os.makedirs(archive_dir, exist_ok=True)
+
+        json_files = []
         dq_guids = []
+        dq_db_ids = []
+        processed_files = []
+
+        if os.path.exists(RESULTS_DIR):
+            all_files = os.listdir(RESULTS_DIR)
+            json_files = [f for f in all_files if f.endswith(".json")]
+
+            logger.info(f"📁 Fichiers JSON trouvés: {json_files}")
+        else:
+            logger.warning(f"⚠️ Dossier results introuvable")
+
         for jf in json_files:
-            json_path = os.path.join(results_dir, jf)
+            json_path = os.path.join(RESULTS_DIR, jf)
+
             try:
-                logger.info(f"📤 Traitement du fichier: {jf}")
+                logger.info(f"📤 Traitement du fichier qualité: {jf}")
+
+                # Lire le JSON une seule fois
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                dag_run_uuid = data.get("dag_run_id")
+
+                # 🔹 1️⃣ Envoyer vers Atlas
                 guids = create_data_quality_checks_from_json(
                     dataset_version_guid=new_version.atlas_guid,
                     json_path=json_path
                 )
                 dq_guids.extend(guids)
-                logger.info(f"✅ {len(guids)} DataQualityChecks créés depuis {jf}")
-            except Exception as e:
-                logger.warning(f"⚠️ Impossible de créer DataQualityChecks pour {jf}: {e}")
 
-        logger.info(f"📊 TOTAL: {len(dq_guids)} DataQualityChecks envoyés à Atlas")
+                # 🔹 2️⃣ Sauvegarder en PostgreSQL
+                db_ids = save_data_quality_results_from_json(
+                    db=db,
+                    dataset_version_id=new_version.id,
+                    dag_run_uuid=dag_run_uuid,
+                    json_path=json_path
+                )
+                dq_db_ids.extend(db_ids)
+
+                # 🔹 3️⃣ Marquer comme traité
+                processed_files.append(jf)
+
+                logger.info(f"✅ {len(guids)} checks envoyés Atlas")
+                logger.info(f"✅ {len(db_ids)} checks enregistrés PostgreSQL")
+
+            except Exception as e:
+                logger.error(f"❌ Erreur traitement fichier {jf}: {e}")
+
+        logger.info(f"📊 TOTAL Atlas: {len(dq_guids)}")
+        logger.info(f"📊 TOTAL PostgreSQL: {len(dq_db_ids)}")
 
         # ----------------------
         # 9️⃣ ENREGISTRER L'HISTORIQUE DE PUSH
@@ -406,7 +442,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        # 🧹 NETTOYAGE DU DOSSIER TMP
+        # 🧹 Nettoyage TMP
         try:
             for f in os.listdir(TMP_DIR):
                 full = os.path.join(TMP_DIR, f)
@@ -415,22 +451,25 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             logger.debug("🧹 Nettoyage tmp effectué")
         except Exception as e:
             logger.warning(f"⚠️ Erreur nettoyage tmp: {e}")
-        
-        # 🧹 NETTOYAGE DU DOSSIER RESULTS
+
+        # 📦 Archivage de TOUS les fichiers JSON du dossier results
         try:
-            # Option 1: Supprimer tous les fichiers du dossier results
-            for f in os.listdir(RESULTS_DIR):
-                full = os.path.join(RESULTS_DIR, f)
-                if os.path.isfile(full):
-                    os.remove(full)
-            logger.debug("🧹 Nettoyage results effectué (tous les fichiers supprimés)")
+            archive_dir = os.path.join(RESULTS_DIR, "archive")
+            os.makedirs(archive_dir, exist_ok=True)
             
-            # Option 2: Si vous voulez garder une trace, vous pouvez déplacer vers une archive
-            # archive_dir = os.path.join(RESULTS_DIR, "archive")
-            # os.makedirs(archive_dir, exist_ok=True)
-            # for f in json_files:  # Utilisez json_files de la section 10
-            #     shutil.move(os.path.join(RESULTS_DIR, f), os.path.join(archive_dir, f))
-            # logger.debug(f"📦 Fichiers JSON déplacés vers archive: {json_files}")
-            
+            archived_count = 0
+            if os.path.exists(RESULTS_DIR):
+                for f in os.listdir(RESULTS_DIR):
+                    if f.endswith('.json') and f != 'archive':  # Éviter d'archiver le dossier archive lui-même
+                        source = os.path.join(RESULTS_DIR, f)
+                        destination = os.path.join(
+                            archive_dir,
+                            f"{int(time.time())}_{f}"
+                        )
+                        if os.path.isfile(source):
+                            shutil.move(source, destination)
+                            archived_count += 1
+                            
+            logger.info(f"📦 {archived_count} fichiers qualité archivés")
         except Exception as e:
-            logger.warning(f"⚠️ Erreur nettoyage results: {e}")
+            logger.warning(f"⚠️ Erreur archivage results: {e}")
