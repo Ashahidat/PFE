@@ -14,6 +14,7 @@ FILES=(
     "column_lineage.sql"
     "processes.sql"
     "push_history.sql"
+    "data_quality_results.sql"
 )
 
 # Copier les fichiers vers /tmp avec l'utilisateur actuel
@@ -43,6 +44,7 @@ FILES=(
     "column_lineage.sql"
     "processes.sql"
     "push_history.sql"
+    "data_quality_results.sql"
 )
 
 # Exécution des fichiers SQL
