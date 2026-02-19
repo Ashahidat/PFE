@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Mes Projets</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/projects.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📁 Mes Projets</h1>
+        
+        <!-- Formulaire création projet -->
+        <div class="card">
+            <h2>Créer un nouveau projet</h2>
+            <input type="text" id="projectName" placeholder="Nom du projet">
+            <textarea id="projectDesc" placeholder="Description (optionnel)"></textarea>
+            <button id="createProjectBtn">Créer le projet</button>
+        </div>
+
+        <!-- Liste des projets -->
+        <div class="card">
+            <h2>Mes projets</h2>
+            <div id="projectsList">
+                <p class="loading">Chargement...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/projects.js"></script>
+</body>
+</html>

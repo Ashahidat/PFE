@@ -1,0 +1,66 @@
+.card {
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+input, textarea {
+    width: 100%;
+    padding: 10px;
+    margin: 10px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+button {
+    background: #007bff;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #0056b3;
+}
+
+.project-item {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 15px;
+    margin: 10px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.project-info h3 {
+    margin: 0 0 5px 0;
+}
+
+.project-info p {
+    margin: 0;
+    color: #666;
+}
+
+.project-stats {
+    color: #999;
+    font-size: 0.9em;
+}
+
+.select-project {
+    background: #28a745;
+    margin-left: 10px;
+}
+
+.select-project:hover {
+    background: #218838;
+}
+
+.loading {
+    color: #999;
+    text-align: center;
+}

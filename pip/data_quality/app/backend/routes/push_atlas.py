@@ -160,7 +160,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
 
         if not parent_guid:
             logger.info(f"🔍 Recherche intelligente du parent...")
-            parent_guid, parent_qn, parent_columns, parent_column_mapping = find_smart_parent(df, original_name, dataset_id, db)
+            parent_guid, parent_qn, parent_columns, parent_column_mapping = find_smart_parent(df, original_name, dataset_id, db, project_id=str(dataset.project_id))
             if parent_guid:
                 # 🔥 Récupérer la version du parent pour le numéro de version
                 parent_version = get_version_by_atlas_guid(db, parent_guid)
@@ -195,7 +195,8 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             parent_qn,
             df,
             signature,
-            owner_employee_id=dataset.owner_employee_id
+            owner_employee_id=dataset.owner_employee_id,
+            project_id=str(dataset.project_id)
         )
         
         # Mettre à jour l'atlas_guid du dataset

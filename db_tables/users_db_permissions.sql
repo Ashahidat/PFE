@@ -2,6 +2,13 @@
 --  PFE — Initialisation complète (FULL RESET)
 -- ======================================================
 
+
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = 'pfe_db'
+  AND pid <> pg_backend_pid();
+
+
 -- Supprimer la base si elle existe
 DROP DATABASE IF EXISTS pfe_db;
 

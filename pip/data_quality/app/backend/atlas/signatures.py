@@ -189,33 +189,73 @@ def ensure_parent_columns(parent_guid, parent_name, parent_qualified_name):
         traceback.print_exc()
         return [], {}
 
-def find_smart_parent(df_current, dataset_name: str, dataset_id: str = None, db: Session = None):
+def find_smart_parent(
+    df_current,
+    dataset_name: str,
+    dataset_id: str = None,
+    db: Session = None,
+    project_id: str = None  # ✅ NOUVEAU PARAMÈTRE
+):
     """
-    Recherche le parent ET récupère ses colonnes (les crée si nécessaire)
+    Recherche le parent dans le MÊME PROJET uniquement
     Retourne (parent_guid, parent_qn, parent_columns, parent_column_mapping)
     """
+
     print(f"\n{'='*60}")
-    print(f"🎯 RECHERCHE PARENT: {dataset_name}")
+    print(f"🎯 RECHERCHE PARENT: {dataset_name} (projet: {project_id})")
     print(f"{'='*60}")
-    
+
     try:
-        # Récupérer tous les datasets
-        res = atlas_get(f"{ATLAS_SEARCH_URL}?typeName=DataSet&query=*")
-        entities = res.json().get("entities", [])
-        print(f"📥 {len(entities)} datasets trouvés")
-        
-        # Signature courante
+        # ------------------------------------------------------------------
+        # 🔎 1️⃣ RÉCUPÉRER DATASETS DU MÊME PROJET UNIQUEMENT
+        # ------------------------------------------------------------------
+
+        base_url = ATLAS_SEARCH_URL.split("/search")[0]
+
+        if project_id:
+            # 🔥 CORRECTION: recherche simple puis filtrage manuel par projet
+            res = atlas_get(f"{ATLAS_SEARCH_URL}?typeName=DataSet&query=*")
+            entities = res.json().get("entities", [])
+
+            filtered_entities = []
+            for e in entities:
+                guid = e.get("guid")
+                if not guid:
+                    continue
+                try:
+                    full = atlas_get(f"{base_url}/entity/guid/{guid}").json()
+                    entity = full.get("entity", full)
+                    attrs = entity.get("attributes", {})
+                    if attrs.get("project") == project_id:
+                        filtered_entities.append(entity)
+                except:
+                    continue
+            entities = filtered_entities
+
+        else:
+            # Fallback si aucun projet fourni
+            res = atlas_get(f"{ATLAS_SEARCH_URL}?typeName=DataSet&query=*")
+            entities = res.json().get("entities", [])
+
+        print(f"📥 {len(entities)} datasets trouvés dans le projet {project_id}")
+
+        # ------------------------------------------------------------------
+        # 2️⃣ SIGNATURE COURANTE
+        # ------------------------------------------------------------------
+
         sig_current = calculate_dataset_signature(df_current, dataset_name)
-        
+
         best_score = 0
         best_parent = None
         best_parent_guid = None
         best_parent_qn = None
-        
-        # Récupérer les entités complètes
-        base_url = ATLAS_SEARCH_URL.split("/search")[0]
+
+        # ------------------------------------------------------------------
+        # 3️⃣ RÉCUPÉRER ENTITÉS COMPLÈTES
+        # ------------------------------------------------------------------
+
         full_entities = []
-        
+
         for e in entities:
             guid = e.get("guid")
             if not guid:
@@ -225,65 +265,74 @@ def find_smart_parent(df_current, dataset_name: str, dataset_id: str = None, db:
                 full_entities.append(full.get("entity", full))
             except:
                 continue
-        
-        # Comparer chaque dataset
+
+        # ------------------------------------------------------------------
+        # 4️⃣ COMPARAISON SIMILARITÉ
+        # ------------------------------------------------------------------
+
         for ds in full_entities:
+
             if ds.get("status") == "DELETED":
                 continue
-                
+
             attrs = ds.get("attributes", {})
-            ds_name = attrs.get('name', 'Unknown')
+            ds_name = attrs.get("name", "Unknown")
             ds_guid = ds.get("guid")
-            ds_qn = attrs.get('qualifiedName', 'Unknown')
+            ds_qn = attrs.get("qualifiedName", "Unknown")
+
             sig_old = attrs.get("signature")
-            
+
             if isinstance(sig_old, str):
                 try:
                     sig_old = json.loads(sig_old)
                 except:
                     continue
-            
+
             if not sig_old:
                 continue
-            
+
             score = compute_similarity_score(sig_current, sig_old)
             print(f"   {ds_name}: score {score:.3f}")
-            
+
             if score > best_score:
                 best_score = score
                 best_parent = ds
                 best_parent_guid = ds_guid
                 best_parent_qn = ds_qn
-        
-        # ✅ Si parent trouvé avec bon score
+
+        # ------------------------------------------------------------------
+        # 5️⃣ SI PARENT TROUVÉ
+        # ------------------------------------------------------------------
+
         if best_parent and best_score >= 0.60:
+
             parent_name = best_parent.get("attributes", {}).get("name", "Unknown")
+
             print(f"\n🏆 PARENT TROUVÉ: {parent_name} (score: {best_score:.3f})")
             print(f"   GUID: {best_parent_guid}")
             print(f"   QualifiedName: {best_parent_qn}")
-            
-            # 🔥 ensure_parent_columns vérifie d'abord si les colonnes existent
+
+            # 🔥 Vérifie/crée les colonnes si nécessaire
             parent_columns, parent_column_mapping = ensure_parent_columns(
                 best_parent_guid,
                 parent_name,
                 best_parent_qn
             )
-            
+
             if parent_columns:
                 print(f"✅ {len(parent_columns)} colonnes parent récupérées")
                 print(f"✅ {len(parent_column_mapping)} mappings colonnes disponibles")
-                print(f"📋 Mappings: {parent_column_mapping}")
             else:
                 print(f"⚠️ Échec récupération colonnes parent")
                 parent_columns = []
                 parent_column_mapping = {}
-            
+
             return best_parent_guid, best_parent_qn, parent_columns, parent_column_mapping
-        
+
         else:
-            print(f"\n❌ AUCUN PARENT TROUVÉ")
+            print(f"\n❌ AUCUN PARENT TROUVÉ DANS LE PROJET {project_id}")
             return None, None, [], {}
-            
+
     except Exception as e:
         print(f"❌ ERREUR: {e}")
         import traceback

@@ -1,17 +1,22 @@
-from sqlalchemy import Column, String, Text, ARRAY, TIMESTAMP
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, DateTime, ForeignKey, ARRAY
 from sqlalchemy.sql import func
-import uuid
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from db.connexion_db import Base
+import uuid
 
 class Dataset(Base):
     __tablename__ = "datasets"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(Text, nullable=False)
-    file_path = Column(Text, nullable=False)
-    hash = Column(Text, nullable=False)
-    columns_list = Column(ARRAY(Text))
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())  # ajout timestamp
-    owner_employee_id = Column(String(50), nullable=True)                     # ajout owner
-    atlas_guid = Column(Text, nullable=True)                                  # ajout atlas_guid
+    name = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    hash = Column(String, nullable=False)
+    columns_list = Column(ARRAY(String), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    owner_employee_id = Column(String, nullable=True)
+    atlas_guid = Column(String, nullable=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=True)
+    
+    # Relations
+    project = relationship("Project", back_populates="datasets")

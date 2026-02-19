@@ -9,7 +9,8 @@ def create_dataset(
     hash_value: str, 
     columns_list: list, 
     owner_employee_id: str = None,
-    atlas_guid: str = None  # ajouté pour la nouvelle colonne
+    atlas_guid: str = None,
+    project_id: str = None
 ):
     dataset = Dataset(
         id=uuid.uuid4(),
@@ -18,7 +19,8 @@ def create_dataset(
         hash=hash_value,
         columns_list=columns_list,
         owner_employee_id=owner_employee_id,
-        atlas_guid=atlas_guid
+        atlas_guid=atlas_guid,
+        project_id=project_id
     )
     db.add(dataset)
     db.commit()

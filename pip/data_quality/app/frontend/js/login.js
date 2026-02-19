@@ -44,7 +44,7 @@ document.getElementById("loginBtn").addEventListener("click", async () => {
         status.innerText = "Connexion réussie !";
         status.className = "success";
 
-        setTimeout(() => window.location.href = "upload.html", 1000);
+        setTimeout(() => window.location.href = "projects.html", 1000);
 
     } catch (err) {
         status.innerText = "Erreur de connexion au serveur.";

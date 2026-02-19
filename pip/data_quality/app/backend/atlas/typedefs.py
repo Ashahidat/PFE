@@ -6,7 +6,8 @@ typedefs_payload = {
             "attributeDefs": [
                 {"name": "signature", "typeName": "string", "isOptional": True},
                 {"name": "columnsCount", "typeName": "int", "isOptional": True},
-                {"name": "columnsList", "typeName": "array<string>", "isOptional": True}
+                {"name": "columnsList", "typeName": "array<string>", "isOptional": True},
+                {"name": "project", "typeName": "string", "isOptional": True}
             ]
         },
         {
@@ -25,7 +26,7 @@ typedefs_payload = {
             ]
         },
 
-        # ✅ NOUVELLE ENTITY : DataQualityCheck
+        # ✅ ENTITY : DataQualityCheck
         {
             "name": "DataQualityCheck",
             "superTypes": ["Asset"],

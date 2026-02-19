@@ -5,6 +5,7 @@ DEST_DIR="/tmp"
 DB_NAME="pfe_db"
 
 FILES=(
+    "add_projects_table.sql"
     "datasets.sql"
     "dag_runs.sql"
     "dataset_signatures.sql"
@@ -35,6 +36,7 @@ DB_NAME="pfe_db"
 DEST_DIR="/tmp"
 
 FILES=(
+    "add_projects_table.sql"
     "datasets.sql"
     "dag_runs.sql"
     "dataset_signatures.sql"
@@ -64,5 +66,5 @@ EOF
 echo "Mise à jour des tables terminée avec succès."
 
 
-# faut d'abord le rendre exécutable : chmod +x db_tables/update_tables.sh
-# puis l'éxuter : ./db_tables/update_tables.sh
+# chmod +x db_tables/update_tables.sh
+# ./db_tables/update_tables.sh
