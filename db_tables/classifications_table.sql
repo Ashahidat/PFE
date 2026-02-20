@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS entity_classifications (
 
     applied_by VARCHAR(50) NOT NULL,
     department VARCHAR(100) NOT NULL,
-    business_unit VARCHAR(100) NOT NULL,
 
     applied_at TIMESTAMP DEFAULT NOW(),
     is_active BOOLEAN DEFAULT TRUE,

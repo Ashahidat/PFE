@@ -3,13 +3,8 @@ from sqlalchemy.orm import Session
 from db.connexion_db import get_db
 from jwt_dependencies import get_current_user
 import logging
+from db.classifications_use_case import apply_classification_use_case
 
-# IMPORT CORRECT du use case
-try:
-    from db.classifications_use_case import apply_classification_use_case
-except ImportError:
-    # Essayez un autre chemin si nécessaire
-    from services.classifications_service import apply_classification_use_case
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

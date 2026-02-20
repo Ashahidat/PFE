@@ -37,7 +37,6 @@ def create_entity_classification(
     classification_attributes: dict,
     applied_by: str,
     department: str,
-    business_unit: str,
     column_name: str = None  # Nouveau paramètre optionnel
 ):
     """
@@ -51,7 +50,6 @@ def create_entity_classification(
         classification_attributes=classification_attributes,
         applied_by=applied_by,
         department=department,
-        business_unit=business_unit,
         column_name=column_name  # Nouveau
     )
 

@@ -12,4 +12,3 @@ class User(Base):
     password_hash = Column(Text, nullable=False)
     department = Column(String(100), nullable=False)
     role = Column(String(50), nullable=False, default="analyst")
-    business_unit = Column(String(100), nullable=False)

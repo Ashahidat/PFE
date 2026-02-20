@@ -30,7 +30,6 @@ def register_user(data: dict):
         password_hash=hashed,
         department=data["department"],
         role="analyst",
-        business_unit=data["business_unit"],
     )
 
     db.add(user)

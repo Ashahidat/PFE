@@ -5,7 +5,6 @@ document.getElementById("registerBtn").addEventListener("click", async () => {
     const username = document.getElementById("username").value;
     const password = document.getElementById("password").value;
     const department = document.getElementById("department").value;
-    const business_unit = document.getElementById("business_unit").value;
 
     const status = document.getElementById("status");
     status.classList.remove("hidden");
@@ -24,8 +23,7 @@ document.getElementById("registerBtn").addEventListener("click", async () => {
                 employee_id,
                 username,
                 password,
-                department,
-                business_unit
+                department
             })
         });
 

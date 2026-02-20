@@ -32,7 +32,6 @@ class EntityClassification(Base):
 
     applied_by = Column(Text, nullable=False)
     department = Column(Text, nullable=False)
-    business_unit = Column(Text, nullable=False)
 
     applied_at = Column(
         TIMESTAMP(timezone=True),
