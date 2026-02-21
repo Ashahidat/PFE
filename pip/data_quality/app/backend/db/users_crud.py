@@ -38,7 +38,7 @@ def get_or_create_user(
     employee_id: str,
     username: str,
     department: str,
-    role: str = "analyst"
+    role: str = "DATA_OWNER"
 ) -> User:
     """
     Récupère un utilisateur existant ou le crée s'il n'existe pas.

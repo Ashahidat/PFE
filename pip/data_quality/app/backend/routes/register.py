@@ -29,7 +29,7 @@ def register_user(data: dict):
         username=data["username"],
         password_hash=hashed,
         department=data["department"],
-        role="analyst",
+        role="DATA_OWNER"  # Par défaut, on attribue le rôle de DATA_OWNER à tous les nouveaux utilisateurs
     )
 
     db.add(user)

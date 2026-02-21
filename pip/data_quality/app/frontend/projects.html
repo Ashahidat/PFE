@@ -15,6 +15,20 @@
             <h2>Créer un nouveau projet</h2>
             <input type="text" id="projectName" placeholder="Nom du projet">
             <textarea id="projectDesc" placeholder="Description (optionnel)"></textarea>
+            
+            <!-- ✅ NOUVEAU : Choix de visibilité -->
+            <div class="visibility-choice">
+                <p><strong>Visibilité du projet :</strong></p>
+                <label class="radio-label">
+                    <input type="radio" name="visibility" value="DEPARTMENT" checked>
+                    <span>🏢 Département (visible uniquement par mon département)</span>
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="visibility" value="PUBLIC">
+                    <span>🌍 Public (visible par tous les DATA_OWNER)</span>
+                </label>
+            </div>
+            
             <button id="createProjectBtn">Créer le projet</button>
         </div>
 

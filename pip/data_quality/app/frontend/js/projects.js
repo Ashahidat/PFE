@@ -9,6 +9,11 @@ document.addEventListener("DOMContentLoaded", () => {
 async function loadProjects() {
     const token = localStorage.getItem("access_token");
     
+    if (!token) {
+        window.location.href = "login.html";
+        return;
+    }
+    
     try {
         const res = await fetch(`${API_URL}/projects/`, {
             headers: {
@@ -28,6 +33,8 @@ async function loadProjects() {
 async function createProject() {
     const name = document.getElementById("projectName").value;
     const description = document.getElementById("projectDesc").value;
+    // ✅ Récupérer la visibilité choisie
+    const visibility = document.querySelector('input[name="visibility"]:checked').value;
     const token = localStorage.getItem("access_token");
     
     if (!name) {
@@ -42,7 +49,11 @@ async function createProject() {
                 "Authorization": `Bearer ${token}`,
                 "Content-Type": "application/json"
             },
-            body: JSON.stringify({ name, description })
+            body: JSON.stringify({ 
+                name, 
+                description,
+                visibility  // ✅ AJOUTÉ
+            })
         });
         
         if (res.ok) {
@@ -50,10 +61,12 @@ async function createProject() {
             document.getElementById("projectDesc").value = "";
             loadProjects(); // Recharger la liste
         } else {
-            alert("Erreur création projet");
+            const error = await res.json();
+            alert("Erreur création projet: " + (error.detail || "Erreur inconnue"));
         }
     } catch (err) {
         console.error("Erreur:", err);
+        alert("Erreur de connexion au serveur");
     }
 }
 
@@ -67,17 +80,23 @@ function displayProjects(projects) {
     
     let html = '';
     projects.forEach(p => {
+        // ✅ Afficher un badge de visibilité
+        const visibilityBadge = p.visibility === 'PUBLIC' 
+            ? '<span class="badge public">🌍 PUBLIC</span>' 
+            : '<span class="badge department">🏢 Département</span>';
+        
         html += `
             <div class="project-item">
                 <div class="project-info">
-                    <h3>${p.name}</h3>
+                    <h3>${p.name} ${visibilityBadge}</h3>
                     <p>${p.description || 'Aucune description'}</p>
-                    <div class="project-stats">
-                        📊 ${p.datasets_count} datasets
+                    <div class="project-meta">
+                        <small>Créé par: ${p.owner_employee_id}</small>
+                        <small>📊 ${p.datasets_count} datasets</small>
                     </div>
                 </div>
                 <div>
-                    <button onclick="selectProject('${p.id}')" class="select-project">
+                    <button onclick="selectProject('${p.id}', '${p.name}')" class="select-project">
                         Utiliser ce projet
                     </button>
                 </div>
@@ -88,11 +107,9 @@ function displayProjects(projects) {
     container.innerHTML = html;
 }
 
-function selectProject(projectId) {
+// ✅ Modifié pour accepter le nom aussi
+function selectProject(projectId, projectName) {
     localStorage.setItem("current_project_id", projectId);
-    localStorage.setItem("current_project_name", 
-        document.querySelector(`button[onclick="selectProject('${projectId}')"]`)
-            .closest('.project-item').querySelector('h3').textContent
-    );
+    localStorage.setItem("current_project_name", projectName);
     window.location.href = "upload.html";
 }

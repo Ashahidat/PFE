@@ -33,10 +33,15 @@ document.getElementById("loginBtn").addEventListener("click", async () => {
             return;
         }
 
-        // ✅ CORRECTION : Stocker le token dans le localStorage
+        // ✅ Stockage du token + infos utilisateur
         if (data.access_token) {
             localStorage.setItem("access_token", data.access_token);
-            console.log("✅ Token stocké:", data.access_token.substring(0, 20) + "...");
+            localStorage.setItem("user_role", data.role);
+            localStorage.setItem("user_department", data.department);
+            localStorage.setItem("username", data.username);
+
+            console.log("✅ Token et infos utilisateur stockés");
+            console.log("👤 Rôle:", data.role, "Département:", data.department);
         } else {
             console.error("❌ Pas de token dans la réponse");
         }
