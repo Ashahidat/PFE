@@ -1,9 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from passlib.context import CryptContext
-import sys
-sys.path.append("/home/ashahi/PFE/pip/data_quality/app/backend")
 from db.connexion_db import SessionLocal
-from db.users import User
+from db.users_crud import get_user_by_employee_id, update_last_login
 from jwt_manager import create_access_token
 
 router = APIRouter()
@@ -15,27 +13,32 @@ def login(data: dict):
 
     db = SessionLocal()
 
-    user = db.query(User).filter_by(employee_id=data["employee_id"]).first()
-    print("🔍 Recherche dans la DB →", user)
-
-    if not user:
-        raise HTTPException(400, "Identifiants incorrects")
+    user = get_user_by_employee_id(db, data["employee_id"])
+    
+    if not user or not user.is_active:
+        raise HTTPException(400, "Identifiants incorrects ou compte inactif")
 
     if not pwd.verify(data["password"], user.password_hash):
         print("❌ Mot de passe incorrect")
         raise HTTPException(400, "Identifiants incorrects")
 
-    print("🔐 Mot de passe valide !")
-    print("🎉 Login réussi pour:", user.username)
+    # Mettre à jour la dernière connexion
+    update_last_login(db, user.id)
 
+    print(f"🎉 Login réussi: {user.username} ({user.role})")
+
+    # Token enrichi avec rôle et département
     token = create_access_token({
-    "sub": user.employee_id,
-    "username": user.username})
+        "sub": user.employee_id,
+        "username": user.username,
+        "role": user.role,
+        "department": user.department,
+        "is_active": user.is_active
+    })
 
-
-    #return {"message": "login ok"}
     return {
-    "access_token": token,
-    "token_type": "bearer",
-    "username": user.username}
-
+        "access_token": token,
+        "token_type": "bearer",
+        "username": user.username,
+        "role": user.role
+    }

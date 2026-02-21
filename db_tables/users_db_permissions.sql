@@ -1,48 +1,24 @@
 -- ======================================================
---  PFE — Initialisation complète (FULL RESET)
--- ======================================================
-
-
-SELECT pg_terminate_backend(pid)
-FROM pg_stat_activity
-WHERE datname = 'pfe_db'
-  AND pid <> pg_backend_pid();
-
-
--- Supprimer la base si elle existe
-DROP DATABASE IF EXISTS pfe_db;
-
--- Créer la base
-CREATE DATABASE pfe_db;
-
--- Donner les droits sur la base à pfe_user
-GRANT ALL PRIVILEGES ON DATABASE pfe_db TO pfe_user;
-
--- Se connecter à la base
-\c pfe_db;
-
--- Donner les droits sur le schéma public
-GRANT ALL ON SCHEMA public TO pfe_user;
-
--- Définir les privilèges par défaut pour toutes les futures tables
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO pfe_user;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO pfe_user;
-
--- ======================================================
---  Création de la table USERS
+--  TABLE USERS (version complète avec rôles)
 -- ======================================================
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     employee_id VARCHAR(50) UNIQUE NOT NULL,
     username VARCHAR(100) NOT NULL,
     password_hash TEXT NOT NULL,
-    department VARCHAR(100) NOT NULL,      -- ajouté !
-    role VARCHAR(50) NOT NULL DEFAULT 'analyst'
+    department VARCHAR(100) NOT NULL,
+    business_unit VARCHAR(100),
+    role VARCHAR(20) NOT NULL DEFAULT 'DATA_OWNER',
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    last_login TIMESTAMP
 );
 
--- Donner tous les droits à pfe_user sur la table users
-GRANT SELECT, INSERT, UPDATE, DELETE ON users TO pfe_user;
+-- Index pour les recherches fréquentes
+CREATE INDEX idx_users_employee_id ON users(employee_id);
+CREATE INDEX idx_users_role ON users(role);
+CREATE INDEX idx_users_department ON users(department);
+
+-- Donner les droits
+GRANT ALL PRIVILEGES ON TABLE users TO pfe_user;
 GRANT USAGE, SELECT ON SEQUENCE users_id_seq TO pfe_user;

@@ -1,9 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from passlib.context import CryptContext
-import sys
-sys.path.append("/home/ashahi/PFE/pip/data_quality/app/backend")
 from db.connexion_db import SessionLocal
-from db.users import User
+from db.users_crud import create_user, get_user_by_employee_id
 
 router = APIRouter()
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -14,28 +12,29 @@ def register_user(data: dict):
 
     db = SessionLocal()
 
-    # Vérifier si l’employee_id existe déjà
-    existing = db.query(User).filter_by(employee_id=data["employee_id"]).first()
-    print("🔍 Recherche employee_id:", existing)
-
+    # Vérifier si l'employee_id existe déjà
+    existing = get_user_by_employee_id(db, data["employee_id"])
     if existing:
         raise HTTPException(400, "employee_id déjà utilisé")
 
+    # Hasher le mot de passe
     hashed = pwd.hash(data["password"])
-    print("🔐 Mot de passe hashé:", hashed)
 
-    user = User(
+    # Créer l'utilisateur (DATA_OWNER par défaut)
+    user = create_user(
+        db=db,
         employee_id=data["employee_id"],
         username=data["username"],
         password_hash=hashed,
         department=data["department"],
-        role="analyst",
+        business_unit=data.get("business_unit"),
+        role="DATA_OWNER"  # Par défaut
     )
 
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    print("✅ Utilisateur créé:", user.employee_id, user.role)
 
-    print("✅ Utilisateur créé:", user)
-
-    return {"status": "success", "user_id": user.id}
+    return {
+        "status": "success",
+        "user_id": user.id,
+        "role": user.role
+    }
