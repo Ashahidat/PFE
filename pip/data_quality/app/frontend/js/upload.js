@@ -18,12 +18,14 @@ document.addEventListener("DOMContentLoaded", () => {
 // ================= UPLOAD CSV =================
 document.getElementById("uploadBtn").addEventListener("click", async () => {
     const file = document.getElementById("csvFile").files[0];
-    const projectId = localStorage.getItem("current_project_id"); // ✅ NOUVEAU
+    const projectId = localStorage.getItem("current_project_id");
+    const description = document.getElementById("description").value; // ✅ Récupérer description
     const statusDiv = document.getElementById("uploadStatus");
 
     console.log("🟡 Début processus upload...");
     console.log("📄 Fichier sélectionné:", file ? file.name : "Aucun");
     console.log("📁 Projet sélectionné:", projectId);
+    console.log("📝 Description:", description);
 
     // 🔴 Vérifications
     if (!file) {
@@ -42,7 +44,8 @@ document.getElementById("uploadBtn").addEventListener("click", async () => {
     // ================= FormData =================
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("project_id", projectId);  // ✅ Ajouté
+    formData.append("project_id", projectId);
+    formData.append("description", description); // ✅ Ajouter description
 
     try {
         const token = localStorage.getItem("access_token");

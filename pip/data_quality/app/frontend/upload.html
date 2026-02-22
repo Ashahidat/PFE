@@ -15,10 +15,27 @@
         Projet actuel : <strong id="currentProjectName"></strong>
     </div>
 
+    <!-- 📁 Fichier CSV -->
     <input type="file" id="csvFile">
+
+    <!-- ✅ NOUVEAU : Description -->
+    <div class="form-group">
+        <label for="description">Description (optionnelle)</label>
+        <textarea 
+            id="description" 
+            class="form-control" 
+            rows="3"
+            placeholder="Décrivez ce dataset (objectif, source, notes...)"
+        ></textarea>
+        <small class="form-text text-muted">
+            Cette description sera visible dans Apache Atlas
+        </small>
+    </div>
+
     <button id="uploadBtn">Uploader</button>
     <div id="uploadStatus" class="hidden">En cours d'exécution...</div>
 </div>
+
 <script src="js/upload.js"></script>
 </body>
 </html>

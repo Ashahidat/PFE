@@ -1,9 +1,10 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, ARRAY
+from sqlalchemy import Column, String, DateTime, ForeignKey, ARRAY, Text
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from db.connexion_db import Base
 import uuid
+
 
 class Dataset(Base):
     __tablename__ = "datasets"
@@ -17,6 +18,7 @@ class Dataset(Base):
     owner_employee_id = Column(String, nullable=True)
     atlas_guid = Column(String, nullable=True)
     project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=True)
+    description = Column(Text, nullable=True)  # ✅ NOUVEAU champ description
     
     # Relations
     project = relationship("Project", back_populates="datasets")

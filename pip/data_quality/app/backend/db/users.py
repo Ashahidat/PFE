@@ -11,4 +11,4 @@ class User(Base):
     username = Column(String(100), nullable=False)
     password_hash = Column(Text, nullable=False)
     department = Column(String(100), nullable=False)
-    role = Column(String(50), nullable=False, default="Data_owner")
+    role = Column(String(50), nullable=False, default="DATA_OWNER")

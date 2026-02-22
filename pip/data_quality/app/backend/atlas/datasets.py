@@ -19,7 +19,8 @@ def create_dataset(
     signature=None,
     force_unique=False,
     owner_employee_id=None,
-    project_id=None  # ✅ NOUVEAU PARAMÈTRE
+    project_id=None,
+    description=None  # ✅ NOUVEAU PARAMÈTRE
 ):
     """
     Crée un DataSet dans Atlas. 
@@ -29,14 +30,13 @@ def create_dataset(
 
     signature_json = json.dumps(signature) if signature else None
 
-    # Le qualifiedName inclut maintenant le projet pour isoler les datasets
-    # entre différents projets
+    # Le qualifiedName inclut le projet pour isoler les datasets entre projets
     qn = f"{project_id}_{hash_value}" if project_id else hash_value
     if force_unique:
         qn = f"{qn}_{int(time.time())}"
 
     # ---------------------------------------------------------------------
-    # 0) Vérifier si un dataset existe déjà (via qualifiedName) - NOUVELLE MÉTHODE
+    # 0) Vérifier si un dataset existe déjà (via qualifiedName)
     # ---------------------------------------------------------------------
     try:
         base_url = ATLAS_SEARCH_URL.split("/search")[0]
@@ -58,23 +58,29 @@ def create_dataset(
             logger.warning(f"create_dataset: unexpected error checking existence: {e}")
 
     # ---------------------------------------------------------------------
-    # 1) Création du dataset
+    # 1) Création du dataset avec description personnalisée
     # ---------------------------------------------------------------------
+
+    # ✅ Utiliser la description personnalisée si fournie
+    description_text = description if description else f"Dataset importé depuis {file_path}"
+
     payload = {
         "entities": [{
             "typeName": "DataSet",
             "attributes": {
                 "qualifiedName": qn,
                 "name": original_name,
-                "description": f"Dataset importé depuis {file_path}",
+                "description": description_text,  # ✅ DESCRIPTION DYNAMIQUE
                 "versionComment": (
-                    f"Version dérivée de {parent_qualified_name}" if parent_qualified_name else "Version initiale"
+                    f"Version dérivée de {parent_qualified_name}"
+                    if parent_qualified_name
+                    else "Version initiale"
                 ),
                 "signature": signature_json,
                 "columnsCount": len(df.columns),
                 "columnsList": list(df.columns),
                 "owner": owner_employee_id,
-                "project": project_id  # ✅ NOUVEL ATTRIBUT
+                "project": project_id
             },
             "guid": "-100"
         }]
@@ -94,13 +100,12 @@ def create_dataset(
             logger.error(f"create_dataset: no guidAssignments returned, response: {res.text}")
             raise Exception("Atlas did not return GUID.")
 
-        # 👉 Renvoie existed=False car créé maintenant
+        # 👉 Dataset créé maintenant
         return guid, False
 
     except Exception as e:
         logger.error(f"create_dataset: error creating dataset: {e}")
         raise
-
 
 def link_versioning(parent_guid, child_guid):
     """

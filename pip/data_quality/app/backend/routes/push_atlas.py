@@ -71,11 +71,8 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         file_path = dataset.file_path
         hash_value = dataset.hash
         original_name = dataset.name
+        description = dataset.description
 
-        logger.info(f"🚀 Push Atlas: {original_name}")
-        logger.info(f"   ID: {dataset_id}")
-        logger.info(f"   Hash: {hash_value[:8]}...")
-        logger.info(f"   User: {employee_id}")
 
         # ----------------------
         # 2️⃣ Lire le PARQUET
@@ -187,7 +184,6 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         # ----------------------
         # 6️⃣ Créer le DataSet
         # ----------------------
-        logger.info(f"📝 Création du dataset...")
         dataset_guid, dataset_existed = create_dataset(
             hash_value,
             original_name,
@@ -196,7 +192,8 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             df,
             signature,
             owner_employee_id=dataset.owner_employee_id,
-            project_id=str(dataset.project_id)
+            project_id=str(dataset.project_id),
+            description=description  # ✅ Passer la description à Atlas
         )
         
         # Mettre à jour l'atlas_guid du dataset

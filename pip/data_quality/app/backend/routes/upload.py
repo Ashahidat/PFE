@@ -32,15 +32,17 @@ spark_cache = {}  # clé = dataset_id, valeur = df Spark
 @router.post("/upload")
 async def upload_csv(
     file: UploadFile = File(...),
-    project_id: str = Form(...),  # ✅ projet obligatoire
+    project_id: str = Form(...),  
+    description: str = Form(None),  # ✅ NOUVEAU : description optionnelle
     user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     print(f"📄 Fichier reçu : {file.filename}")
     print(f"📁 Projet ID : {project_id}")
+    print(f"📝 Description : {description}")  # ✅ Debug
     print(f"👤 Utilisateur : {user['sub']} (role: {user['role']}, department: {user['department']})")
 
-    # 1️⃣ Vérifier que le projet existe (SANS filtre owner ici)
+    # 1️⃣ Vérifier que le projet existe
     project = db.query(Project).filter(Project.id == project_id).first()
 
     if not project:
@@ -49,7 +51,7 @@ async def upload_csv(
             detail="Projet introuvable"
         )
 
-    # 2️⃣ 🔐 Vérifier les droits via la nouvelle fonction centralisée
+    # 2️⃣ 🔐 Vérifier les droits
     if not can_upload_to_project(user, project, db):
         logger.warning(
             f"⛔ Utilisateur {user['sub']} n'a pas le droit d'uploader dans le projet {project_id}"
@@ -99,12 +101,13 @@ async def upload_csv(
     db_dataset = Dataset(
         id=dataset_id,
         name=file.filename,
-        file_path=parquet_path,        # ✅ On stocke le parquet
+        file_path=parquet_path,
         hash=hash_value,
         columns_list=columns_list,
         owner_employee_id=user["sub"],
-        atlas_guid=None,               # rempli après push-atlas
-        project_id=project_id          # ✅ liaison projet
+        atlas_guid=None,
+        project_id=project_id,
+        description=description  # ✅ NOUVEAU champ
     )
 
     db.add(db_dataset)
@@ -118,7 +121,8 @@ async def upload_csv(
         "columns": columns_list,
         "hash": hash_value,
         "dataset_id": dataset_id,
-        "project_id": project_id
+        "project_id": project_id,
+        "description": description  # ✅ Retourner aussi
     }
 
 

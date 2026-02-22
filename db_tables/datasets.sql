@@ -7,7 +7,8 @@ CREATE TABLE datasets (
     created_at TIMESTAMP DEFAULT NOW(),
     owner_employee_id VARCHAR(50),
     atlas_guid TEXT,
-    project_id UUID REFERENCES projects(id) ON DELETE SET NULL
+    project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+    description TEXT
 );
 
 -- Index pour les recherches fréquentes
