@@ -10,13 +10,13 @@ logger = logging.getLogger("atlas.datasets")
 logger.setLevel(logging.DEBUG)
 
 
+
 def create_dataset(
     hash_value,
     original_name,
     file_path,
     parent_qualified_name,
-    df,
-    signature=None,  # Gardé pour usage interne mais plus envoyé
+    df, 
     force_unique=False,
     owner_employee_id=None,
     project_id=None,
@@ -31,9 +31,10 @@ def create_dataset(
         (guid, existed: bool)
     """
 
-    # ⚠️ On garde la signature pour usage interne uniquement
-    # (comparaison, similarité, stockage local, etc.)
-    signature_json = json.dumps(signature) if signature else None
+    # ---------------------------------------------------------------------
+    # ❌ SUPPRIMER CES LIGNES - la signature n'est plus utilisée ici
+    # ---------------------------------------------------------------------
+    # signature_json = json.dumps(signature) if signature else None
 
     # ---------------------------------------------------------------------
     # Construction du qualifiedName
@@ -113,6 +114,7 @@ def create_dataset(
     except Exception as e:
         logger.error(f"create_dataset: error creating dataset: {e}")
         raise
+
 
 def link_versioning(parent_guid, child_guid):
     """

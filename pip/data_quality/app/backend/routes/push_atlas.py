@@ -190,10 +190,9 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             file_path,
             parent_qn,
             df,
-            signature,
             owner_employee_id=dataset.owner_employee_id,
             project_id=str(dataset.project_id),
-            description=description  # ✅ Passer la description à Atlas
+            description=description 
         )
         
         # Mettre à jour l'atlas_guid du dataset
