@@ -194,12 +194,14 @@ def find_smart_parent(
     dataset_name: str,
     dataset_id: str = None,
     db: Session = None,
-    project_id: str = None  # ✅ NOUVEAU PARAMÈTRE
+    project_id: str = None
 ):
     """
     Recherche le parent dans le MÊME PROJET uniquement
-    Retourne (parent_guid, parent_qn, parent_columns, parent_column_mapping)
+    MAINANT : utilise les signatures en base de données, PAS celles d'Atlas
     """
+    from db.dataset_versions import DatasetVersion
+    from db.dataset_signatures import DatasetSignature
 
     print(f"\n{'='*60}")
     print(f"🎯 RECHERCHE PARENT: {dataset_name} (projet: {project_id})")
@@ -209,11 +211,10 @@ def find_smart_parent(
         # ------------------------------------------------------------------
         # 🔎 1️⃣ RÉCUPÉRER DATASETS DU MÊME PROJET UNIQUEMENT
         # ------------------------------------------------------------------
-
         base_url = ATLAS_SEARCH_URL.split("/search")[0]
 
         if project_id:
-            # 🔥 CORRECTION: recherche simple puis filtrage manuel par projet
+            # Recherche dans Atlas
             res = atlas_get(f"{ATLAS_SEARCH_URL}?typeName=DataSet&query=*")
             entities = res.json().get("entities", [])
 
@@ -231,9 +232,7 @@ def find_smart_parent(
                 except:
                     continue
             entities = filtered_entities
-
         else:
-            # Fallback si aucun projet fourni
             res = atlas_get(f"{ATLAS_SEARCH_URL}?typeName=DataSet&query=*")
             entities = res.json().get("entities", [])
 
@@ -242,7 +241,6 @@ def find_smart_parent(
         # ------------------------------------------------------------------
         # 2️⃣ SIGNATURE COURANTE
         # ------------------------------------------------------------------
-
         sig_current = calculate_dataset_signature(df_current, dataset_name)
 
         best_score = 0
@@ -253,9 +251,7 @@ def find_smart_parent(
         # ------------------------------------------------------------------
         # 3️⃣ RÉCUPÉRER ENTITÉS COMPLÈTES
         # ------------------------------------------------------------------
-
         full_entities = []
-
         for e in entities:
             guid = e.get("guid")
             if not guid:
@@ -267,11 +263,9 @@ def find_smart_parent(
                 continue
 
         # ------------------------------------------------------------------
-        # 4️⃣ COMPARAISON SIMILARITÉ
+        # 4️⃣ COMPARAISON SIMILARITÉ - UTILISE LA BASE DE DONNÉES
         # ------------------------------------------------------------------
-
         for ds in full_entities:
-
             if ds.get("status") == "DELETED":
                 continue
 
@@ -280,16 +274,26 @@ def find_smart_parent(
             ds_guid = ds.get("guid")
             ds_qn = attrs.get("qualifiedName", "Unknown")
 
-            sig_old = attrs.get("signature")
-
-            if isinstance(sig_old, str):
-                try:
-                    sig_old = json.loads(sig_old)
-                except:
-                    continue
-
-            if not sig_old:
+            # 🔥 CHANGEMENT MAJEUR : Récupérer la signature depuis la DB
+            # Trouver la dernière version de ce dataset
+            version = db.query(DatasetVersion)\
+                .filter(DatasetVersion.atlas_guid == ds_guid)\
+                .first()
+            
+            if not version:
                 continue
+                
+            # Récupérer la signature associée à cette version
+            sig_record = db.query(DatasetSignature)\
+                .filter(DatasetSignature.dataset_id == version.dataset_id)\
+                .order_by(DatasetSignature.created_at.desc())\
+                .first()
+                
+            if not sig_record or not sig_record.signature:
+                continue
+                
+            sig_old = sig_record.signature
+            # ⚠️ Ne plus chercher dans les attributs Atlas : attrs.get("signature")
 
             score = compute_similarity_score(sig_current, sig_old)
             print(f"   {ds_name}: score {score:.3f}")
@@ -303,16 +307,12 @@ def find_smart_parent(
         # ------------------------------------------------------------------
         # 5️⃣ SI PARENT TROUVÉ
         # ------------------------------------------------------------------
-
         if best_parent and best_score >= 0.60:
-
             parent_name = best_parent.get("attributes", {}).get("name", "Unknown")
-
             print(f"\n🏆 PARENT TROUVÉ: {parent_name} (score: {best_score:.3f})")
             print(f"   GUID: {best_parent_guid}")
             print(f"   QualifiedName: {best_parent_qn}")
 
-            # 🔥 Vérifie/crée les colonnes si nécessaire
             parent_columns, parent_column_mapping = ensure_parent_columns(
                 best_parent_guid,
                 parent_name,
@@ -328,7 +328,6 @@ def find_smart_parent(
                 parent_column_mapping = {}
 
             return best_parent_guid, best_parent_qn, parent_columns, parent_column_mapping
-
         else:
             print(f"\n❌ AUCUN PARENT TROUVÉ DANS LE PROJET {project_id}")
             return None, None, [], {}
@@ -338,7 +337,6 @@ def find_smart_parent(
         import traceback
         traceback.print_exc()
         return None, None, [], {}
-
 
 def persist_signature_to_db(db: Session, dataset_id: str, signature: dict):
     ds_sig = create_dataset_signature(
