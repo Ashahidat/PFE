@@ -4,6 +4,7 @@ from atlas.client import atlas_post, atlas_get
 import logging
 import requests 
 import time  
+from typing import List, Optional
 
 ATLAS_BULK_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/bulk/classification"
 ATLAS_ENTITY_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/guid"
@@ -132,3 +133,71 @@ def add_classification(entity_guid: str, classification_name: str, attributes: d
                     raise Exception(f"Impossible d'ajouter la classification à Atlas après {retries} tentatives: {str(e)}")
     
     return {"status": "error", "message": "Échec après plusieurs tentatives"}
+
+
+# ============= NOUVELLES FONCTIONS À AJOUTER À LA FIN DU FICHIER =============
+
+def add_classification_to_entity(entity_guid: str, classification_name: str, attributes: dict = None):
+    """
+    Version simplifiée qui appelle add_classification
+    Gardée pour compatibilité avec le code existant
+    """
+    result = add_classification(entity_guid, classification_name, attributes)
+    return result.get("status") in ["added", "already_exists"]
+
+
+def add_classifications_bulk(entity_guids: List[str], classification_name: str, attributes: dict = None):
+    """
+    Ajoute une classification à plusieurs entités en une seule requête
+    """
+    if not entity_guids:
+        logger.warning("⚠️ Aucun GUID fourni pour l'ajout bulk de classifications")
+        return False
+    
+    logger.info(f"📤 Envoi classification bulk à {len(entity_guids)} entités - Type: {classification_name}")
+    
+    try:
+        payload = {
+            "classification": {
+                "typeName": classification_name,
+                "attributes": attributes or {}
+            },
+            "entityGuids": entity_guids
+        }
+        
+        response = atlas_post(ATLAS_BULK_CLASSIFICATION_URL, payload)
+        
+        if response.status_code == 204:
+            logger.info(f"✅ Classification {classification_name} ajoutée à {len(entity_guids)} entités (bulk)")
+            return True
+        
+        logger.warning(f"⚠️ Réponse inattendue: {response.status_code}")
+        return False
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur ajout classification bulk: {e}")
+        return False
+
+
+def get_classification_for_status(status: str) -> str:
+    """
+    Retourne la classification correspondant au statut d'un test
+    """
+    status_lower = status.lower() if status else ""
+    
+    if status_lower in ["réussi", "success", "pass", "succès"]:
+        return "DQ_SUCCESS"
+    elif status_lower in ["échoué", "failed", "fail", "echec"]:
+        return "DQ_FAILED"
+    elif status_lower in ["ignoré", "skipped", "warning"]:
+        return "DQ_WARNING"
+    else:
+        return "DQ_WARNING"  # Par défaut
+
+
+def add_quality_classification(entity_guid: str, status: str):
+    """
+    Ajoute automatiquement la bonne classification qualité basée sur le statut
+    """
+    classification = get_classification_for_status(status)
+    return add_classification_to_entity(entity_guid, classification)

@@ -33,6 +33,7 @@ from jwt_dependencies import get_current_user
 from db.dataset_versions import DatasetVersion
 from atlas.data_quality import create_data_quality_checks_from_json
 from db.data_quality_to_db import save_data_quality_results_from_json
+from atlas.quality_summary import add_quality_summary_to_dataset  # 👈 NOUVEL IMPORT
 
 
 router = APIRouter()
@@ -320,12 +321,15 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         # 🔥 10️⃣ ENVOYER LES RÉSULTATS DE QUALITÉ
         #       → Atlas
         #       → PostgreSQL
+        #       → Résumé global
         #       → Archivage
         # ----------------------
         print("--------------------------------------------------------------------------------------------------")
 
         logger.info(f"📤 Envoi des résultats de qualité...")
 
+        # Collecter tous les checks pour le résumé global
+        all_checks_data = []
 
         archive_dir = os.path.join(RESULTS_DIR, "archive")
         os.makedirs(archive_dir, exist_ok=True)
@@ -354,10 +358,13 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
                     data = json.load(f)
 
                 dag_run_uuid = data.get("dag_run_id")
+                checks = data.get("checks", [])
+                all_checks_data.extend(checks)  # Pour le résumé global
 
-                # 🔹 1️⃣ Envoyer vers Atlas
+                # 🔹 1️⃣ Envoyer vers Atlas (AVEC lien colonnes)
                 guids = create_data_quality_checks_from_json(
                     dataset_version_guid=new_version.atlas_guid,
+                    column_mapping=column_guids,  # 👈 Passage du mapping
                     json_path=json_path
                 )
                 dq_guids.extend(guids)
@@ -379,6 +386,14 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
 
             except Exception as e:
                 logger.error(f"❌ Erreur traitement fichier {jf}: {e}")
+
+        # 👇 NOUVEAU : Ajouter le résumé qualité au dataset
+        if all_checks_data:
+            add_quality_summary_to_dataset(
+                dataset_guid=new_version.atlas_guid,
+                checks_data=all_checks_data
+            )
+            logger.info(f"✅ Résumé qualité ajouté au dataset ({len(all_checks_data)} checks analysés)")
 
         logger.info(f"📊 TOTAL Atlas: {len(dq_guids)}")
         logger.info(f"📊 TOTAL PostgreSQL: {len(dq_db_ids)}")
