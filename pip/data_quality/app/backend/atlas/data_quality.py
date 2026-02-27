@@ -9,12 +9,13 @@ from atlas.classifications import add_quality_classification
 
 logger = logging.getLogger("atlas.dataquality")
 
+
 def create_data_quality_check(
     dataset_version_guid: str,
     column_guid: Optional[str],
     check_type: str,
     column_name: Optional[str],
-    status: str,
+    status: str,  # Peut être "réussi", "échoué", etc.
     error_count: int,
     ratio: str,
     dag_run_id: str,
@@ -44,6 +45,17 @@ def create_data_quality_check(
             ratio_float = float(ratio)
     except:
         ratio_float = 0.0
+    
+    # 🔥 MAPPER LE STATUT FRANÇAIS VERS ANGLAIS POUR LA CLASSIFICATION
+    status_for_classification = status.lower()
+    if status_for_classification in ["réussi", "réussie", "succès", "success", "pass"]:
+        atlas_status = "SUCCESS"
+    elif status_for_classification in ["échoué", "échouée", "échec", "failed", "fail"]:
+        atlas_status = "FAILED"
+    elif status_for_classification in ["avertissement", "warning"]:
+        atlas_status = "WARNING"
+    else:
+        atlas_status = "WARNING"  # Par défaut
     
     # Construction des attributs
     attributes = {
@@ -82,10 +94,10 @@ def create_data_quality_check(
         res = atlas_post(ATLAS_ENTITY_BULK_URL, payload)
         guid = res.json().get("guidAssignments", {}).get("-200")
         
-        # Ajout de la classification basée sur le statut
-        add_quality_classification(guid, status)
+        # Ajout de la classification basée sur le statut (version anglaise)
+        add_quality_classification(guid, atlas_status)
         
-        # Log enrichi
+        # Log enrichi (garder le statut français pour la lisibilité)
         if column_guid:
             logger.info(f"✅ DataQualityCheck créé: {guid} - {name} sur colonne {column_name} ({status})")
         else:
@@ -97,6 +109,7 @@ def create_data_quality_check(
         raise
 
 
+
 def create_data_quality_checks_from_json(
     dataset_version_guid: str,
     column_mapping: Dict[str, str],
@@ -104,7 +117,7 @@ def create_data_quality_checks_from_json(
 ) -> List[str]:
     """
     Crée toutes les entités DataQualityCheck à partir du JSON généré par Airflow.
-    Maintenant avec lien vers les colonnes et classifications.
+    Supporte les noms de champs en français.
     """
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -116,9 +129,16 @@ def create_data_quality_checks_from_json(
     stats = {"avec_colonne": 0, "sans_colonne": 0}
     
     for check in checks:
+        # 🔥 MAPPING DES CLÉS FRANÇAISES VERS CE QU'ATLAS ATTEND
+        rule_type = check.get("rule_type") or check.get("type de test", "UNKNOWN")
+        column_name = check.get("column_name") or check.get("colonne testée")
+        status = check.get("status") or check.get("statut", "inconnu")
+        error_count = check.get("error_count") or check.get("nombre", 0)
+        ratio = check.get("ratio", "0/0")
+        examples = check.get("examples") or check.get("exemples", [])
+        
         # Récupérer le GUID de la colonne si disponible
         column_guid = None
-        column_name = check.get("column_name")
         
         if column_name and column_name in column_mapping:
             column_guid = column_mapping[column_name]
@@ -129,13 +149,13 @@ def create_data_quality_checks_from_json(
         guid = create_data_quality_check(
             dataset_version_guid=dataset_version_guid,
             column_guid=column_guid,
-            check_type=check["rule_type"],
+            check_type=rule_type,
             column_name=column_name,
-            status=check["status"],
-            error_count=check["error_count"],
-            ratio=check["ratio"],
+            status=status,
+            error_count=error_count,
+            ratio=ratio,
             dag_run_id=dag_run_id,
-            examples=check.get("examples", [])
+            examples=examples
         )
         guids.append(guid)
     

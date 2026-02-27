@@ -33,8 +33,9 @@ from jwt_dependencies import get_current_user
 from db.dataset_versions import DatasetVersion
 from atlas.data_quality import create_data_quality_checks_from_json
 from db.data_quality_to_db import save_data_quality_results_from_json
-from atlas.quality_summary import add_quality_summary_to_dataset  # 👈 NOUVEL IMPORT
-
+# 👇 IMPORT CORRECT - on importe la fonction depuis quality_summary
+from atlas.quality_summary import add_quality_summary_to_dataset
+from atlas.client import get_typedef_by_name  # Si besoin pour d'autres vérifications
 
 router = APIRouter()
 logger = logging.getLogger("push-atlas")
@@ -44,6 +45,10 @@ TMP_DIR = "/home/ashahi/PFE/pip/data_quality/tmp"
 RESULTS_DIR = "/home/ashahi/PFE/pip/data_quality/results"
 os.makedirs(TMP_DIR, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
+
+# ============================================================
+# ROUTE PRINCIPALE
+# ============================================================
 
 @router.post("/push-atlas/{dataset_id}")
 def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
@@ -74,7 +79,6 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         original_name = dataset.name
         description = dataset.description
 
-
         # ----------------------
         # 2️⃣ Lire le PARQUET
         # ----------------------
@@ -85,38 +89,54 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         logger.info(f"   Colonnes: {list(df.columns)}")
 
         # ----------------------
-        # 3️⃣ Déployer typedefs (ignorer 409)
+        # 3️⃣ DÉPLOYER TYPEDEFS (robuste pour types personnalisés)
         # ----------------------
         logger.info("📦 Déploiement des typedefs Atlas...")
-        for idx, entityDef in enumerate(typedefs_payload["entityDefs"]):
+
+        # ⚡ 1️⃣ Déployer d'abord les types de base (Column, DataQualityCheck)
+        base_types = ["Column", "DataQualityCheck"]
+        for type_name in base_types:
+            entityDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == type_name)
             try:
-                if idx == 0:
-                    atlas_put(ATLAS_TYPEDEF_URL, {"entityDefs": [entityDef]})
-                else:
-                    atlas_post(ATLAS_TYPEDEF_URL, {"entityDefs": [entityDef]})
-                logger.info(f"  ✅ EntityDef: {entityDef['name']}")
+                atlas_post(ATLAS_TYPEDEF_URL, {"entityDefs": [entityDef]})
+                logger.info(f"✅ EntityDef créé: {type_name}")
             except Exception as e:
                 if "409" not in str(e):
                     raise
-                logger.info(f"  ℹ️ EntityDef existant: {entityDef['name']}")
+                logger.info(f"ℹ️ EntityDef existant: {type_name}")
 
-        for rel_def in typedefs_payload["relationshipDefs"]:
+        # ⚡ 2️⃣ Déployer DataSet (référence maintenant Column)
+        dataSetDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == "DataSet")
+        try:
+            atlas_put(ATLAS_TYPEDEF_URL, {"entityDefs": [dataSetDef]})
+            logger.info("✅ DataSet déployé")
+        except Exception as e:
+            if "409" not in str(e):
+                raise
+            logger.info("ℹ️ DataSet existant")
+
+        # ⚡ 3️⃣ Déployer les relations
+        for rel_def in typedefs_payload.get("relationshipDefs", []):
             try:
                 atlas_post(ATLAS_TYPEDEF_URL, {"relationshipDefs": [rel_def]})
-                logger.info(f"  ✅ RelationshipDef: {rel_def['name']}")
+                logger.info(f"✅ RelationshipDef: {rel_def['name']}")
             except Exception as e:
                 if "409" not in str(e):
                     raise
-                logger.info(f"  ℹ️ RelationshipDef existant: {rel_def['name']}")
+                logger.info(f"ℹ️ RelationshipDef existant: {rel_def['name']}")
 
-        for class_def in typedefs_payload["classificationDefs"]:
+        # ⚡ 4️⃣ Déployer les classifications
+        for class_def in typedefs_payload.get("classificationDefs", []):
             try:
                 atlas_post(ATLAS_TYPEDEF_URL, {"classificationDefs": [class_def]})
-                logger.info(f"  ✅ Classification: {class_def['name']}")
+                logger.info(f"✅ Classification: {class_def['name']}")
             except Exception as e:
                 if "409" not in str(e):
                     raise
-                logger.info(f"  ℹ️ Classification existante: {class_def['name']}")
+                logger.info(f"ℹ️ Classification existante: {class_def['name']}")
+
+        logger.info("⏳ Attente de la propagation des typedefs...")
+        time.sleep(3)
 
         # ----------------------
         # 4️⃣ Calcul signature
@@ -138,8 +158,6 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         similarity_score = 0
         base_url = ATLAS_SEARCH_URL.split("/search")[0]
 
-        # 🔥 CORRECTION: Ne pas utiliser get_latest_version avec le dataset_id actuel
-        # car c'est un nouveau dataset dans la table datasets
         if dataset.atlas_guid:
             logger.info(f"🔗 Dataset déjà lié, recherche dernière version...")
             try:
@@ -160,13 +178,11 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             logger.info(f"🔍 Recherche intelligente du parent...")
             parent_guid, parent_qn, parent_columns, parent_column_mapping = find_smart_parent(df, original_name, dataset_id, db, project_id=str(dataset.project_id))
             if parent_guid:
-                # 🔥 Récupérer la version du parent pour le numéro de version
                 parent_version = get_version_by_atlas_guid(db, parent_guid)
                 if parent_version:
                     parent_version_id = str(parent_version.id)
                     parent_version_number = parent_version.version_number
                     
-                    # Calculer le score de similarité pour le tracking
                     sig_current = calculate_dataset_signature(df, original_name)
                     parent_sig_record = db.query(DatasetSignature)\
                         .join(DatasetVersion, DatasetVersion.dataset_id == DatasetSignature.dataset_id)\
@@ -204,13 +220,11 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         db.commit()
         logger.info(f"✅ Dataset créé: {dataset_guid}")
 
-        # 🔥 CORRECTION: Déterminer le numéro de version basé sur le parent, pas sur dataset.id
+        # Déterminer le numéro de version
         if parent_version_id and parent_version_number > 0:
-            # Héritage du parent : version = version_parent + 1
             new_version_number = parent_version_number + 1
             logger.info(f"📌 Héritage du parent: v{parent_version_number} -> v{new_version_number}")
         else:
-            # Pas de parent ou parent non trouvé en base : version 1
             new_version_number = 1
             logger.info(f"📌 Nouveau dataset racine: version 1")
         
@@ -227,12 +241,11 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         )
         logger.info(f"📌 Nouvelle version créée: v{new_version_number}")
 
-        # 7️⃣ Lien versioning datasets avec enregistrement du processus en base
+        # 7️⃣ Lien versioning datasets
         process_guid = None
         process_name = None
         if parent_guid and parent_guid != dataset_guid:
             logger.info(f"🔗 Création du lien versioning datasets...")
-            # Récupérer à la fois le GUID et le nom du process
             process_guid, process_name = create_import_process(
                 dataset_inputs=parent_guid,
                 dataset_output_guid=dataset_guid,
@@ -240,13 +253,12 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
                 description=f"Version dérivée de {parent_qn}"
             )
             
-            # ✅ ENREGISTRER LE PROCESS EN BASE AVEC LE VRAI NOM
             if process_guid:
                 try:
                     create_process_record(
                         db=db,
                         atlas_process_guid=process_guid,
-                        process_name=process_name,  # Utiliser le vrai nom du process
+                        process_name=process_name,
                         operation_type="TRANSFORMATION",
                         output_dataset_version_id=str(new_version.id),
                         input_dataset_version_id=parent_version_id,
@@ -281,18 +293,15 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         column_lineages = []
         
         for col_name, child_guid in column_guids.items():
-            # Récupérer le logicalColumnId depuis les entités retournées
             logical_id = None
             parent_col_id = None
             
-            # Chercher dans les entités retournées
             for entity in column_entities:
                 if entity.get("guid") == child_guid:
                     logical_id = entity["attributes"].get("logicalColumnId")
                     break
             
             if logical_id:
-                # Vérifier si ce logical_id existait déjà dans une version parent
                 if parent_version_id and col_name in parent_column_mapping:
                     parent_col = db.query(ColumnLineage).filter(
                         ColumnLineage.logical_column_id == logical_id,
@@ -318,14 +327,9 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             logger.info(f"🏷️ {propagated}/{len(column_guids)} logicalColumnId propagés du parent")
 
         # ----------------------
-        # 🔥 10️⃣ ENVOYER LES RÉSULTATS DE QUALITÉ
-        #       → Atlas
-        #       → PostgreSQL
-        #       → Résumé global
-        #       → Archivage
+        # 🔟 ENVOYER LES RÉSULTATS DE QUALITÉ
         # ----------------------
         print("--------------------------------------------------------------------------------------------------")
-
         logger.info(f"📤 Envoi des résultats de qualité...")
 
         # Collecter tous les checks pour le résumé global
@@ -342,7 +346,6 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         if os.path.exists(RESULTS_DIR):
             all_files = os.listdir(RESULTS_DIR)
             json_files = [f for f in all_files if f.endswith(".json")]
-
             logger.info(f"📁 Fichiers JSON trouvés: {json_files}")
         else:
             logger.warning(f"⚠️ Dossier results introuvable")
@@ -353,23 +356,22 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             try:
                 logger.info(f"📤 Traitement du fichier qualité: {jf}")
 
-                # Lire le JSON une seule fois
                 with open(json_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
                 dag_run_uuid = data.get("dag_run_id")
                 checks = data.get("checks", [])
-                all_checks_data.extend(checks)  # Pour le résumé global
+                all_checks_data.extend(checks)
 
-                # 🔹 1️⃣ Envoyer vers Atlas (AVEC lien colonnes)
+                # Envoyer vers Atlas
                 guids = create_data_quality_checks_from_json(
                     dataset_version_guid=new_version.atlas_guid,
-                    column_mapping=column_guids,  # 👈 Passage du mapping
+                    column_mapping=column_guids,
                     json_path=json_path
                 )
                 dq_guids.extend(guids)
 
-                # 🔹 2️⃣ Sauvegarder en PostgreSQL
+                # Sauvegarder en PostgreSQL
                 db_ids = save_data_quality_results_from_json(
                     db=db,
                     dataset_version_id=new_version.id,
@@ -378,7 +380,6 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
                 )
                 dq_db_ids.extend(db_ids)
 
-                # 🔹 3️⃣ Marquer comme traité
                 processed_files.append(jf)
 
                 logger.info(f"✅ {len(guids)} checks envoyés Atlas")
@@ -387,13 +388,18 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             except Exception as e:
                 logger.error(f"❌ Erreur traitement fichier {jf}: {e}")
 
-        # 👇 NOUVEAU : Ajouter le résumé qualité au dataset
+        # 👇 AJOUT DU RÉSUMÉ QUALITÉ - VERSION SIMPLIFIÉE
+        # La fonction add_quality_summary_to_dataset gère tout :
+        # - Vérification/ajout du typedef
+        # - Tentative d'ajout du résumé
+        # - Fallback classification si échec
         if all_checks_data:
+            logger.info("📊 Ajout du résumé qualité...")
             add_quality_summary_to_dataset(
                 dataset_guid=new_version.atlas_guid,
                 checks_data=all_checks_data
             )
-            logger.info(f"✅ Résumé qualité ajouté au dataset ({len(all_checks_data)} checks analysés)")
+            # Pas besoin de vérifier le retour car la fonction logge déjà
 
         logger.info(f"📊 TOTAL Atlas: {len(dq_guids)}")
         logger.info(f"📊 TOTAL PostgreSQL: {len(dq_db_ids)}")
@@ -436,7 +442,6 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
     except Exception as e:
         logger.error(f"❌ Erreur: {e}", exc_info=True)
         
-        # ENREGISTRER L'ÉCHEC
         try:
             execution_time = int((time.time() - start_time) * 1000)
             create_push_history(
@@ -464,7 +469,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         except Exception as e:
             logger.warning(f"⚠️ Erreur nettoyage tmp: {e}")
 
-        # 📦 Archivage de TOUS les fichiers JSON du dossier results
+        # 📦 Archivage des fichiers JSON
         try:
             archive_dir = os.path.join(RESULTS_DIR, "archive")
             os.makedirs(archive_dir, exist_ok=True)
@@ -472,7 +477,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             archived_count = 0
             if os.path.exists(RESULTS_DIR):
                 for f in os.listdir(RESULTS_DIR):
-                    if f.endswith('.json') and f != 'archive':  # Éviter d'archiver le dossier archive lui-même
+                    if f.endswith('.json') and f != 'archive':
                         source = os.path.join(RESULTS_DIR, f)
                         destination = os.path.join(
                             archive_dir,
