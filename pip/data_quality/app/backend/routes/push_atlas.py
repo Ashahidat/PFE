@@ -7,6 +7,7 @@ import time
 import uuid
 import shutil
 import json
+from typing import List, Dict, Any  # 👈 AJOUTER CET IMPORT
 
 from config import spark
 from db.connexion_db import get_db
@@ -33,9 +34,9 @@ from jwt_dependencies import get_current_user
 from db.dataset_versions import DatasetVersion
 from atlas.data_quality import create_data_quality_checks_from_json
 from db.data_quality_to_db import save_data_quality_results_from_json
-# 👇 IMPORT CORRECT - on importe la fonction depuis quality_summary
-from atlas.quality_summary import add_quality_summary_to_dataset
-from atlas.client import get_typedef_by_name  # Si besoin pour d'autres vérifications
+# 👇 NOUVEAU IMPORT - Remplacer quality_summary par classifications
+from atlas.classifications import add_quality_summary_classification, add_quality_classification
+from atlas.client import get_typedef_by_name
 
 router = APIRouter()
 logger = logging.getLogger("push-atlas")
@@ -105,7 +106,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
                     raise
                 logger.info(f"ℹ️ EntityDef existant: {type_name}")
 
-        # ⚡ 2️⃣ Déployer DataSet (référence maintenant Column)
+        # ⚡ 2️⃣ Déployer DataSet (sans qualitySummary maintenant)
         dataSetDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == "DataSet")
         try:
             atlas_put(ATLAS_TYPEDEF_URL, {"entityDefs": [dataSetDef]})
@@ -125,7 +126,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
                     raise
                 logger.info(f"ℹ️ RelationshipDef existant: {rel_def['name']}")
 
-        # ⚡ 4️⃣ Déployer les classifications
+        # ⚡ 4️⃣ Déployer les classifications (y compris DQ_SUMMARY)
         for class_def in typedefs_payload.get("classificationDefs", []):
             try:
                 atlas_post(ATLAS_TYPEDEF_URL, {"classificationDefs": [class_def]})
@@ -388,18 +389,29 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             except Exception as e:
                 logger.error(f"❌ Erreur traitement fichier {jf}: {e}")
 
-        # 👇 AJOUT DU RÉSUMÉ QUALITÉ - VERSION SIMPLIFIÉE
-        # La fonction add_quality_summary_to_dataset gère tout :
-        # - Vérification/ajout du typedef
-        # - Tentative d'ajout du résumé
-        # - Fallback classification si échec
+        # ============================================================
+        # AJOUT DU RÉSUMÉ QUALITÉ (VERSION LISIBLE)
+        # ============================================================
         if all_checks_data:
             logger.info("📊 Ajout du résumé qualité...")
-            add_quality_summary_to_dataset(
-                dataset_guid=new_version.atlas_guid,
+            
+            success = add_quality_summary_classification(
+                entity_guid=new_version.atlas_guid,
                 checks_data=all_checks_data
             )
-            # Pas besoin de vérifier le retour car la fonction logge déjà
+            
+            if success:
+                logger.info(f"✅ Résumé qualité ajouté")
+            else:
+                logger.warning("⚠️ Échec de l'ajout du résumé qualité")
+                
+                # Fallback minimal
+                failed = sum(1 for c in all_checks_data 
+                            if c.get("status", "").lower() in ["échoué", "failed"])
+                if failed == 0:
+                    add_quality_classification(new_version.atlas_guid, "SUCCESS")
+                else:
+                    add_quality_classification(new_version.atlas_guid, "WARNING")
 
         logger.info(f"📊 TOTAL Atlas: {len(dq_guids)}")
         logger.info(f"📊 TOTAL PostgreSQL: {len(dq_db_ids)}")
@@ -436,7 +448,8 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             "propagated_columns": propagated,
             "execution_time_ms": execution_time,
             "similarity_score": similarity_score,
-            "data_quality_checks_count": len(dq_guids)
+            "data_quality_checks_count": len(dq_guids),
+            "quality_summary_added": success if all_checks_data else False  # 👈 AJOUTÉ
         }
 
     except Exception as e:

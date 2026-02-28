@@ -9,17 +9,8 @@ def get_typedefs_payload():
                 "attributeDefs": [
                     {"name": "columnsCount", "typeName": "int", "isOptional": True},
                     {"name": "columnsList", "typeName": "array<string>", "isOptional": True},
-                    {"name": "project", "typeName": "string", "isOptional": True},
-                    # 👇 NOUVEAU : Résumé de qualité
-                    {
-                        "name": "qualitySummary", 
-                        "typeName": "string",  # JSON stringifié
-                        "isOptional": True,
-                        "displayName": "Résumé qualité",
-                        "options": {
-                            "displayType": "text"
-                        }
-                    }
+                    {"name": "project", "typeName": "string", "isOptional": True}
+                
                 ]
             },
             {
@@ -48,7 +39,6 @@ def get_typedefs_payload():
                     {"name": "executionDate", "typeName": "date", "isOptional": False},
                     {"name": "dagRunId", "typeName": "string", "isOptional": False},
                     {"name": "examples", "typeName": "string", "isOptional": True},
-                    # 👇 Relation vers la colonne (en plus de datasetVersion)
                     {
                         "name": "column",
                         "typeName": "Column",
@@ -128,7 +118,6 @@ def get_typedefs_payload():
                     "cardinality": "SINGLE"
                 }
             },
-            # 👇 NOUVELLE RELATION : Column -> DataQualityCheck
             {
                 "name": "column_dqchecks",
                 "typeVersion": "1.0",
@@ -169,12 +158,11 @@ def get_typedefs_payload():
                 "description": "Données sensibles (médicales, financières, etc.)",
                 "superTypes": []
             },
-            # 👇 NOUVELLES CLASSIFICATIONS POUR LA QUALITÉ
             {
                 "name": "DQ_SUCCESS",
                 "description": "Test de qualité réussi",
                 "superTypes": [],
-                "attributeDefs": []  # Pas d'attributs supplémentaires
+                "attributeDefs": []
             },
             {
                 "name": "DQ_FAILED",
@@ -187,8 +175,30 @@ def get_typedefs_payload():
                 "description": "Test de qualité avec avertissement",
                 "superTypes": [],
                 "attributeDefs": []
+            },
+
+            # ✅ VERSION SIMPLIFIÉE MAIS STRUCTURÉE
+            {
+                "name": "DQ_SUMMARY",
+                "description": "Résumé global de la qualité des données",
+                "superTypes": [],
+                "attributeDefs": [
+                    {
+                        "name": "summary_text",
+                        "typeName": "string",
+                        "isOptional": False,
+                        "displayName": "Résumé qualité"
+                    },
+                    {
+                        "name": "failed_count",
+                        "typeName": "int",
+                        "isOptional": False,
+                        "displayName": "Nombre d'échecs"
+                    }
+                ]
             }
         ]
     }
+
 
 typedefs_payload = get_typedefs_payload()

@@ -1,10 +1,9 @@
-# atlas/classifications.py
-
 from atlas.client import atlas_post, atlas_get
 import logging
 import requests 
 import time  
-from typing import List, Optional
+from typing import List, Optional, Dict  # 👈 AJOUTER Dict ici
+import json
 
 ATLAS_BULK_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/bulk/classification"
 ATLAS_ENTITY_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/guid"
@@ -135,8 +134,6 @@ def add_classification(entity_guid: str, classification_name: str, attributes: d
     return {"status": "error", "message": "Échec après plusieurs tentatives"}
 
 
-# ============= NOUVELLES FONCTIONS À AJOUTER À LA FIN DU FICHIER =============
-
 def add_classification_to_entity(entity_guid: str, classification_name: str, attributes: dict = None):
     """
     Version simplifiée qui appelle add_classification
@@ -201,3 +198,51 @@ def add_quality_classification(entity_guid: str, status: str):
     """
     classification = get_classification_for_status(status)
     return add_classification_to_entity(entity_guid, classification)
+
+
+# ============================================================
+# 🆕 RÉSUMÉ QUALITÉ - VERSION ALIGNÉE AVEC DQ_SUMMARY
+# ============================================================
+
+def add_quality_summary_classification(entity_guid: str, checks_data: List[Dict]) -> bool:
+    """
+    Ajoute un résumé qualité lisible avec le nombre d'échecs
+    Compatible avec la nouvelle définition DQ_SUMMARY
+    """
+    if not checks_data:
+        logger.warning("⚠️ Aucune donnée de qualité pour générer un résumé")
+        return False
+
+    # Calcul des métriques
+    total = len(checks_data)
+    success = 0
+    failed = 0
+
+    for check in checks_data:
+        status = check.get("status", "").lower()
+        if not status:
+            status = check.get("statut", "").lower()
+
+        if status in ["réussi", "réussie", "succès", "success", "pass"]:
+            success += 1
+        elif status in ["échoué", "échouée", "échec", "failed", "fail"]:
+            failed += 1
+
+    warnings = total - success - failed
+    success_rate = round((success / total * 100), 1) if total > 0 else 0
+
+    # Format ultra-lisible pour Atlas UI
+    summary_text = f"✅ {success}/{total} ({success_rate}%) | ❌ {failed} | ⚠️ {warnings}"
+
+    logger.info(f"📊 Résumé qualité: {summary_text}")
+
+    attributes = {
+        "summary_text": summary_text,
+        "failed_count": failed  # important pour requêtes analytiques
+    }
+
+    return add_classification_to_entity(
+        entity_guid=entity_guid,
+        classification_name="DQ_SUMMARY",
+        attributes=attributes
+    )
