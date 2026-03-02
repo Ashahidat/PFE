@@ -2,8 +2,9 @@ from atlas.client import atlas_post, atlas_get
 import logging
 import requests 
 import time  
-from typing import List, Optional, Dict  # 👈 AJOUTER Dict ici
+from typing import List, Optional, Dict
 import json
+from sqlalchemy.orm import Session  # ← AJOUTER CET IMPORT
 
 ATLAS_BULK_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/bulk/classification"
 ATLAS_ENTITY_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/guid"
@@ -246,3 +247,91 @@ def add_quality_summary_classification(entity_guid: str, checks_data: List[Dict]
         classification_name="DQ_SUMMARY",
         attributes=attributes
     )
+
+
+# ============================================================
+# 🔒 NOUVELLES FONCTIONS - CLASSIFICATIONS DE SÉCURITÉ
+# ============================================================
+
+def add_restricted_classification(
+    entity_guid: str, 
+    db: Session,
+    owner_employee_id: str,
+    visibility_scope: str = "DEPARTMENT"
+) -> bool:
+    """
+    Ajoute la classification RESTRICTED avec le département du propriétaire
+    """
+    # Import local pour éviter les circular imports
+    from db.users_crud import get_user_department
+    
+    # Récupérer le département du propriétaire
+    department = get_user_department(db, owner_employee_id)
+    
+    if not department:
+        logger.warning(f"⚠️ Département non trouvé pour {owner_employee_id}, classification sans département")
+        department = "UNKNOWN"
+    
+    attributes = {
+        "visibility_scope": visibility_scope,
+        "department": department
+    }
+    
+    logger.info(f"🔒 Ajout classification RESTRICTED: scope={visibility_scope}, dept={department}")
+    
+    result = add_classification_to_entity(
+        entity_guid=entity_guid,
+        classification_name="RESTRICTED",
+        attributes=attributes
+    )
+    
+    if result:
+        logger.info(f"✅ RESTRICTED ajoutée avec département {department}")
+    else:
+        logger.error(f"❌ Échec ajout RESTRICTED")
+    
+    return result
+
+
+def add_public_classification(entity_guid: str) -> bool:
+    """
+    Ajoute la classification PUBLIC (scope ENTERPRISE)
+    """
+    attributes = {
+        "visibility_scope": "ENTERPRISE"
+    }
+    
+    logger.info(f"🌍 Ajout classification PUBLIC: scope=ENTERPRISE")
+    
+    result = add_classification_to_entity(
+        entity_guid=entity_guid,
+        classification_name="PUBLIC",
+        attributes=attributes
+    )
+    
+    if result:
+        logger.info(f"✅ PUBLIC ajoutée")
+    else:
+        logger.error(f"❌ Échec ajout PUBLIC")
+    
+    return result
+
+
+def add_dataset_security_classification(
+    entity_guid: str,
+    db: Session,
+    owner_employee_id: str,
+    is_public: bool = False
+) -> bool:
+    """
+    Fonction unifiée pour ajouter la bonne classification de sécurité
+    selon que le dataset est public ou non
+    """
+    if is_public:
+        return add_public_classification(entity_guid)
+    else:
+        return add_restricted_classification(
+            entity_guid=entity_guid,
+            db=db,
+            owner_employee_id=owner_employee_id
+        )

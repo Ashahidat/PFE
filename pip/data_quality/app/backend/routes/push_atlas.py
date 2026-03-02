@@ -7,7 +7,7 @@ import time
 import uuid
 import shutil
 import json
-from typing import List, Dict, Any  # 👈 AJOUTER CET IMPORT
+from typing import List, Dict, Any, Optional  # 👈 AJOUTER Optional
 
 from config import spark
 from db.connexion_db import get_db
@@ -34,8 +34,13 @@ from jwt_dependencies import get_current_user
 from db.dataset_versions import DatasetVersion
 from atlas.data_quality import create_data_quality_checks_from_json
 from db.data_quality_to_db import save_data_quality_results_from_json
-# 👇 NOUVEAU IMPORT - Remplacer quality_summary par classifications
-from atlas.classifications import add_quality_summary_classification, add_quality_classification
+# 👇 IMPORTS MIS À JOUR - Ajout des fonctions de sécurité
+from atlas.classifications import (
+    add_quality_summary_classification, 
+    add_quality_classification,
+    add_restricted_classification,  # 👈 NOUVEAU
+    add_public_classification        # 👈 NOUVEAU
+)
 from atlas.client import get_typedef_by_name
 
 router = APIRouter()
@@ -52,7 +57,12 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 # ============================================================
 
 @router.post("/push-atlas/{dataset_id}")
-def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def push_atlas(
+    dataset_id: str, 
+    is_public: bool = False,  # 👈 NOUVEAU PARAMÈTRE
+    db: Session = Depends(get_db), 
+    user=Depends(get_current_user)
+):
     import time
     start_time = time.time()
     employee_id = user.get("employee_id") or user.get("sub")
@@ -66,6 +76,7 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
     dq_guids = []
     dq_db_ids = []
     processed_files = []
+    security_success = False  # 👈 NOUVEAU
     
     try:
         # ----------------------
@@ -392,15 +403,16 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
         # ============================================================
         # AJOUT DU RÉSUMÉ QUALITÉ (VERSION LISIBLE)
         # ============================================================
+        quality_success = False
         if all_checks_data:
             logger.info("📊 Ajout du résumé qualité...")
             
-            success = add_quality_summary_classification(
+            quality_success = add_quality_summary_classification(
                 entity_guid=new_version.atlas_guid,
                 checks_data=all_checks_data
             )
             
-            if success:
+            if quality_success:
                 logger.info(f"✅ Résumé qualité ajouté")
             else:
                 logger.warning("⚠️ Échec de l'ajout du résumé qualité")
@@ -412,6 +424,30 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
                     add_quality_classification(new_version.atlas_guid, "SUCCESS")
                 else:
                     add_quality_classification(new_version.atlas_guid, "WARNING")
+
+        # ============================================================
+        # 🔒 CLASSIFICATION DE SÉCURITÉ (NOUVEAU)
+        # ============================================================
+        logger.info("🏷️ Ajout de la classification de sécurité...")
+        
+        if is_public:
+            # PUBLIC
+            security_success = add_public_classification(new_version.atlas_guid)
+            if security_success:
+                logger.info(f"🌍 Classification PUBLIC ajoutée")
+            else:
+                logger.warning(f"⚠️ Échec ajout classification PUBLIC")
+        else:
+            # RESTRICTED avec département du propriétaire
+            security_success = add_restricted_classification(
+                entity_guid=new_version.atlas_guid,
+                db=db,
+                owner_employee_id=dataset.owner_employee_id
+            )
+            if security_success:
+                logger.info(f"🔒 Classification RESTRICTED ajoutée avec département")
+            else:
+                logger.warning(f"⚠️ Échec ajout classification RESTRICTED")
 
         logger.info(f"📊 TOTAL Atlas: {len(dq_guids)}")
         logger.info(f"📊 TOTAL PostgreSQL: {len(dq_db_ids)}")
@@ -449,7 +485,9 @@ def push_atlas(dataset_id: str, db: Session = Depends(get_db), user=Depends(get_
             "execution_time_ms": execution_time,
             "similarity_score": similarity_score,
             "data_quality_checks_count": len(dq_guids),
-            "quality_summary_added": success if all_checks_data else False  # 👈 AJOUTÉ
+            "quality_summary_added": quality_success if all_checks_data else False,
+            "security_classification": "PUBLIC" if is_public else "RESTRICTED",  # 👈 NOUVEAU
+            "security_classification_added": security_success  # 👈 NOUVEAU
         }
 
     except Exception as e:

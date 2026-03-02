@@ -1,5 +1,5 @@
 /* ============================
-   classifications.js - SIMPLIFIÉ
+   classifications.js - SIMPLIFIÉ AVEC ATTRIBUTS CORRIGÉS
    ============================ */
 
 const API_URL = window.API_URL || "http://localhost:8000";
@@ -7,11 +7,16 @@ const API_URL = window.API_URL || "http://localhost:8000";
 console.log("✅ classifications.js chargé - API_URL:", API_URL);
 
 /* ----------------------------
-   Définition des attributs - AUCUN ATTRIBUT
+   Définition des attributs - CORRIGÉ !
 ----------------------------- */
 const CLASSIFICATION_ATTRIBUTES = {
-  PUBLIC: [],      // No attributes
-  RESTRICTED: []   // NO mandatory department attribute - just the name indicates restriction
+  PUBLIC: {
+    "visibility_scope": "ENTERPRISE"
+  },
+  RESTRICTED: {
+    "visibility_scope": "DEPARTMENT"
+    // department sera ajouté automatiquement par le backend
+  }
 };
 
 // Classifications pour colonnes - SIMPLIFIÉES
@@ -113,6 +118,9 @@ function initDatasetUI() {
     container.innerHTML = "";  // Always empty - no attributes for either classification
   };
 
+  /* ----------------------------
+     Application classification dataset - CORRIGÉ !
+  ----------------------------- */
   applyBtn.onclick = async () => {
     console.log("🔄 Application classification dataset...");
     
@@ -141,15 +149,15 @@ function initDatasetUI() {
       return;
     }
 
-    // NO ATTRIBUTES - always empty object
-    const attributes = {};
+    // ✅ UTILISER LES ATTRIBUTS DÉFINIS
+    const attributes = CLASSIFICATION_ATTRIBUTES[classification] || {};
     
     const payload = {
       entity_type: "DATASET",
       entity_id: datasetId,
       atlas_guid: atlasGuid,
       classification_name: classification,
-      attributes: attributes  // Always empty
+      attributes: attributes
     };
     
     console.log("📤 Payload dataset à envoyer:", payload);

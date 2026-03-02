@@ -138,25 +138,57 @@ def get_typedefs_payload():
         ],
 
         "classificationDefs": [
+            # ============================================================
+            # 🔒 CLASSIFICATIONS DE SÉCURITÉ STRUCTURÉES (MODIFIÉES)
+            # ============================================================
             {
                 "name": "RESTRICTED",
                 "description": "Accès restreint au département uniquement (par défaut)",
-                "superTypes": []
+                "superTypes": [],
+                "attributeDefs": [  # ← AJOUTÉ
+                    {
+                        "name": "visibility_scope",
+                        "typeName": "string",
+                        "isOptional": False,
+                        "defaultValue": "DEPARTMENT",
+                        "displayName": "Périmètre de visibilité"
+                    },
+                    {
+                        "name": "department",
+                        "typeName": "string",
+                        "isOptional": True,
+                        "displayName": "Département autorisé"
+                    }
+                ]
             },
             {
                 "name": "PUBLIC",
                 "description": "Accès public sans restriction (exception)",
-                "superTypes": []
+                "superTypes": [],
+                "attributeDefs": [  # ← AJOUTÉ
+                    {
+                        "name": "visibility_scope",
+                        "typeName": "string",
+                        "isOptional": False,
+                        "defaultValue": "ENTERPRISE",
+                        "displayName": "Périmètre de visibilité"
+                    }
+                ]
             },
+            # ============================================================
+            # ✅ CLASSIFICATIONS EXISTANTES (INCHANGÉES)
+            # ============================================================
             {
                 "name": "PII",
                 "description": "Personally Identifiable Information",
-                "superTypes": []
+                "superTypes": [],
+                "attributeDefs": []  # Pas d'attributs
             },
             {
                 "name": "SENSITIVE",
                 "description": "Données sensibles (médicales, financières, etc.)",
-                "superTypes": []
+                "superTypes": [],
+                "attributeDefs": []  # Pas d'attributs
             },
             {
                 "name": "DQ_SUCCESS",
@@ -176,8 +208,6 @@ def get_typedefs_payload():
                 "superTypes": [],
                 "attributeDefs": []
             },
-
-            # ✅ VERSION SIMPLIFIÉE MAIS STRUCTURÉE
             {
                 "name": "DQ_SUMMARY",
                 "description": "Résumé global de la qualité des données",

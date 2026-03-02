@@ -4,6 +4,7 @@ from db.connexion_db import get_db
 from jwt_dependencies import get_current_user
 import logging
 from db.classifications_use_case import apply_classification_use_case
+from db.users_crud import get_user_department  # 👈 AJOUTER CET IMPORT
 
 
 router = APIRouter()
@@ -47,6 +48,37 @@ def apply_classification(payload: dict, db: Session = Depends(get_db), user=Depe
         logger.error("Champ manquant: column_name (requis pour les colonnes)")
         raise HTTPException(status_code=400, detail="column_name est requis pour les classifications de colonne")
 
+    # ============================================================
+    # 🔧 CORRECTION : Compléter les attributs manquants
+    # ============================================================
+    attributes = payload.get("attributes", {})
+    
+    # Pour RESTRICTED, ajouter visibility_scope et department si manquants
+    if payload["classification_name"] == "RESTRICTED":
+        if "visibility_scope" not in attributes:
+            attributes["visibility_scope"] = "DEPARTMENT"
+            logger.info("🔒 visibility_scope=DEPARTMENT ajouté automatiquement")
+        
+        if "department" not in attributes:
+            # Récupérer le département de l'utilisateur
+            employee_id = user.get("employee_id") or user.get("sub")
+            department = get_user_department(db, employee_id)
+            attributes["department"] = department or "UNKNOWN"
+            logger.info(f"🔒 department={attributes['department']} ajouté automatiquement")
+    
+    # Pour PUBLIC, ajouter visibility_scope si manquant
+    elif payload["classification_name"] == "PUBLIC":
+        if "visibility_scope" not in attributes:
+            attributes["visibility_scope"] = "ENTERPRISE"
+            logger.info("🌍 visibility_scope=ENTERPRISE ajouté automatiquement")
+    
+    # Pour les classifications de colonnes (PII, SENSITIVE), pas d'attributs nécessaires
+    elif payload["entity_type"] == "COLUMN" and payload["classification_name"] in ["PII", "SENSITIVE"]:
+        # Pas d'attributs requis, on laisse vide
+        pass
+    
+    logger.info(f"📦 Attributs finaux: {attributes}")
+
     try:
         result = apply_classification_use_case(
             db=db,
@@ -54,9 +86,9 @@ def apply_classification(payload: dict, db: Session = Depends(get_db), user=Depe
             entity_id=payload["entity_id"],
             atlas_guid=payload["atlas_guid"],
             classification_name=payload["classification_name"],
-            attributes=payload.get("attributes", {}),
+            attributes=attributes,  # 👈 Utiliser les attributs complétés
             user=user,
-            column_name=payload.get("column_name")  # Nouveau paramètre
+            column_name=payload.get("column_name")
         )
         
         logger.info(f"✅ Classification appliquée avec succès. ID: {result.id}")
