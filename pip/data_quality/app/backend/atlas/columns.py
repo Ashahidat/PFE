@@ -47,14 +47,20 @@ def link_column_versioning(parent_column_guid: str, child_column_guid: str, pare
 
 def create_columns(df, dataset_guid, dataset_qualified_name, 
                   parent_dataset_guid=None, parent_columns=None,
-                  parent_column_mapping=None):
+                  parent_column_mapping=None, descriptions=None):  # ← AJOUTER descriptions
     """
-    Crée les colonnes dans Atlas ET les relations de versioning entre colonnes
-    RETOURNE (column_mapping, entities_with_real_guids)
+    Crée les colonnes dans Atlas AVEC les descriptions utilisateur
+    descriptions: dict {nom_colonne: description}
     """
     entities = []
     temp_to_name = {}  # {temp_guid: column_name}
     temp_to_logical_id = {}  # {temp_guid: logical_id}
+    
+    # Initialiser le dictionnaire des descriptions
+    if descriptions is None:
+        descriptions = {}
+    
+    logger.info(f"📝 {len(descriptions)} descriptions fournies")
     
     # Initialiser le matcher
     matcher = ColumnMatcher()
@@ -135,7 +141,10 @@ def create_columns(df, dataset_guid, dataset_qualified_name,
             match_strategy = "new"
             logger.info(f"🆕 [NIVEAU 4] Nouvel ID généré pour '{col_name}' → logicalId: {logical_id[:8]}...")
         
-        # Construction de l'entité
+        # 🔥 Récupérer la description (ou mettre une description par défaut)
+        description = descriptions.get(col_name, f"Colonne {col_name}")
+        
+        # Construction de l'entité AVEC la description
         entity = {
             "typeName": "Column",
             "attributes": {
@@ -144,6 +153,7 @@ def create_columns(df, dataset_guid, dataset_qualified_name,
                 "type": str(dtype),
                 "position": idx,
                 "logicalColumnId": logical_id,
+                "description": description,  # ← ICI la description utilisateur
                 "dataset": {
                     "typeName": "DataSet", 
                     "guid": dataset_guid

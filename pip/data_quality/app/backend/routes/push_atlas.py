@@ -42,6 +42,7 @@ from atlas.classifications import (
     add_public_classification        # 👈 NOUVEAU
 )
 from atlas.client import get_typedef_by_name
+from db.column_descriptions import ColumnDescription
 
 router = APIRouter()
 logger = logging.getLogger("push-atlas")
@@ -232,26 +233,49 @@ def push_atlas(
         db.commit()
         logger.info(f"✅ Dataset créé: {dataset_guid}")
 
-        # Déterminer le numéro de version
-        if parent_version_id and parent_version_number > 0:
-            new_version_number = parent_version_number + 1
-            logger.info(f"📌 Héritage du parent: v{parent_version_number} -> v{new_version_number}")
+        # 🔍 RECHERCHER une version existante non pushée (créée par /descriptions)
+        existing_version = db.query(DatasetVersion).filter(
+            DatasetVersion.dataset_id == dataset.id,
+            DatasetVersion.atlas_guid.is_(None)  # Version temporaire
+        ).first()
+
+        if existing_version:
+            # ✅ RÉUTILISER la version existante
+            new_version = existing_version
+            new_version.atlas_guid = dataset_guid  # Mettre à jour le GUID
+            new_version.change_comment = f"Push depuis {file_path}"
+            new_version.source_file = file_path
+            db.commit()
+            db.refresh(new_version)
+            logger.info(f"📌 Version existante réutilisée: v{new_version.version_number}")
+            
         else:
-            new_version_number = 1
-            logger.info(f"📌 Nouveau dataset racine: version 1")
-        
-        # Créer la nouvelle version en base
-        new_version = create_dataset_version(
-            db=db,
-            dataset_id=dataset.id,
-            version_number=new_version_number,
-            atlas_guid=dataset_guid,
-            parent_version_id=parent_version_id,
-            created_by=employee_id,
-            change_comment=f"Push depuis {file_path}",
-            source_file=file_path
-        )
-        logger.info(f"📌 Nouvelle version créée: v{new_version_number}")
+            # ⚠️ Créer une nouvelle version (cas où on push sans passer par /descriptions)
+            # Déterminer le numéro de version
+            if parent_version_id and parent_version_number > 0:
+                new_version_number = parent_version_number + 1
+            else:
+                # Récupérer la dernière version du dataset
+                last_version = db.query(DatasetVersion).filter(
+                    DatasetVersion.dataset_id == dataset.id
+                ).order_by(DatasetVersion.version_number.desc()).first()
+                
+                if last_version:
+                    new_version_number = last_version.version_number + 1
+                else:
+                    new_version_number = 1
+            
+            new_version = create_dataset_version(
+                db=db,
+                dataset_id=dataset.id,
+                version_number=new_version_number,
+                atlas_guid=dataset_guid,
+                parent_version_id=parent_version_id,
+                created_by=employee_id,
+                change_comment=f"Push depuis {file_path}",
+                source_file=file_path
+            )
+            logger.info(f"📌 Nouvelle version créée: v{new_version_number}")
 
         # 7️⃣ Lien versioning datasets
         process_guid = None
@@ -290,15 +314,27 @@ def push_atlas(
         # 8️⃣ Colonnes
         # ----------------------
         logger.info(f"📋 Création des colonnes avec relations visibles...")
+
+        # Récupérer les descriptions pour cette version
+        descriptions_dict = {}
+        if new_version and new_version.id:
+            desc_records = db.query(ColumnDescription).filter(
+                ColumnDescription.dataset_version_id == new_version.id
+            ).all()
+            descriptions_dict = {d.column_name: d.description for d in desc_records}
+            logger.info(f"📝 {len(descriptions_dict)} descriptions chargées pour la version {new_version.version_number}")
+
         column_guids, column_entities = create_columns(
             df, 
             dataset_guid, 
             hash_value,
             parent_dataset_guid=parent_guid,
             parent_columns=parent_columns,
-            parent_column_mapping=parent_column_mapping
+            parent_column_mapping=parent_column_mapping,
+            descriptions=descriptions_dict  # ← AJOUTER
         )
         logger.info(f"✅ {len(column_guids)} colonnes créées")
+
 
         # ENREGISTRER LA LIGNÉE DES COLONNES
         propagated = 0
@@ -474,7 +510,7 @@ def push_atlas(
             "message": "Dataset ajouté à Atlas avec traçabilité complète",
             "dataset_guid": dataset_guid,
             "dataset_existed": dataset_existed,
-            "version_number": new_version_number,
+            "version_number": new_version.version_number,
             "parent_guid": parent_guid,
             "parent_qualified_name": parent_qn,
             "parent_version_number": parent_version_number if parent_version_number > 0 else None,

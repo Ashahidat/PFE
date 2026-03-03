@@ -94,25 +94,33 @@ async def save_descriptions(
     dataset_version = db.query(DatasetVersion).filter(
         DatasetVersion.dataset_id == dataset_id,
         DatasetVersion.atlas_guid.is_(None)  # Pas encore pushée
-    ).order_by(DatasetVersion.version_number.desc()).first()
+    ).first()  # Pas besoin de order_by, on veut une seule version non pushée
 
     if not dataset_version:
-        # Compter les versions existantes
-        version_count = db.query(DatasetVersion).filter(
+        # ✅ Récupérer la dernière version (peu importe son statut)
+        last_version = db.query(DatasetVersion).filter(
             DatasetVersion.dataset_id == dataset_id
-        ).count()
+        ).order_by(DatasetVersion.version_number.desc()).first()
+        
+        # Déterminer le prochain numéro de version
+        if last_version:
+            next_version = last_version.version_number + 1
+        else:
+            next_version = 1  # Première version
         
         # Créer une nouvelle version temporaire
         dataset_version = DatasetVersion(
             dataset_id=dataset_id,
-            version_number=version_count + 1,
+            version_number=next_version,
             created_by=user["sub"],
             change_comment="Version créée pour la description des colonnes"
         )
         db.add(dataset_version)
         db.commit()
         db.refresh(dataset_version)
-        logger.info(f"🆕 Nouvelle version temporaire créée: {dataset_version.version_number}")
+        logger.info(f"🆕 Nouvelle version temporaire créée: v{dataset_version.version_number}")
+    else:
+        logger.info(f"✅ Version temporaire existante réutilisée: v{dataset_version.version_number}")
 
     # 3️⃣ Convertir la liste en dictionnaire pour le bulk insert
     descriptions_dict = {

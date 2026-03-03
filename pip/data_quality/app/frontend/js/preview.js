@@ -71,4 +71,27 @@ function renderPreviewTable(rows) {
         });
         table.appendChild(tr);
     });
+
+    // ========== NOUVELLE PARTIE : Redirection automatique ==========
+    // Créer un message d'information
+    const infoMsg = document.createElement('div');
+    infoMsg.className = 'info-message';
+    infoMsg.textContent = '⏳ Preview chargé ! Redirection vers la description dans 2 secondes...';
+    infoMsg.style.cssText = `
+        background: #e3f2fd;
+        color: #0d47a1;
+        padding: 1rem;
+        border-radius: 6px;
+        margin-top: 1rem;
+        text-align: center;
+        font-weight: 500;
+    `;
+    document.querySelector('.container').appendChild(infoMsg);
+
+    // Redirection automatique vers describe-columns.html
+    setTimeout(() => {
+        const datasetId = localStorage.getItem("last_uploaded_dataset_id");
+        console.log(`⏳ Redirection vers describe-columns.html?dataset_id=${datasetId}`);
+        window.location.href = `describe-columns.html?dataset_id=${datasetId}`;
+    }, 2000); // 2 secondes de délai pour voir le preview
 }
