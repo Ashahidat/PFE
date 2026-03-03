@@ -16,6 +16,7 @@ FILES=(
     "processes.sql"
     "push_history.sql"
     "data_quality_results.sql"
+    "column_descriptions.sql"
 )
 
 # Copier les fichiers vers /tmp avec l'utilisateur actuel
@@ -47,6 +48,7 @@ FILES=(
     "processes.sql"
     "push_history.sql"
     "data_quality_results.sql"
+    "column_descriptions.sql"
 )
 
 # Exécution des fichiers SQL
