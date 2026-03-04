@@ -72,7 +72,7 @@ function renderPreviewTable(rows) {
         table.appendChild(tr);
     });
 
-    // ========== NOUVELLE PARTIE : Redirection automatique ==========
+    // ========== NOUVELLE PARTIE : Message + Redirection + Versionning ==========
     // Créer un message d'information
     const infoMsg = document.createElement('div');
     infoMsg.className = 'info-message';
@@ -88,9 +88,32 @@ function renderPreviewTable(rows) {
     `;
     document.querySelector('.container').appendChild(infoMsg);
 
+    // 🔥 NOUVEAU : Lancer le calcul de signature en arrière-plan
+    const datasetId = localStorage.getItem("last_uploaded_dataset_id");
+    const token = localStorage.getItem("access_token");
+    
+    // Lancer la requête sans attendre (fire and forget)
+    fetch(`${API_URL}/api/datasets/${datasetId}/compute-signature`, {
+        method: 'POST',
+        headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            console.log("✅ Signature calculée avec succès en arrière-plan");
+        } else {
+            console.log("⏳ Signature non disponible, sera calculée pendant le push");
+        }
+    })
+    .catch(error => {
+        // Ne pas bloquer l'utilisateur, on log juste l'erreur
+        console.log("⚠️ Erreur calcul signature (non bloquant):", error);
+    });
+
     // Redirection automatique vers describe-columns.html
     setTimeout(() => {
-        const datasetId = localStorage.getItem("last_uploaded_dataset_id");
         console.log(`⏳ Redirection vers describe-columns.html?dataset_id=${datasetId}`);
         window.location.href = `describe-columns.html?dataset_id=${datasetId}`;
     }, 2000); // 2 secondes de délai pour voir le preview

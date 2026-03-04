@@ -31,6 +31,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadDatasetInfo();
     await loadExistingDescriptions();
     
+    // 🔥 NOUVEAU : Charger les suggestions d'héritage
+    await loadInheritedDescriptions();
+    await loadParentSuggestions();
+    
     // Écouteurs d'événements
     describeForm.addEventListener('submit', saveDescriptions);
     skipBtn.addEventListener('click', skipToTests);
@@ -84,6 +88,164 @@ async function loadExistingDescriptions() {
     } catch (error) {
         console.error('Erreur chargement descriptions:', error);
     }
+}
+
+// ===================== 🔥 NOUVELLES FONCTIONS D'HÉRITAGE =====================
+
+async function loadInheritedDescriptions() {
+    try {
+        const token = localStorage.getItem('access_token');
+        const response = await fetch(`${API_URL}/api/datasets/${currentDatasetId}/inherited-descriptions`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        
+        if (data.versions && data.versions.length > 0) {
+            showInheritancePanel(data.versions);
+        }
+    } catch (error) {
+        console.error('Erreur chargement héritage:', error);
+    }
+}
+
+async function loadParentSuggestions() {
+    try {
+        const token = localStorage.getItem('access_token');
+        const response = await fetch(`${API_URL}/api/datasets/${currentDatasetId}/parent-suggestions`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        
+        if (data.has_parent && data.suggestions && data.suggestions.length > 0) {
+            showParentSuggestionsPanel(data.suggestions);
+        }
+    } catch (error) {
+        console.error('Erreur chargement suggestions parent:', error);
+    }
+}
+
+function showInheritancePanel(versions) {
+    const panel = document.createElement('div');
+    panel.className = 'inheritance-panel';
+    panel.innerHTML = `
+        <h4>📋 Versions précédentes</h4>
+        <p>Des descriptions existent dans les versions précédentes :</p>
+    `;
+    
+    versions.forEach(version => {
+        const versionDiv = document.createElement('div');
+        versionDiv.className = 'version-card';
+        versionDiv.innerHTML = `
+            <div class="version-header">
+                <strong>Version ${version.version_number}</strong>
+                <small>${version.created_at ? new Date(version.created_at).toLocaleDateString() : ''}</small>
+            </div>
+            <div class="version-preview">
+                ${version.descriptions.slice(0, 3).map(d => 
+                    `<div><strong>${escapeHtml(d.column_name)}</strong> : ${escapeHtml(d.description.substring(0, 30))}...</div>`
+                ).join('')}
+                ${version.descriptions.length > 3 ? `<div>... et ${version.descriptions.length - 3} autres</div>` : ''}
+            </div>
+            <button class="btn-small inherit-version" data-version='${JSON.stringify(version.descriptions)}'>
+                Utiliser cette version
+            </button>
+        `;
+        panel.appendChild(versionDiv);
+    });
+    
+    document.querySelector('.form-header').after(panel);
+    
+    // Gérer les clics sur les boutons d'héritage
+    panel.querySelectorAll('.inherit-version').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const descriptions = JSON.parse(btn.dataset.version);
+            let appliedCount = 0;
+            
+            descriptions.forEach(desc => {
+                const input = document.querySelector(`[data-column="${escapeHtml(desc.column_name)}"]`);
+                if (input && !input.value.trim()) {
+                    input.value = desc.description;
+                    input.classList.add('completed');
+                    appliedCount++;
+                }
+            });
+            
+            if (appliedCount > 0) {
+                showStatus(`✅ ${appliedCount} descriptions héritées`, 'success');
+            }
+            
+            btn.textContent = '✓ Hérité';
+            btn.disabled = true;
+        });
+    });
+}
+
+function showParentSuggestionsPanel(suggestions) {
+    const panel = document.createElement('div');
+    panel.className = 'suggestions-panel';
+    panel.innerHTML = `
+        <h4>💡 Suggestions depuis d'autres datasets</h4>
+        <p>Des datasets similaires ont ces descriptions :</p>
+        <div class="suggestions-list"></div>
+        <button class="btn-info" id="applyAllSuggestions">Tout appliquer</button>
+    `;
+    
+    const listDiv = panel.querySelector('.suggestions-list');
+    
+    suggestions.forEach(sugg => {
+        const suggDiv = document.createElement('div');
+        suggDiv.className = 'suggestion-item';
+        suggDiv.innerHTML = `
+            <span class="suggestion-column">${escapeHtml(sugg.column_name)}</span>
+            <span class="suggestion-desc">${escapeHtml(sugg.description)}</span>
+            <button class="btn-small apply-suggestion" data-column="${escapeHtml(sugg.column_name)}" data-desc="${escapeHtml(sugg.description)}">
+                Appliquer
+            </button>
+        `;
+        listDiv.appendChild(suggDiv);
+    });
+    
+    document.querySelector('.form-header').after(panel);
+    
+    // Appliquer une suggestion individuelle
+    panel.querySelectorAll('.apply-suggestion').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const colName = btn.dataset.column;
+            const desc = btn.dataset.desc;
+            const input = document.querySelector(`[data-column="${colName}"]`);
+            
+            if (input && !input.value.trim()) {
+                input.value = desc;
+                input.classList.add('completed');
+                btn.textContent = '✓';
+                btn.disabled = true;
+            }
+        });
+    });
+    
+    // Tout appliquer
+    panel.querySelector('#applyAllSuggestions').addEventListener('click', () => {
+        suggestions.forEach(sugg => {
+            const input = document.querySelector(`[data-column="${escapeHtml(sugg.column_name)}"]`);
+            if (input && !input.value.trim()) {
+                input.value = sugg.description;
+                input.classList.add('completed');
+            }
+        });
+        
+        panel.querySelectorAll('.apply-suggestion').forEach(btn => {
+            btn.textContent = '✓';
+            btn.disabled = true;
+        });
+        
+        showStatus(`✅ Suggestions appliquées`, 'success');
+    });
 }
 
 // ===================== RENDU DU FORMULAIRE =====================

@@ -154,10 +154,22 @@ def push_atlas(
         # ----------------------
         # 4️⃣ Calcul signature
         # ----------------------
-        logger.info("🔍 Calcul de la signature...")
-        signature = calculate_dataset_signature(df, original_name)
-        persist_signature_to_db(db, dataset.id, signature)
-        logger.info(f"✅ Signature calculée: {signature['structure_hash'][:16]}...")
+        # 🔽🔽🔽 10 LIGNES À AJOUTER 🔽🔽🔽
+        # Vérifier si une signature existe déjà (pré-calculée par /compute-signature)
+        existing_sig = db.query(DatasetSignature).filter(
+            DatasetSignature.dataset_id == dataset.id
+        ).order_by(DatasetSignature.created_at.desc()).first()
+
+        if existing_sig:
+            logger.info(f"✅ Signature existante réutilisée: {existing_sig.structure_hash[:16]}...")
+            signature = existing_sig.signature
+        else:
+            # Signature non trouvée, on la calcule (ancien comportement)
+            logger.info("🔍 Calcul de la signature...")
+            signature = calculate_dataset_signature(df, original_name)
+            persist_signature_to_db(db, dataset.id, signature)
+            logger.info(f"✅ Signature calculée: {signature['structure_hash'][:16]}...")
+        # 🔼🔼🔼 FIN DES 10 LIGNES À AJOUTER 🔼🔼🔼
 
         # ----------------------
         # 5️⃣ Recherche parent
@@ -196,7 +208,7 @@ def push_atlas(
                     parent_version_id = str(parent_version.id)
                     parent_version_number = parent_version.version_number
                     
-                    sig_current = calculate_dataset_signature(df, original_name)
+                    sig_current = signature  # Utiliser la signature récupérée ou calculée
                     parent_sig_record = db.query(DatasetSignature)\
                         .join(DatasetVersion, DatasetVersion.dataset_id == DatasetSignature.dataset_id)\
                         .filter(DatasetVersion.atlas_guid == parent_guid)\
@@ -224,7 +236,23 @@ def push_atlas(
             project_id=str(dataset.project_id),
             description=description 
         )
-        
+
+        # 🔥 NOUVEAU : Récupérer le qualified name du dataset depuis Atlas
+        base_url = ATLAS_SEARCH_URL.split("/search")[0]
+        try:
+            response = atlas_get(f"{base_url}/entity/guid/{dataset_guid}")
+            if response.status_code == 200:
+                entity_data = response.json()
+                dataset_qualified_name = entity_data.get("entity", {}).get("attributes", {}).get("qualifiedName")
+                logger.info(f"📛 Qualified name du dataset: {dataset_qualified_name}")
+            else:
+                # Fallback : construction manuelle (même logique que dans create_dataset)
+                dataset_qualified_name = f"{original_name}@{hash_value}"
+                logger.warning(f"⚠️ Utilisation fallback: {dataset_qualified_name}")
+        except Exception as e:
+            dataset_qualified_name = f"{original_name}@{hash_value}"
+            logger.warning(f"⚠️ Erreur récupération, fallback: {dataset_qualified_name}")
+
         # Mettre à jour l'atlas_guid du dataset
         old_atlas_guid = dataset.atlas_guid
         dataset.atlas_guid = dataset_guid
@@ -311,7 +339,7 @@ def push_atlas(
             logger.info(f"✅ Lien versioning datasets créé")
 
         # ----------------------
-        # 8️⃣ Colonnes
+        # 8️⃣ Colonnes - UTILISER dataset_qualified_name
         # ----------------------
         logger.info(f"📋 Création des colonnes avec relations visibles...")
 
@@ -324,17 +352,17 @@ def push_atlas(
             descriptions_dict = {d.column_name: d.description for d in desc_records}
             logger.info(f"📝 {len(descriptions_dict)} descriptions chargées pour la version {new_version.version_number}")
 
+        # ✅ MAINTENANT ON PASSE LE VRAI QUALIFIED NAME
         column_guids, column_entities = create_columns(
             df, 
             dataset_guid, 
-            hash_value,
+            dataset_qualified_name,  # ← ICI, plus hash_value
             parent_dataset_guid=parent_guid,
             parent_columns=parent_columns,
             parent_column_mapping=parent_column_mapping,
-            descriptions=descriptions_dict  # ← AJOUTER
+            descriptions=descriptions_dict
         )
         logger.info(f"✅ {len(column_guids)} colonnes créées")
-
 
         # ENREGISTRER LA LIGNÉE DES COLONNES
         propagated = 0

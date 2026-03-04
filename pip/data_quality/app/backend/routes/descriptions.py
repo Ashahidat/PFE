@@ -263,3 +263,134 @@ async def delete_all_descriptions(
         "message": f"{deleted_count} descriptions supprimées",
         "deleted_count": deleted_count
     }
+
+
+    # ===================== ROUTES D'HÉRITAGE =====================
+# À AJOUTER À LA FIN DU FICHIER, après delete_all_descriptions()
+
+@router.get("/api/datasets/{dataset_id}/inherited-descriptions")
+async def get_inherited_descriptions(
+    dataset_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    """
+    Récupère les descriptions des versions précédentes du même dataset
+    (versions déjà pushées vers Atlas)
+    """
+    logger.info(f"📋 Recherche d'héritage pour dataset {dataset_id}")
+    
+    # 1️⃣ Vérifier le dataset
+    dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id,
+        Dataset.owner_employee_id == user["sub"]
+    ).first()
+    
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset introuvable")
+    
+    # 2️⃣ Récupérer les versions déjà pushées (atlas_guid non null)
+    previous_versions = db.query(DatasetVersion).filter(
+        DatasetVersion.dataset_id == dataset_id,
+        DatasetVersion.atlas_guid.isnot(None)  # Versions déjà dans Atlas
+    ).order_by(DatasetVersion.version_number.desc()).limit(5).all()
+    
+    if not previous_versions:
+        logger.info("ℹ️ Aucune version précédente trouvée")
+        return {"versions": []}
+    
+    # 3️⃣ Pour chaque version, récupérer ses descriptions
+    result = []
+    for version in previous_versions:
+        descriptions = db.query(ColumnDescription).filter(
+            ColumnDescription.dataset_version_id == version.id
+        ).all()
+        
+        if descriptions:
+            result.append({
+                "version_number": version.version_number,
+                "created_at": version.created_at.isoformat() if version.created_at else None,
+                "descriptions": [
+                    {
+                        "column_name": d.column_name,
+                        "description": d.description
+                    }
+                    for d in descriptions
+                ]
+            })
+            logger.info(f"📦 Version {version.version_number}: {len(descriptions)} descriptions")
+    
+    return {"versions": result}
+
+
+@router.get("/api/datasets/{dataset_id}/parent-suggestions")
+async def get_parent_suggestions(
+    dataset_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    """
+    Récupère les descriptions du parent identifié par signature
+    (si un parent a été trouvé lors du versionning)
+    """
+    logger.info(f"🔍 Recherche suggestions du parent pour dataset {dataset_id}")
+    
+    # 1️⃣ Vérifier le dataset
+    dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id,
+        Dataset.owner_employee_id == user["sub"]
+    ).first()
+    
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset introuvable")
+    
+    # 2️⃣ Chercher si un parent a été trouvé dans les signatures
+    # Note: Cette partie dépend de comment tu stockes le parent trouvé
+    # Option 1: Stocké dans une table parent_cache
+    # Option 2: À recalculer à la volée
+    
+    from db.dataset_signatures import DatasetSignature
+    from db.dataset_versions import DatasetVersion
+    
+    # Récupérer la signature du dataset courant
+    current_sig = db.query(DatasetSignature).filter(
+        DatasetSignature.dataset_id == dataset_id
+    ).order_by(DatasetSignature.created_at.desc()).first()
+    
+    if not current_sig:
+        return {"has_parent": False, "suggestions": []}
+    
+    # Chercher des datasets avec la même structure_hash (mêmes colonnes)
+    similar_datasets = db.query(DatasetSignature).filter(
+        DatasetSignature.structure_hash == current_sig.structure_hash,
+        DatasetSignature.dataset_id != dataset_id
+    ).order_by(DatasetSignature.created_at.desc()).limit(3).all()
+    
+    suggestions = []
+    seen_columns = set()
+    
+    for sig in similar_datasets:
+        # Récupérer la version associée à cette signature
+        version = db.query(DatasetVersion).filter(
+            DatasetVersion.dataset_id == sig.dataset_id
+        ).order_by(DatasetVersion.version_number.desc()).first()
+        
+        if version:
+            descriptions = db.query(ColumnDescription).filter(
+                ColumnDescription.dataset_version_id == version.id
+            ).all()
+            
+            for desc in descriptions:
+                if desc.column_name not in seen_columns:
+                    suggestions.append({
+                        "column_name": desc.column_name,
+                        "description": desc.description,
+                        "source_dataset": version.dataset_id,
+                        "source_version": version.version_number
+                    })
+                    seen_columns.add(desc.column_name)
+    
+    return {
+        "has_parent": len(suggestions) > 0,
+        "suggestions": suggestions
+    }

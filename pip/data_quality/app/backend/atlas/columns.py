@@ -1,10 +1,87 @@
-from .client import atlas_post, ATLAS_ENTITY_BULK_URL, ATLAS_RELATIONSHIP_URL
+from .client import atlas_post, ATLAS_ENTITY_BULK_URL, ATLAS_RELATIONSHIP_URL, ATLAS_SEARCH_URL
 from atlas.column_matching import ColumnMatcher
 import hashlib
 import logging
+import uuid
 
 logger = logging.getLogger("atlas.columns")
 logger.setLevel(logging.DEBUG)
+
+def get_existing_columns(dataset_guid: str):
+    """
+    Récupère les colonnes existantes dans Atlas pour un dataset donné
+    Retourne un dict {nom_colonne: {guid, description, logicalColumnId}}
+    """
+    existing_columns = {}
+    
+    if not dataset_guid:
+        return existing_columns
+    
+    try:
+        # ❌ MAUVAISE SYNTAXE - À CHANGER
+        # search_payload = {
+        #     "query": f"where dataset={dataset_guid}",
+        #     "typeName": "Column",
+        #     "limit": 100
+        # }
+        
+        # ✅ BONNE SYNTAXE - Utiliser entityFilters
+        search_payload = {
+            "typeName": "Column",
+            "entityFilters": {
+                "condition": "AND",
+                "criterion": [
+                    {
+                        "attributeName": "dataset",
+                        "operator": "eq",
+                        "attributeValue": dataset_guid
+                    }
+                ]
+            },
+            "limit": 100
+        }
+        
+        # Alternative avec DSL si entityFilters ne marche pas :
+        # search_payload = {
+        #     "query": f"from Column where dataset = '{dataset_guid}'",
+        #     "typeName": "Column",
+        #     "limit": 100
+        # }
+        
+        response = atlas_post(f"{ATLAS_SEARCH_URL}/basic", search_payload)
+        
+        # 🔥 DEBUG - Ajoutez ceci pour voir ce que retourne Atlas
+        logger.info(f"🔍 Réponse Atlas status: {response.status_code}")
+        if response.status_code == 200:
+            data = response.json()
+            logger.info(f"🔍 Réponse Atlas: {data.get('queryType')} - {len(data.get('entities', []))} entités")
+            
+            entities = data.get("entities", [])
+            
+            for entity in entities:
+                if entity.get("typeName") == "Column":
+                    attrs = entity.get("attributes", {})
+                    col_name = attrs.get("name")
+                    
+                    if col_name:
+                        existing_columns[col_name] = {
+                            "guid": entity.get("guid"),
+                            "description": attrs.get("description", ""),
+                            "logicalColumnId": attrs.get("logicalColumnId")
+                        }
+                        logger.debug(f"  ✅ Trouvé: {col_name} -> {entity.get('guid')}")
+            
+            logger.info(f"📋 {len(existing_columns)} colonnes existantes récupérées d'Atlas")
+            if existing_columns:
+                logger.info(f"   Noms: {list(existing_columns.keys())}")
+        else:
+            logger.warning(f"⚠️ Erreur recherche Atlas: {response.status_code} - {response.text}")
+            
+    except Exception as e:
+        logger.warning(f"⚠️ Impossible de récupérer les colonnes existantes: {e}")
+        logger.exception(e)  # Pour voir la stack trace
+    
+    return existing_columns
 
 def link_column_versioning(parent_column_guid: str, child_column_guid: str, parent_col_name: str = "", child_col_name: str = ""):
     """
@@ -50,7 +127,8 @@ def create_columns(df, dataset_guid, dataset_qualified_name,
                   parent_column_mapping=None, descriptions=None):  # ← AJOUTER descriptions
     """
     Crée les colonnes dans Atlas AVEC les descriptions utilisateur
-    descriptions: dict {nom_colonne: description}
+    PRÉSERVE les descriptions existantes dans Atlas
+    descriptions: dict {nom_colonne: description} (nouvelles descriptions)
     """
     entities = []
     temp_to_name = {}  # {temp_guid: column_name}
@@ -60,7 +138,37 @@ def create_columns(df, dataset_guid, dataset_qualified_name,
     if descriptions is None:
         descriptions = {}
     
-    logger.info(f"📝 {len(descriptions)} descriptions fournies")
+    logger.info(f"📝 {len(descriptions)} descriptions fournies pour la version courante")
+    
+    # ============= ÉTAPE 1 : RÉCUPÉRER LES COLONNES EXISTANTES =============
+    existing_columns = get_existing_columns(dataset_guid)
+    
+    # ============= ÉTAPE 2 : FUSIONNER LES DESCRIPTIONS =============
+    # Priorité : 
+    # 1. Nouvelles descriptions (celles de la version courante)
+    # 2. Descriptions existantes dans Atlas (si pas de nouvelle)
+    # 3. Description générique (en dernier recours)
+    
+    final_descriptions = {}
+    
+    # Pour toutes les colonnes du dataset (connues via df.columns)
+    for col_name in df.columns:
+        # Priorité 1: Description fournie par l'utilisateur (version courante)
+        if col_name in descriptions and descriptions[col_name].strip():
+            final_descriptions[col_name] = descriptions[col_name]
+            logger.debug(f"📝 Nouvelle description pour '{col_name}': {descriptions[col_name][:30]}...")
+        
+        # Priorité 2: Description existante dans Atlas
+        elif col_name in existing_columns and existing_columns[col_name]["description"]:
+            final_descriptions[col_name] = existing_columns[col_name]["description"]
+            logger.debug(f"🔄 Préservation description Atlas pour '{col_name}': {existing_columns[col_name]['description'][:30]}...")
+        
+        # Priorité 3: Description générique (seulement si vraiment rien)
+        else:
+            final_descriptions[col_name] = f"Colonne {col_name}"
+            logger.debug(f"⚙️ Description générique pour '{col_name}'")
+    
+    logger.info(f"📋 {len(final_descriptions)} descriptions finales après fusion")
     
     # Initialiser le matcher
     matcher = ColumnMatcher()
@@ -107,8 +215,14 @@ def create_columns(df, dataset_guid, dataset_qualified_name,
         logical_id = None
         match_strategy = "none"
         
+        # ⭐ VÉRIFIER SI LA COLONNE EXISTE DÉJÀ (pour préserver logicalColumnId)
+        if col_name in existing_columns and existing_columns[col_name]["logicalColumnId"]:
+            logical_id = existing_columns[col_name]["logicalColumnId"]
+            match_strategy = "existing"
+            logger.info(f"🔄 Réutilisation logicalColumnId existant pour '{col_name}': {logical_id[:8]}...")
+        
         # NIVEAU 1: Match exact par nom
-        if col_name in parent_column_logical_ids:
+        elif col_name in parent_column_logical_ids:
             logical_id = parent_column_logical_ids[col_name]
             match_strategy = "exact_name"
             logger.info(f"✅ [NIVEAU 1] Match exact pour '{col_name}' → logicalId: {logical_id[:8]}...")
@@ -141,8 +255,8 @@ def create_columns(df, dataset_guid, dataset_qualified_name,
             match_strategy = "new"
             logger.info(f"🆕 [NIVEAU 4] Nouvel ID généré pour '{col_name}' → logicalId: {logical_id[:8]}...")
         
-        # 🔥 Récupérer la description (ou mettre une description par défaut)
-        description = descriptions.get(col_name, f"Colonne {col_name}")
+        # 🔥 Récupérer la description FINALE (après fusion)
+        description = final_descriptions.get(col_name, f"Colonne {col_name}")
         
         # Construction de l'entité AVEC la description
         entity = {
@@ -153,7 +267,7 @@ def create_columns(df, dataset_guid, dataset_qualified_name,
                 "type": str(dtype),
                 "position": idx,
                 "logicalColumnId": logical_id,
-                "description": description,  # ← ICI la description utilisateur
+                "description": description,  # ← ICI la description fusionnée
                 "dataset": {
                     "typeName": "DataSet", 
                     "guid": dataset_guid
@@ -161,6 +275,12 @@ def create_columns(df, dataset_guid, dataset_qualified_name,
             },
             "guid": temp_guid
         }
+        
+        # Si la colonne existe déjà, inclure son GUID pour mise à jour
+        if col_name in existing_columns:
+            entity["guid"] = existing_columns[col_name]["guid"]
+            logger.info(f"🔄 Mise à jour colonne existante '{col_name}' (GUID: {existing_columns[col_name]['guid'][:8]}...)")
+        
         entities.append(entity)
         temp_to_name[temp_guid] = col_name
         temp_to_logical_id[temp_guid] = logical_id
@@ -176,25 +296,41 @@ def create_columns(df, dataset_guid, dataset_qualified_name,
     entities_with_real_guids = []  # Entités avec vrais GUIDs
     
     try:
-        res = atlas_post(ATLAS_ENTITY_BULK_URL, {"entities": entities})
-        assignments = res.json().get("guidAssignments", {})
+        # Séparer les mises à jour des créations
+        to_create = [e for e in entities if e["guid"].startswith("-col-")]
+        to_update = [e for e in entities if not e["guid"].startswith("-col-")]
         
-        logger.info(f"📥 Reçu {len(assignments)} assignations de GUIDs")
+        logger.info(f"📊 {len(to_create)} créations, {len(to_update)} mises à jour")
         
-        for temp_guid, atlas_guid in assignments.items():
-            if temp_guid in temp_to_name:
-                column_name = temp_to_name[temp_guid]
-                column_mapping[column_name] = atlas_guid
+        # Gérer les créations
+        if to_create:
+            res = atlas_post(ATLAS_ENTITY_BULK_URL, {"entities": to_create})
+            assignments = res.json().get("guidAssignments", {})
+            
+            for temp_guid, atlas_guid in assignments.items():
+                if temp_guid in temp_to_name:
+                    column_name = temp_to_name[temp_guid]
+                    column_mapping[column_name] = atlas_guid
+                    
+                    # Créer l'entité avec le vrai GUID Atlas
+                    for entity in to_create:
+                        if entity["guid"] == temp_guid:
+                            entity_with_real_guid = entity.copy()
+                            entity_with_real_guid["guid"] = atlas_guid
+                            entities_with_real_guids.append(entity_with_real_guid)
+                            break
+                    
+                    logger.debug(f"  ✅ Colonne créée: '{column_name}' → {atlas_guid[:8]}...")
+        
+        # Gérer les mises à jour
+        if to_update:
+            res = atlas_post(ATLAS_ENTITY_BULK_URL, {"entities": to_update})
+            for entity in to_update:
+                col_name = entity["attributes"]["name"]
+                column_mapping[col_name] = entity["guid"]
+                entities_with_real_guids.append(entity)
+                logger.debug(f"  ✅ Colonne mise à jour: '{col_name}' → {entity['guid'][:8]}...")
                 
-                # 🔥 Créer l'entité avec le vrai GUID Atlas
-                for entity in entities:
-                    if entity["guid"] == temp_guid:
-                        entity_with_real_guid = entity.copy()
-                        entity_with_real_guid["guid"] = atlas_guid
-                        entities_with_real_guids.append(entity_with_real_guid)
-                        break
-                
-                logger.debug(f"  ✅ Colonne créée: '{column_name}' → {atlas_guid[:8]}...")
     except Exception as e:
         logger.error(f"❌ Erreur lors de l'envoi des colonnes: {e}")
         raise
@@ -227,12 +363,24 @@ def create_columns(df, dataset_guid, dataset_qualified_name,
     
     # Statistiques
     logical_ids_set = set()
+    preserved_descriptions = 0
+    new_descriptions = 0
+    
     for entity in entities_with_real_guids:
         lid = entity["attributes"].get("logicalColumnId")
         if lid:
             logical_ids_set.add(lid)
+        
+        # Compter les descriptions préservées vs nouvelles
+        col_name = entity["attributes"]["name"]
+        if col_name in existing_columns and existing_columns[col_name]["description"]:
+            if entity["attributes"]["description"] == existing_columns[col_name]["description"]:
+                preserved_descriptions += 1
+            else:
+                new_descriptions += 1
     
     logger.info(f"✅ {len(column_mapping)}/{len(df.columns)} colonnes créées dans Atlas")
+    logger.info(f"📝 Descriptions: {preserved_descriptions} préservées, {new_descriptions} nouvelles")
     
     if parent_dataset_guid and parent_column_logical_ids:
         propagated = sum(1 for e in entities_with_real_guids if e["attributes"].get("logicalColumnId") and 
