@@ -91,6 +91,26 @@ def apply_classification(payload: dict, db: Session = Depends(get_db), user=Depe
             column_name=payload.get("column_name")
         )
         
+        # ============================================================
+        # 🔥 AJOUTE ÇA ICI - APRÈS apply_classification_use_case()
+        # ============================================================
+        # Ne synchroniser que pour les datasets (pas les colonnes)
+        if payload["entity_type"] == "DATASET":
+            from atlas.classifications import sync_security_classification_to_atlas
+            sync_success = sync_security_classification_to_atlas(
+                guid=payload["atlas_guid"],
+                new_classification=payload["classification_name"],
+                attributes=attributes
+            )
+            if sync_success:
+                logger.info(f"✅ Atlas synchronisé avec la base")
+            else:
+                logger.warning(f"⚠️ Échec synchronisation Atlas")
+        
+        # ============================================================
+        # Fin de l'ajout
+        # ============================================================
+        
         logger.info(f"✅ Classification appliquée avec succès. ID: {result.id}")
         return {
             "success": True, 

@@ -55,3 +55,15 @@ def create_entity_classification(
 
     db.add(classification)
     return classification
+
+def get_active_security_classification(db: Session, dataset_id: str):
+    """
+    ✅ FONCTION DEMANDÉE DANS LA RECOMMANDATION
+    Récupère la classification de sécurité active pour un dataset
+    """
+    return db.query(EntityClassification).filter(
+        EntityClassification.entity_type == "DATASET",
+        EntityClassification.entity_id == dataset_id,
+        EntityClassification.is_active.is_(True),
+        EntityClassification.classification_name.in_(["PUBLIC", "RESTRICTED"])
+    ).first()

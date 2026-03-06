@@ -489,32 +489,6 @@ def push_atlas(
                 else:
                     add_quality_classification(new_version.atlas_guid, "WARNING")
 
-        # ============================================================
-        # 🔒 CLASSIFICATION DE SÉCURITÉ (NOUVEAU)
-        # ============================================================
-        logger.info("🏷️ Ajout de la classification de sécurité...")
-        
-        if is_public:
-            # PUBLIC
-            security_success = add_public_classification(new_version.atlas_guid)
-            if security_success:
-                logger.info(f"🌍 Classification PUBLIC ajoutée")
-            else:
-                logger.warning(f"⚠️ Échec ajout classification PUBLIC")
-        else:
-            # RESTRICTED avec département du propriétaire
-            security_success = add_restricted_classification(
-                entity_guid=new_version.atlas_guid,
-                db=db,
-                owner_employee_id=dataset.owner_employee_id
-            )
-            if security_success:
-                logger.info(f"🔒 Classification RESTRICTED ajoutée avec département")
-            else:
-                logger.warning(f"⚠️ Échec ajout classification RESTRICTED")
-
-        logger.info(f"📊 TOTAL Atlas: {len(dq_guids)}")
-        logger.info(f"📊 TOTAL PostgreSQL: {len(dq_db_ids)}")
 
         # ----------------------
         # 9️⃣ ENREGISTRER L'HISTORIQUE DE PUSH
