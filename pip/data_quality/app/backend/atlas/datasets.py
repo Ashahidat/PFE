@@ -20,7 +20,8 @@ def create_dataset(
     force_unique=False,
     owner_employee_id=None,
     project_id=None,
-    description=None
+    description=None,
+    version_number=None  # ← NOUVEAU
 ):
     """
     Crée un DataSet dans Atlas.
@@ -39,7 +40,14 @@ def create_dataset(
     # ---------------------------------------------------------------------
     # Construction du qualifiedName
     # ---------------------------------------------------------------------
-    qn = f"{project_id}_{hash_value}" if project_id else hash_value
+    # Construction de la base
+    base_qn = f"{project_id}_{hash_value}" if project_id else hash_value
+
+    # Ajout du numéro de version
+    if version_number is not None:
+        qn = f"{base_qn}_v{version_number}"
+    else:
+        qn = base_qn
 
     if force_unique:
         qn = f"{qn}_{int(time.time())}"
@@ -114,7 +122,6 @@ def create_dataset(
     except Exception as e:
         logger.error(f"create_dataset: error creating dataset: {e}")
         raise
-
 
 def link_versioning(parent_guid, child_guid):
     """

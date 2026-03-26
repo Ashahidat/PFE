@@ -106,19 +106,27 @@ def push_atlas(
         # ----------------------
         logger.info("📦 Déploiement des typedefs Atlas...")
 
-        # ⚡ 1️⃣ Déployer d'abord les types de base (Column, DataQualityCheck)
-        base_types = ["Column", "DataQualityCheck"]
-        for type_name in base_types:
-            entityDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == type_name)
-            try:
-                atlas_post(ATLAS_TYPEDEF_URL, {"entityDefs": [entityDef]})
-                logger.info(f"✅ EntityDef créé: {type_name}")
-            except Exception as e:
-                if "409" not in str(e):
-                    raise
-                logger.info(f"ℹ️ EntityDef existant: {type_name}")
+        # ⚡ 1️⃣ Déployer d'abord Column
+        column_def = next(e for e in typedefs_payload["entityDefs"] if e["name"] == "Column")
+        try:
+            atlas_post(ATLAS_TYPEDEF_URL, {"entityDefs": [column_def]})
+            logger.info("✅ EntityDef créé: Column")
+        except Exception as e:
+            if "409" not in str(e):
+                raise
+            logger.info("ℹ️ EntityDef existant: Column")
 
-        # ⚡ 2️⃣ Déployer DataSet (sans qualitySummary maintenant)
+        # ⚡ 2️⃣ Déployer DataQualityCheck (dépend de Column)
+        dq_def = next(e for e in typedefs_payload["entityDefs"] if e["name"] == "DataQualityCheck")
+        try:
+            atlas_post(ATLAS_TYPEDEF_URL, {"entityDefs": [dq_def]})
+            logger.info("✅ EntityDef créé: DataQualityCheck")
+        except Exception as e:
+            if "409" not in str(e):
+                raise
+            logger.info("ℹ️ EntityDef existant: DataQualityCheck")
+
+        # ⚡ 3️⃣ Déployer DataSet
         dataSetDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == "DataSet")
         try:
             atlas_put(ATLAS_TYPEDEF_URL, {"entityDefs": [dataSetDef]})
@@ -234,7 +242,8 @@ def push_atlas(
             df,
             owner_employee_id=dataset.owner_employee_id,
             project_id=str(dataset.project_id),
-            description=description 
+            description=description,
+            version_number=new_version.version_number 
         )
 
         # 🔥 NOUVEAU : Récupérer le qualified name du dataset depuis Atlas

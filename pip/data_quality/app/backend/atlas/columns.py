@@ -7,51 +7,57 @@ import uuid
 logger = logging.getLogger("atlas.columns")
 logger.setLevel(logging.DEBUG)
 
-def get_existing_columns(dataset_guid: str):
+def get_existing_columns(dataset_guid: str, dataset_qualified_name: str = None):
     """
     Récupère les colonnes existantes dans Atlas pour un dataset donné
     Retourne un dict {nom_colonne: {guid, description, logicalColumnId}}
+    
+    Args:
+        dataset_guid: GUID du dataset (fallback)
+        dataset_qualified_name: Qualified name du dataset (prioritaire)
     """
     existing_columns = {}
     
-    if not dataset_guid:
+    if not dataset_guid and not dataset_qualified_name:
+        logger.warning("get_existing_columns: aucun identifiant fourni")
         return existing_columns
     
     try:
-        # ❌ MAUVAISE SYNTAXE - À CHANGER
-        # search_payload = {
-        #     "query": f"where dataset={dataset_guid}",
-        #     "typeName": "Column",
-        #     "limit": 100
-        # }
-        
-        # ✅ BONNE SYNTAXE - Utiliser entityFilters
-        search_payload = {
-            "typeName": "Column",
-            "entityFilters": {
-                "condition": "AND",
-                "criterion": [
-                    {
+        # Recherche par qualifiedName (priorité)
+        if dataset_qualified_name:
+            logger.info(f"🔍 Recherche colonnes par qualifiedName: {dataset_qualified_name}")
+            search_payload = {
+                "typeName": "Column",
+                "entityFilters": {
+                    "condition": "AND",
+                    "criterion": [{
+                        "attributeName": "qualifiedName",
+                        "operator": "startsWith",
+                        "attributeValue": f"{dataset_qualified_name}."
+                    }]
+                },
+                "limit": 100
+            }
+        else:
+            # Fallback sur GUID
+            logger.info(f"🔍 Recherche colonnes par dataset GUID: {dataset_guid}")
+            search_payload = {
+                "typeName": "Column",
+                "entityFilters": {
+                    "condition": "AND",
+                    "criterion": [{
                         "attributeName": "dataset",
                         "operator": "eq",
                         "attributeValue": dataset_guid
-                    }
-                ]
-            },
-            "limit": 100
-        }
-        
-        # Alternative avec DSL si entityFilters ne marche pas :
-        # search_payload = {
-        #     "query": f"from Column where dataset = '{dataset_guid}'",
-        #     "typeName": "Column",
-        #     "limit": 100
-        # }
-        
-        response = atlas_post(f"{ATLAS_SEARCH_URL}/basic", search_payload)
+                    }]
+                },
+                "limit": 100
+            }
         
         # 🔥 DEBUG - Ajoutez ceci pour voir ce que retourne Atlas
+        response = atlas_post(f"{ATLAS_SEARCH_URL}/basic", search_payload)
         logger.info(f"🔍 Réponse Atlas status: {response.status_code}")
+        
         if response.status_code == 200:
             data = response.json()
             logger.info(f"🔍 Réponse Atlas: {data.get('queryType')} - {len(data.get('entities', []))} entités")
@@ -82,6 +88,7 @@ def get_existing_columns(dataset_guid: str):
         logger.exception(e)  # Pour voir la stack trace
     
     return existing_columns
+
 
 def link_column_versioning(parent_column_guid: str, child_column_guid: str, parent_col_name: str = "", child_col_name: str = ""):
     """
@@ -141,7 +148,7 @@ def create_columns(df, dataset_guid, dataset_qualified_name,
     logger.info(f"📝 {len(descriptions)} descriptions fournies pour la version courante")
     
     # ============= ÉTAPE 1 : RÉCUPÉRER LES COLONNES EXISTANTES =============
-    existing_columns = get_existing_columns(dataset_guid)
+    existing_columns = get_existing_columns(dataset_guid, dataset_qualified_name)
     
     # ============= ÉTAPE 2 : FUSIONNER LES DESCRIPTIONS =============
     # Priorité : 
