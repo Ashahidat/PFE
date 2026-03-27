@@ -8,85 +8,77 @@ logger = logging.getLogger("atlas.columns")
 logger.setLevel(logging.DEBUG)
 
 def get_existing_columns(dataset_guid: str, dataset_qualified_name: str = None):
-    """
-    Récupère les colonnes existantes dans Atlas pour un dataset donné
-    Retourne un dict {nom_colonne: {guid, description, logicalColumnId}}
-    
-    Args:
-        dataset_guid: GUID du dataset (fallback)
-        dataset_qualified_name: Qualified name du dataset (prioritaire)
-    """
     existing_columns = {}
-    
     if not dataset_guid and not dataset_qualified_name:
         logger.warning("get_existing_columns: aucun identifiant fourni")
         return existing_columns
-    
-    try:
-        # Recherche par qualifiedName (priorité)
-        if dataset_qualified_name:
-            logger.info(f"🔍 Recherche colonnes par qualifiedName: {dataset_qualified_name}")
-            search_payload = {
-                "typeName": "Column",
-                "entityFilters": {
-                    "condition": "AND",
-                    "criterion": [{
-                        "attributeName": "qualifiedName",
-                        "operator": "startsWith",
-                        "attributeValue": f"{dataset_qualified_name}."
-                    }]
-                },
-                "limit": 100
-            }
-        else:
-            # Fallback sur GUID
-            logger.info(f"🔍 Recherche colonnes par dataset GUID: {dataset_guid}")
-            search_payload = {
-                "typeName": "Column",
-                "entityFilters": {
-                    "condition": "AND",
-                    "criterion": [{
-                        "attributeName": "dataset",
-                        "operator": "eq",
-                        "attributeValue": dataset_guid
-                    }]
-                },
-                "limit": 100
-            }
-        
-        # 🔥 DEBUG - Ajoutez ceci pour voir ce que retourne Atlas
-        response = atlas_post(f"{ATLAS_SEARCH_URL}/basic", search_payload)
-        logger.info(f"🔍 Réponse Atlas status: {response.status_code}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            logger.info(f"🔍 Réponse Atlas: {data.get('queryType')} - {len(data.get('entities', []))} entités")
-            
-            entities = data.get("entities", [])
-            
-            for entity in entities:
-                if entity.get("typeName") == "Column":
-                    attrs = entity.get("attributes", {})
-                    col_name = attrs.get("name")
-                    
-                    if col_name:
-                        existing_columns[col_name] = {
-                            "guid": entity.get("guid"),
-                            "description": attrs.get("description", ""),
-                            "logicalColumnId": attrs.get("logicalColumnId")
-                        }
-                        logger.debug(f"  ✅ Trouvé: {col_name} -> {entity.get('guid')}")
-            
-            logger.info(f"📋 {len(existing_columns)} colonnes existantes récupérées d'Atlas")
-            if existing_columns:
-                logger.info(f"   Noms: {list(existing_columns.keys())}")
-        else:
-            logger.warning(f"⚠️ Erreur recherche Atlas: {response.status_code} - {response.text}")
-            
-    except Exception as e:
-        logger.warning(f"⚠️ Impossible de récupérer les colonnes existantes: {e}")
-        logger.exception(e)  # Pour voir la stack trace
-    
+
+    # 1️⃣ Priorité : recherche par GUID (attribut dataset)
+    if dataset_guid:
+        search_payload = {
+            "typeName": "Column",
+            "entityFilters": {
+                "condition": "AND",
+                "criterion": [{
+                    "attributeName": "dataset",
+                    "operator": "eq",
+                    "attributeValue": dataset_guid
+                }]
+            },
+            "limit": 100
+        }
+        try:
+            response = atlas_post(ATLAS_SEARCH_URL, search_payload)  # ← URL corrigée
+            if response.status_code == 200:
+                data = response.json()
+                for entity in data.get("entities", []):
+                    if entity.get("typeName") == "Column":
+                        attrs = entity.get("attributes", {})
+                        col_name = attrs.get("name")
+                        if col_name:
+                            existing_columns[col_name] = {
+                                "guid": entity.get("guid"),
+                                "description": attrs.get("description", ""),
+                                "logicalColumnId": attrs.get("logicalColumnId")
+                            }
+                if existing_columns:
+                    logger.info(f"📋 {len(existing_columns)} colonnes trouvées par GUID")
+                    return existing_columns
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur recherche par GUID: {e}")
+
+    # 2️⃣ Fallback : recherche par qualifiedName
+    if dataset_qualified_name:
+        search_payload = {
+            "typeName": "Column",
+            "entityFilters": {
+                "condition": "AND",
+                "criterion": [{
+                    "attributeName": "qualifiedName",
+                    "operator": "startsWith",
+                    "attributeValue": f"{dataset_qualified_name}."
+                }]
+            },
+            "limit": 100
+        }
+        try:
+            response = atlas_post(ATLAS_SEARCH_URL, search_payload)  # ← URL corrigée
+            if response.status_code == 200:
+                data = response.json()
+                for entity in data.get("entities", []):
+                    if entity.get("typeName") == "Column":
+                        attrs = entity.get("attributes", {})
+                        col_name = attrs.get("name")
+                        if col_name:
+                            existing_columns[col_name] = {
+                                "guid": entity.get("guid"),
+                                "description": attrs.get("description", ""),
+                                "logicalColumnId": attrs.get("logicalColumnId")
+                            }
+                logger.info(f"📋 {len(existing_columns)} colonnes trouvées par qualifiedName")
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur recherche par qualifiedName: {e}")
+
     return existing_columns
 
 

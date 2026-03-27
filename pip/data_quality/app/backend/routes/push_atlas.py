@@ -236,43 +236,61 @@ def push_atlas(
         # ============================================================
         # 5.5️⃣ CRÉER LA VERSION EN BASE AVANT LE DATASET ATLAS
         # ============================================================
-        # 🔍 RECHERCHER une version existante non pushée (créée par /descriptions)
-        existing_version = db.query(DatasetVersion).filter(
+
+        # Déterminer le numéro de version cible
+        if parent_guid and parent_version_number > 0:
+            target_version_number = parent_version_number + 1
+        else:
+            last_version = db.query(DatasetVersion).filter(
+                DatasetVersion.dataset_id == dataset.id
+            ).order_by(DatasetVersion.version_number.desc()).first()
+            target_version_number = (last_version.version_number + 1) if last_version else 1
+
+        # Vérifier s'il existe déjà une version temporaire
+        existing_temp = db.query(DatasetVersion).filter(
             DatasetVersion.dataset_id == dataset.id,
-            DatasetVersion.atlas_guid.is_(None)  # Version temporaire
+            DatasetVersion.atlas_guid.is_(None)
         ).first()
 
-        if existing_version:
-            # ✅ RÉUTILISER la version existante
-            new_version = existing_version
-            logger.info(f"📌 Version existante réutilisée: v{new_version.version_number}")
+        if existing_temp and existing_temp.version_number == target_version_number:
+            new_version = existing_temp
+            logger.info(f"📌 Version temporaire existante réutilisée (v{target_version_number})")
         else:
-            # ⚠️ Créer une nouvelle version (cas où on push sans passer par /descriptions)
-            # Déterminer le numéro de version
-            if parent_version_id and parent_version_number > 0:
-                new_version_number = parent_version_number + 1
-            else:
-                # Récupérer la dernière version du dataset
-                last_version = db.query(DatasetVersion).filter(
-                    DatasetVersion.dataset_id == dataset.id
-                ).order_by(DatasetVersion.version_number.desc()).first()
-                
-                if last_version:
-                    new_version_number = last_version.version_number + 1
-                else:
-                    new_version_number = 1
-            
+            # Créer la nouvelle version avec le bon numéro
             new_version = create_dataset_version(
                 db=db,
                 dataset_id=dataset.id,
-                version_number=new_version_number,
-                atlas_guid=None,  # Sera mis à jour après création Atlas
+                version_number=target_version_number,
+                atlas_guid=None,
                 parent_version_id=parent_version_id,
                 created_by=employee_id,
                 change_comment="Version temporaire (en attente de push)",
                 source_file=file_path
             )
-            logger.info(f"📌 Nouvelle version temporaire créée: v{new_version_number}")
+            logger.info(f"📌 Nouvelle version temporaire créée: v{target_version_number}")
+
+            # Si une ancienne version temporaire existait, transférer ses descriptions
+            if existing_temp:
+                old_version_id = existing_temp.id
+                old_descriptions = db.query(ColumnDescription).filter(
+                    ColumnDescription.dataset_version_id == old_version_id
+                ).all()
+                for desc in old_descriptions:
+                    new_desc = ColumnDescription(
+                        id=uuid.uuid4(),
+                        dataset_version_id=new_version.id,
+                        column_name=desc.column_name,
+                        description=desc.description,
+                        created_by=desc.created_by,
+                        created_at=desc.created_at,
+                        updated_by=employee_id,
+                        updated_at=func.now()
+                    )
+                    db.add(new_desc)
+                db.commit()
+                logger.info(f"📌 Descriptions transférées de l'ancienne version v{existing_temp.version_number} vers v{target_version_number}")
+
+                # ❌ NE PAS SUPPRIMER l'ancienne version temporaire (elle reste en base mais inutilisée)
 
         # ----------------------
         # 6️⃣ Créer le DataSet dans Atlas (AVEC le numéro de version)
