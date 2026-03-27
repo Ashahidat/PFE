@@ -197,9 +197,10 @@ def find_smart_parent(
     project_id: str = None
 ):
     """
-    Recherche le parent dans le MÊME PROJET uniquement
-    MAINANT : utilise les signatures en base de données, PAS celles d'Atlas
+    Recherche le parent dans le MÊME PROJET uniquement.
+    Utilise la base de données PostgreSQL pour lister les datasets du projet.
     """
+    from db.datasets import Dataset
     from db.dataset_versions import DatasetVersion
     from db.dataset_signatures import DatasetSignature
 
@@ -207,135 +208,80 @@ def find_smart_parent(
     print(f"🎯 RECHERCHE PARENT: {dataset_name} (projet: {project_id})")
     print(f"{'='*60}")
 
-    try:
-        # ------------------------------------------------------------------
-        # 🔎 1️⃣ RÉCUPÉRER DATASETS DU MÊME PROJET UNIQUEMENT
-        # ------------------------------------------------------------------
-        base_url = ATLAS_SEARCH_URL.split("/search")[0]
+    if not db:
+        print("❌ Session DB manquante")
+        return None, None, [], {}
 
-        if project_id:
-            # Recherche dans Atlas
-            res = atlas_get(f"{ATLAS_SEARCH_URL}?typeName=DataSet&query=*")
-            entities = res.json().get("entities", [])
+    # 1️⃣ Récupérer tous les datasets du même projet
+    datasets_in_project = db.query(Dataset).filter(Dataset.project_id == project_id).all()
+    print(f"📥 {len(datasets_in_project)} datasets trouvés dans le projet")
 
-            filtered_entities = []
-            for e in entities:
-                guid = e.get("guid")
-                if not guid:
-                    continue
-                try:
-                    full = atlas_get(f"{base_url}/entity/guid/{guid}").json()
-                    entity = full.get("entity", full)
-                    attrs = entity.get("attributes", {})
-                    if attrs.get("project") == project_id:
-                        filtered_entities.append(entity)
-                except:
-                    continue
-            entities = filtered_entities
+    # 2️⃣ Signature courante
+    sig_current = calculate_dataset_signature(df_current, dataset_name)
+
+    best_score = 0
+    best_parent_guid = None
+    best_parent_qn = None
+    best_parent_dataset = None
+
+    # 3️⃣ Comparaison avec chaque dataset du projet
+    for ds in datasets_in_project:
+        # Ignorer le dataset lui-même
+        if ds.id == dataset_id:
+            continue
+
+        # Récupérer la dernière version de ce dataset (celle avec atlas_guid)
+        version = db.query(DatasetVersion)\
+            .filter(DatasetVersion.dataset_id == ds.id, DatasetVersion.atlas_guid.isnot(None))\
+            .order_by(DatasetVersion.version_number.desc())\
+            .first()
+
+        if not version or not version.atlas_guid:
+            continue
+
+        # Récupérer la signature associée
+        sig_record = db.query(DatasetSignature)\
+            .filter(DatasetSignature.dataset_id == ds.id)\
+            .order_by(DatasetSignature.created_at.desc())\
+            .first()
+
+        if not sig_record or not sig_record.signature:
+            continue
+
+        sig_old = sig_record.signature
+        score = compute_similarity_score(sig_current, sig_old)
+        print(f"   {ds.name}: score {score:.3f}")
+
+        if score > best_score:
+            best_score = score
+            best_parent_dataset = ds
+            best_parent_guid = version.atlas_guid
+            best_parent_qn = ds.name
+
+    # 4️⃣ Si parent trouvé avec score >= 0.60
+    if best_parent_guid and best_score >= 0.60:
+        parent_name = best_parent_dataset.name
+        print(f"\n🏆 PARENT TROUVÉ: {parent_name} (score: {best_score:.3f})")
+        print(f"   GUID: {best_parent_guid}")
+
+        # Récupérer les colonnes du parent
+        parent_columns, parent_column_mapping = ensure_parent_columns(
+            best_parent_guid,
+            parent_name,
+            best_parent_qn
+        )
+
+        if parent_columns:
+            print(f"✅ {len(parent_columns)} colonnes parent récupérées")
+            print(f"✅ {len(parent_column_mapping)} mappings colonnes disponibles")
         else:
-            res = atlas_get(f"{ATLAS_SEARCH_URL}?typeName=DataSet&query=*")
-            entities = res.json().get("entities", [])
+            print(f"⚠️ Échec récupération colonnes parent")
+            parent_columns = []
+            parent_column_mapping = {}
 
-        print(f"📥 {len(entities)} datasets trouvés dans le projet {project_id}")
-
-        # ------------------------------------------------------------------
-        # 2️⃣ SIGNATURE COURANTE
-        # ------------------------------------------------------------------
-        sig_current = calculate_dataset_signature(df_current, dataset_name)
-
-        best_score = 0
-        best_parent = None
-        best_parent_guid = None
-        best_parent_qn = None
-
-        # ------------------------------------------------------------------
-        # 3️⃣ RÉCUPÉRER ENTITÉS COMPLÈTES
-        # ------------------------------------------------------------------
-        full_entities = []
-        for e in entities:
-            guid = e.get("guid")
-            if not guid:
-                continue
-            try:
-                full = atlas_get(f"{base_url}/entity/guid/{guid}").json()
-                full_entities.append(full.get("entity", full))
-            except:
-                continue
-
-        # ------------------------------------------------------------------
-        # 4️⃣ COMPARAISON SIMILARITÉ - UTILISE LA BASE DE DONNÉES
-        # ------------------------------------------------------------------
-        for ds in full_entities:
-            if ds.get("status") == "DELETED":
-                continue
-
-            attrs = ds.get("attributes", {})
-            ds_name = attrs.get("name", "Unknown")
-            ds_guid = ds.get("guid")
-            ds_qn = attrs.get("qualifiedName", "Unknown")
-
-            # 🔥 CHANGEMENT MAJEUR : Récupérer la signature depuis la DB
-            # Trouver la dernière version de ce dataset
-            version = db.query(DatasetVersion)\
-                .filter(DatasetVersion.atlas_guid == ds_guid)\
-                .first()
-            
-            if not version:
-                continue
-                
-            # Récupérer la signature associée à cette version
-            sig_record = db.query(DatasetSignature)\
-                .filter(DatasetSignature.dataset_id == version.dataset_id)\
-                .order_by(DatasetSignature.created_at.desc())\
-                .first()
-                
-            if not sig_record or not sig_record.signature:
-                continue
-                
-            sig_old = sig_record.signature
-            # ⚠️ Ne plus chercher dans les attributs Atlas : attrs.get("signature")
-
-            score = compute_similarity_score(sig_current, sig_old)
-            print(f"   {ds_name}: score {score:.3f}")
-
-            if score > best_score:
-                best_score = score
-                best_parent = ds
-                best_parent_guid = ds_guid
-                best_parent_qn = ds_qn
-
-        # ------------------------------------------------------------------
-        # 5️⃣ SI PARENT TROUVÉ
-        # ------------------------------------------------------------------
-        if best_parent and best_score >= 0.60:
-            parent_name = best_parent.get("attributes", {}).get("name", "Unknown")
-            print(f"\n🏆 PARENT TROUVÉ: {parent_name} (score: {best_score:.3f})")
-            print(f"   GUID: {best_parent_guid}")
-            print(f"   QualifiedName: {best_parent_qn}")
-
-            parent_columns, parent_column_mapping = ensure_parent_columns(
-                best_parent_guid,
-                parent_name,
-                best_parent_qn
-            )
-
-            if parent_columns:
-                print(f"✅ {len(parent_columns)} colonnes parent récupérées")
-                print(f"✅ {len(parent_column_mapping)} mappings colonnes disponibles")
-            else:
-                print(f"⚠️ Échec récupération colonnes parent")
-                parent_columns = []
-                parent_column_mapping = {}
-
-            return best_parent_guid, best_parent_qn, parent_columns, parent_column_mapping
-        else:
-            print(f"\n❌ AUCUN PARENT TROUVÉ DANS LE PROJET {project_id}")
-            return None, None, [], {}
-
-    except Exception as e:
-        print(f"❌ ERREUR: {e}")
-        import traceback
-        traceback.print_exc()
+        return best_parent_guid, best_parent_qn, parent_columns, parent_column_mapping
+    else:
+        print(f"\n❌ AUCUN PARENT TROUVÉ DANS LE PROJET {project_id}")
         return None, None, [], {}
 
 def persist_signature_to_db(db: Session, dataset_id: str, signature: dict):
