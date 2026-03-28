@@ -101,65 +101,63 @@ def compute_similarity_score(sig_current, sig_old):
 
 def ensure_parent_columns(parent_guid, parent_name, parent_qualified_name):
     """
-    Crée les colonnes du parent SEULEMENT SI ELLES N'EXISTENT PAS
-    ET retourne (entities, column_mapping avec VRAIS GUIDs)
+    Récupère les colonnes du parent depuis Atlas.
+    Si elles n'existent pas, les crée.
+    Retourne (entities, column_mapping)
     """
     from db.connexion_db import get_db
     from db.datasets import Dataset
-    from atlas.column_matching import ColumnMatcher
-    
+    from atlas.columns import get_existing_columns, create_columns
+    import time
+
     logger.info(f"🔧 VÉRIFICATION des colonnes pour parent {parent_name}")
     logger.info(f"   GUID: {parent_guid}")
-    
-    # 🔥 ÉTAPE 1: Vérifier si les colonnes existent déjà dans Atlas
-    matcher = ColumnMatcher()
-    existing_columns = matcher._get_dataset_columns(parent_guid)
-    
+
+    # Utiliser get_existing_columns (plus fiable)
+    existing_columns = get_existing_columns(parent_guid, parent_qualified_name)
     if existing_columns:
         logger.info(f"✅ Les colonnes existent déjà pour {parent_name} ({len(existing_columns)} trouvées)")
-        
-        # Construire le mapping à partir des colonnes existantes
+        parent_entities = []
         column_mapping = {}
-        for col in existing_columns:
-            attrs = col.get("attributes", {})
-            col_name = attrs.get("name")
-            col_guid = col.get("guid")
-            if col_name and col_guid:
-                column_mapping[col_name] = col_guid
-                logger.info(f"   - {col_name}: {col_guid} (logicalId: {attrs.get('logicalColumnId', 'N/A')})")
-        
-        return existing_columns, column_mapping
-    
-    # Si on arrive ici, les colonnes n'existent pas - on les crée
+        for col_name, info in existing_columns.items():
+            entity = {
+                "guid": info["guid"],
+                "typeName": "Column",
+                "attributes": {
+                    "name": col_name,
+                    "logicalColumnId": info["logicalColumnId"],
+                    "position": info.get("position")
+                }
+            }
+            parent_entities.append(entity)
+            column_mapping[col_name] = info["guid"]
+            logger.info(f"   - {col_name}: {info['guid']} (logicalId: {info['logicalColumnId']})")
+        return parent_entities, column_mapping
+
+    # Sinon, les colonnes n'existent pas → on les crée
     logger.warning(f"⚠️ Colonnes non trouvées pour {parent_name}, création...")
-    
-    # Chercher le parent dans la DB
+
     db = next(get_db())
     parent_dataset = None
-    
-    # Par atlas_guid
+
     if parent_guid:
         parent_dataset = db.query(Dataset).filter(Dataset.atlas_guid == parent_guid).first()
-    
-    # Par nom
     if not parent_dataset and parent_name:
         parent_dataset = db.query(Dataset).filter(Dataset.name == parent_name).first()
-    
+
     if not parent_dataset:
         logger.error(f"❌ Parent {parent_name} non trouvé dans DB")
         return [], {}
-    
+
     if not parent_dataset.file_path:
         logger.error(f"❌ Parent {parent_name} sans file_path")
         return [], {}
-    
+
     try:
-        # Lire le fichier parent
         logger.info(f"📖 Lecture parent: {parent_dataset.file_path}")
         parent_df = spark.read.parquet(parent_dataset.file_path)
         logger.info(f"📊 {len(parent_df.columns)} colonnes dans le fichier parent")
-        
-        # 🔥 CRÉER LES COLONNES DU PARENT
+
         logger.info(f"📝 Création de {len(parent_df.columns)} colonnes pour parent...")
         column_mapping, parent_entities = create_columns(
             parent_df,
@@ -169,26 +167,23 @@ def ensure_parent_columns(parent_guid, parent_name, parent_qualified_name):
             parent_columns=None,
             parent_column_mapping=None
         )
-        
+
         logger.info(f"✅ {len(column_mapping)} colonnes créées pour parent")
         logger.info(f"📋 Mapping colonnes parent: {column_mapping}")
-        
-        # 🔥 PAUSE POUR INDEXATION
+
         logger.info(f"⏳ Pause de 3 secondes pour indexation Atlas...")
         time.sleep(3)
-        
-        # Vérifier que les colonnes sont visibles
-        verification = matcher._get_dataset_columns(parent_guid)
+
+        verification = get_existing_columns(parent_guid, parent_qualified_name)
         logger.info(f"🔍 Vérification: {len(verification)} colonnes maintenant visibles dans Atlas")
-        
+
         return parent_entities, column_mapping
-        
+
     except Exception as e:
         logger.error(f"❌ Erreur création colonnes parent: {e}")
         import traceback
         traceback.print_exc()
         return [], {}
-
 def find_smart_parent(
     df_current,
     dataset_name: str,
@@ -264,11 +259,21 @@ def find_smart_parent(
         print(f"\n🏆 PARENT TROUVÉ: {parent_name} (score: {best_score:.3f})")
         print(f"   GUID: {best_parent_guid}")
 
-        # Récupérer les colonnes du parent
+        # 🔥 Récupérer le vrai qualifiedName du parent depuis Atlas
+        base_url = ATLAS_SEARCH_URL.split("/search")[0]
+        try:
+            res = atlas_get(f"{base_url}/entity/guid/{best_parent_guid}")
+            parent_qualified_name = res.json()["entity"]["attributes"]["qualifiedName"]
+            print(f"   QualifiedName récupéré: {parent_qualified_name}")
+        except Exception as e:
+            print(f"⚠️ Erreur récupération qualifiedName: {e}")
+            parent_qualified_name = best_parent_qn  # fallback
+
+        # Récupérer les colonnes du parent avec le vrai qualifiedName
         parent_columns, parent_column_mapping = ensure_parent_columns(
             best_parent_guid,
             parent_name,
-            best_parent_qn
+            parent_qualified_name  # ← ici on utilise le vrai qualifiedName
         )
 
         if parent_columns:

@@ -1,4 +1,4 @@
-from atlas.client import atlas_get, ATLAS_SEARCH_URL
+from atlas.client import atlas_get, ATLAS_SEARCH_URL, atlas_post
 import logging
 import re
 from rapidfuzz import fuzz
@@ -12,11 +12,27 @@ class ColumnMatcher:
     def _get_dataset_columns(self, dataset_guid: str):
         """Récupère les colonnes d'un dataset"""
         try:
-            query = f'__typeName:"Column" AND dataset.guid:"{dataset_guid}"'
-            res = atlas_get(f"{ATLAS_SEARCH_URL}?typeName=Column&query={query}")
-            columns = res.json().get("entities", [])
-            logger.info(f"📦 {len(columns)} colonnes trouvées pour {dataset_guid[:8]}...")
-            return columns
+            search_payload = {
+                "typeName": "Column",
+                "entityFilters": {
+                    "condition": "AND",
+                    "criterion": [{
+                        "attributeName": "dataset",
+                        "operator": "eq",
+                        "attributeValue": dataset_guid
+                    }]
+                },
+                "limit": 100
+            }
+            response = atlas_post(ATLAS_SEARCH_URL, search_payload)
+            if response.status_code == 200:
+                data = response.json()
+                columns = data.get("entities", [])
+                logger.info(f"📦 {len(columns)} colonnes trouvées pour {dataset_guid[:8]}...")
+                return columns
+            else:
+                logger.warning(f"Erreur recherche colonnes: {response.status_code}")
+                return []
         except Exception as e:
             logger.warning(f"⚠️ Erreur: {e}")
             return []
