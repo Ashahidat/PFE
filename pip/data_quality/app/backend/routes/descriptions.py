@@ -286,11 +286,9 @@ async def get_inherited_descriptions(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    """
-    Récupère les descriptions des versions précédentes du même dataset
-    (versions déjà pushées vers Atlas)
-    """
-    logger.info(f"📋 Recherche d'héritage pour dataset {dataset_id}")
+    logger.info("=" * 80)
+    logger.info(f"🔍 DEBUG get_inherited_descriptions")
+    logger.info(f"Dataset ID reçu: {dataset_id}")
     
     # 1️⃣ Vérifier le dataset
     dataset = db.query(Dataset).filter(
@@ -301,22 +299,54 @@ async def get_inherited_descriptions(
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset introuvable")
     
-    # 2️⃣ Récupérer les versions déjà pushées (atlas_guid non null)
-    previous_versions = db.query(DatasetVersion).filter(
+    logger.info(f"📊 Dataset trouvé:")
+    logger.info(f"   - name: {dataset.name}")
+    logger.info(f"   - project_id: {dataset.project_id}")
+    logger.info(f"   - id: {dataset.id}")
+    
+    # 2️⃣ Récupérer TOUTES les versions (sans filtre pour voir)
+    all_versions = db.query(DatasetVersion).filter(
         DatasetVersion.dataset_id == dataset_id,
-        DatasetVersion.atlas_guid.isnot(None)  # Versions déjà dans Atlas
+        DatasetVersion.atlas_guid.isnot(None)
+    ).order_by(DatasetVersion.version_number.desc()).all()
+    
+    logger.info(f"📦 TOTAL des versions dans DB pour ce dataset_id: {len(all_versions)}")
+    for v in all_versions:
+        logger.info(f"   - Version {v.version_number}: guid={v.atlas_guid[:20] if v.atlas_guid else 'None'}...")
+    
+    # 3️⃣ Récupérer les versions du MÊME projet en joignant Dataset
+    previous_versions = db.query(DatasetVersion).join(
+        Dataset, Dataset.id == DatasetVersion.dataset_id
+    ).filter(
+        Dataset.id == dataset_id,
+        Dataset.project_id == dataset.project_id,
+        DatasetVersion.atlas_guid.isnot(None)
     ).order_by(DatasetVersion.version_number.desc()).limit(5).all()
     
+    logger.info(f"📦 Versions filtrées par project_id={dataset.project_id}: {len(previous_versions)}")
+    
+    # 4️⃣ DEBUG CRUCIAL: Afficher les project_id des versions trouvées SANS filtre
+    logger.info("🔍 Vérification des project_id des versions:")
+    for v in all_versions:
+        # Récupérer le dataset parent via la relation
+        parent_dataset = db.query(Dataset).filter(Dataset.id == v.dataset_id).first()
+        if parent_dataset:
+            logger.info(f"   Version {v.version_number}: dataset_id={v.dataset_id}, project_id={parent_dataset.project_id}")
+            if parent_dataset.project_id != dataset.project_id:
+                logger.warning(f"   ⚠️⚠️⚠️ BUG DÉTECTÉ: Version d'un AUTRE projet ({parent_dataset.project_id}) attachée à ce dataset_id!")
+    
     if not previous_versions:
-        logger.info("ℹ️ Aucune version précédente trouvée")
+        logger.info("ℹ️ Aucune version précédente trouvée dans le même projet")
         return {"versions": []}
     
-    # 3️⃣ Pour chaque version, récupérer ses descriptions
+    # 5️⃣ Récupérer les descriptions
     result = []
     for version in previous_versions:
         descriptions = db.query(ColumnDescription).filter(
             ColumnDescription.dataset_version_id == version.id
         ).all()
+        
+        logger.info(f"📝 Version {version.version_number}: {len(descriptions)} descriptions")
         
         if descriptions:
             result.append({
@@ -330,8 +360,8 @@ async def get_inherited_descriptions(
                     for d in descriptions
                 ]
             })
-            logger.info(f"📦 Version {version.version_number}: {len(descriptions)} descriptions")
     
+    logger.info("=" * 80)
     return {"versions": result}
 
 
@@ -341,13 +371,10 @@ async def get_parent_suggestions(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    """
-    Récupère les descriptions du parent identifié par signature
-    (si un parent a été trouvé lors du versionning)
-    """
-    logger.info(f"🔍 Recherche suggestions du parent pour dataset {dataset_id}")
+    logger.info("=" * 80)
+    logger.info(f"🔍 DEBUG get_parent_suggestions")
+    logger.info(f"Dataset ID reçu: {dataset_id}")
     
-    # 1️⃣ Vérifier le dataset
     dataset = db.query(Dataset).filter(
         Dataset.id == dataset_id,
         Dataset.owner_employee_id == user["sub"]
@@ -356,33 +383,40 @@ async def get_parent_suggestions(
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset introuvable")
     
-    # 2️⃣ Chercher si un parent a été trouvé dans les signatures
-    # Note: Cette partie dépend de comment tu stockes le parent trouvé
-    # Option 1: Stocké dans une table parent_cache
-    # Option 2: À recalculer à la volée
+    logger.info(f"📊 Dataset courant: {dataset.name}, project_id={dataset.project_id}")
     
     from db.dataset_signatures import DatasetSignature
     from db.dataset_versions import DatasetVersion
     
-    # Récupérer la signature du dataset courant
     current_sig = db.query(DatasetSignature).filter(
         DatasetSignature.dataset_id == dataset_id
     ).order_by(DatasetSignature.created_at.desc()).first()
     
     if not current_sig:
+        logger.info("❌ Aucune signature trouvée")
         return {"has_parent": False, "suggestions": []}
     
-    # Chercher des datasets avec la même structure_hash (mêmes colonnes)
-    similar_datasets = db.query(DatasetSignature).filter(
+    logger.info(f"📊 Signature courante: structure_hash={current_sig.structure_hash[:16]}...")
+    
+    # Chercher des datasets similaires
+    similar_datasets = db.query(DatasetSignature).join(
+        Dataset, Dataset.id == DatasetSignature.dataset_id
+    ).filter(
         DatasetSignature.structure_hash == current_sig.structure_hash,
-        DatasetSignature.dataset_id != dataset_id
+        DatasetSignature.dataset_id != dataset_id,
+        Dataset.project_id == dataset.project_id
     ).order_by(DatasetSignature.created_at.desc()).limit(3).all()
+    
+    logger.info(f"📊 Datasets similaires trouvés: {len(similar_datasets)}")
     
     suggestions = []
     seen_columns = set()
     
     for sig in similar_datasets:
-        # Récupérer la version associée à cette signature
+        # Récupérer le dataset
+        similar_dataset = db.query(Dataset).filter(Dataset.id == sig.dataset_id).first()
+        logger.info(f"   - Dataset similaire: {similar_dataset.name if similar_dataset else 'N/A'}, project_id={similar_dataset.project_id if similar_dataset else 'N/A'}")
+        
         version = db.query(DatasetVersion).filter(
             DatasetVersion.dataset_id == sig.dataset_id
         ).order_by(DatasetVersion.version_number.desc()).first()
@@ -391,6 +425,7 @@ async def get_parent_suggestions(
             descriptions = db.query(ColumnDescription).filter(
                 ColumnDescription.dataset_version_id == version.id
             ).all()
+            logger.info(f"      → {len(descriptions)} descriptions trouvées")
             
             for desc in descriptions:
                 if desc.column_name not in seen_columns:
@@ -401,6 +436,9 @@ async def get_parent_suggestions(
                         "source_version": version.version_number
                     })
                     seen_columns.add(desc.column_name)
+    
+    logger.info(f"📊 Suggestions finales: {len(suggestions)}")
+    logger.info("=" * 80)
     
     return {
         "has_parent": len(suggestions) > 0,
