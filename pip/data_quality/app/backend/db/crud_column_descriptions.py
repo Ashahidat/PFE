@@ -3,6 +3,10 @@ from sqlalchemy.sql import func
 from db.column_descriptions import ColumnDescription
 import uuid
 from typing import List, Dict, Optional
+import logging
+
+# Configuration du logger
+logger = logging.getLogger("descriptions.crud")
 
 def create_or_update_description(
     db: Session,
@@ -52,6 +56,16 @@ def bulk_create_or_update_descriptions(
     Crée ou met à jour plusieurs descriptions en une fois
     Retourne le nombre de descriptions sauvegardées
     """
+    logger.info(f"📝 bulk_create: version_id={dataset_version_id}, {len(descriptions)} descriptions à traiter")
+    
+    if len(descriptions) == 0:
+        logger.warning("⚠️ Aucune description à sauvegarder!")
+        return 0
+    
+    # Afficher un échantillon
+    sample = dict(list(descriptions.items())[:3])
+    logger.info(f"   Échantillon: {sample}")
+    
     count = 0
     for column_name, description in descriptions.items():
         if description and description.strip():
@@ -63,6 +77,10 @@ def bulk_create_or_update_descriptions(
                 user_id
             )
             count += 1
+            if count <= 5:  # Log les 5 premières
+                logger.debug(f"   ✅ Sauvegardé: {column_name} = '{description[:30]}'")
+    
+    logger.info(f"✅ {count} descriptions sauvegardées avec succès")
     return count
 
 def get_descriptions_by_version(

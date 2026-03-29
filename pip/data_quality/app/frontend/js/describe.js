@@ -130,6 +130,58 @@ async function loadParentSuggestions() {
     }
 }
 
+// 🔥 NOUVELLE FONCTION : Remplissage automatique des suggestions
+function autoFillEmptyFieldsWithSuggestions() {
+    const suggestionsPanel = document.querySelector('.suggestions-panel');
+    if (!suggestionsPanel) {
+        console.log("ℹ️ Aucun panneau de suggestions trouvé");
+        return 0;
+    }
+    
+    const suggestionItems = suggestionsPanel.querySelectorAll('.suggestion-item');
+    let filledCount = 0;
+    
+    suggestionItems.forEach(item => {
+        const columnSpan = item.querySelector('.suggestion-column');
+        const descSpan = item.querySelector('.suggestion-desc');
+        const applyBtn = item.querySelector('.apply-suggestion');
+        
+        if (columnSpan && descSpan) {
+            // Nettoyer le texte de la colonne (enlever l'emoji 📌 si présent)
+            let columnName = columnSpan.textContent;
+            columnName = columnName.replace(/[📌]/g, '').trim();
+            
+            const description = descSpan.textContent;
+            // Nettoyer la description (enlever 💡 ou ⚠️)
+            const cleanDescription = description.replace(/[💡⚠️]/g, '').trim();
+            
+            const input = document.querySelector(`.column-description-input[data-column="${columnName}"]`);
+            
+            if (input && !input.value.trim()) {
+                input.value = cleanDescription;
+                input.classList.add('completed');
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                
+                // Désactiver le bouton d'application
+                if (applyBtn) {
+                    applyBtn.textContent = '✓ Auto-rempli';
+                    applyBtn.disabled = true;
+                }
+                
+                filledCount++;
+                console.log(`✅ Auto-rempli: ${columnName} = "${cleanDescription}"`);
+            }
+        }
+    });
+    
+    if (filledCount > 0) {
+        showStatus(`🤖 ${filledCount} suggestions appliquées automatiquement`, 'success');
+    }
+    
+    return filledCount;
+}
+
+// Dans la fonction showInheritancePanel
 function showInheritancePanel(versions) {
     const panel = document.createElement('div');
     panel.className = 'inheritance-panel';
@@ -172,12 +224,16 @@ function showInheritancePanel(versions) {
                 if (input && !input.value.trim()) {
                     input.value = desc.description;
                     input.classList.add('completed');
+                    // 🔥 DÉCLENCHER L'ÉVÉNEMENT input POUR METTRE À JOUR L'ÉTAT
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
                     appliedCount++;
                 }
             });
             
             if (appliedCount > 0) {
                 showStatus(`✅ ${appliedCount} descriptions héritées`, 'success');
+            } else {
+                showStatus(`ℹ️ ${appliedCount} nouvelles descriptions ajoutées (les autres étaient déjà remplies)`, 'info');
             }
             
             btn.textContent = '✓ Hérité';
@@ -186,6 +242,7 @@ function showInheritancePanel(versions) {
     });
 }
 
+// 🔥 VERSION MODIFIÉE de showParentSuggestionsPanel avec auto-remplissage
 function showParentSuggestionsPanel(suggestions) {
     const panel = document.createElement('div');
     panel.className = 'suggestions-panel';
@@ -213,6 +270,14 @@ function showParentSuggestionsPanel(suggestions) {
     
     document.querySelector('.form-header').after(panel);
     
+    // 🔥 NOUVEAU : Remplir automatiquement les champs vides
+    setTimeout(() => {
+        const filledCount = autoFillEmptyFieldsWithSuggestions();
+        if (filledCount > 0) {
+            console.log(`🎉 ${filledCount} champs remplis automatiquement !`);
+        }
+    }, 100);
+    
     // Appliquer une suggestion individuelle
     panel.querySelectorAll('.apply-suggestion').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -223,19 +288,32 @@ function showParentSuggestionsPanel(suggestions) {
             if (input && !input.value.trim()) {
                 input.value = desc;
                 input.classList.add('completed');
+                // 🔥 DÉCLENCHER L'ÉVÉNEMENT input
+                input.dispatchEvent(new Event('input', { bubbles: true }));
                 btn.textContent = '✓';
                 btn.disabled = true;
+                showStatus(`✅ Description appliquée pour "${colName}"`, 'success');
+            } else if (input && input.value.trim()) {
+                showStatus(`⚠️ "${colName}" a déjà une description`, 'info');
             }
         });
     });
     
     // Tout appliquer
     panel.querySelector('#applyAllSuggestions').addEventListener('click', () => {
+        let appliedCount = 0;
+        let alreadyFilledCount = 0;
+        
         suggestions.forEach(sugg => {
             const input = document.querySelector(`[data-column="${escapeHtml(sugg.column_name)}"]`);
             if (input && !input.value.trim()) {
                 input.value = sugg.description;
                 input.classList.add('completed');
+                // 🔥 DÉCLENCHER L'ÉVÉNEMENT input
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                appliedCount++;
+            } else if (input && input.value.trim()) {
+                alreadyFilledCount++;
             }
         });
         
@@ -244,7 +322,11 @@ function showParentSuggestionsPanel(suggestions) {
             btn.disabled = true;
         });
         
-        showStatus(`✅ Suggestions appliquées`, 'success');
+        if (appliedCount > 0) {
+            showStatus(`✅ ${appliedCount} suggestions appliquées${alreadyFilledCount > 0 ? ` (${alreadyFilledCount} déjà remplies)` : ''}`, 'success');
+        } else {
+            showStatus(`ℹ️ Aucune nouvelle suggestion à appliquer (${alreadyFilledCount} déjà remplies)`, 'info');
+        }
     });
 }
 
@@ -282,34 +364,71 @@ function renderColumnsForm(columns) {
     });
 }
 
-// ===================== SAUVEGARDE =====================
-async function saveDescriptions(e) {
-    e.preventDefault();
+// ===================== FONCTIONS DEBUG =====================
+function debugDescriptionsBeforeSave() {
+    console.group("🔍 DEBUG SAVE DESCRIPTIONS");
     
-    // Récupérer toutes les descriptions
-    const descriptions = [];
-    document.querySelectorAll('.column-description-input').forEach(input => {
-        const desc = input.value.trim();
-        if (desc) {
-            descriptions.push({
-                column_name: input.dataset.column,
-                description: desc
+    const inputs = document.querySelectorAll('.column-description-input');
+    console.log(`📊 Nombre total d'inputs: ${inputs.length}`);
+    
+    let filledCount = 0;
+    const descriptionsData = [];
+    
+    inputs.forEach((input, idx) => {
+        const rawValue = input.value;
+        const trimmedValue = rawValue.trim();
+        const columnName = input.getAttribute('data-column');
+        const datasetColumn = input.dataset.column;
+        
+        const isFilled = trimmedValue.length > 0;
+        if (isFilled) filledCount++;
+        
+        console.log(`[${idx}]`, {
+            'data-column (attr)': columnName,
+            'dataset.column': datasetColumn,
+            'raw value': rawValue,
+            'trimmed length': trimmedValue.length,
+            'filled': isFilled,
+            'html': input.outerHTML.substring(0, 100)
+        });
+        
+        if (isFilled) {
+            descriptionsData.push({
+                column_name: columnName || datasetColumn,
+                description: trimmedValue
             });
         }
     });
     
+    console.log(`✅ ${filledCount}/${inputs.length} inputs remplis`);
+    console.log(`📦 Données à envoyer:`, descriptionsData);
+    console.groupEnd();
+    
+    return descriptionsData;
+}
+
+// ===================== SAUVEGARDE =====================
+async function saveDescriptions(e) {
+    e.preventDefault();
+    
+    // 🔥 DEBUG: Afficher l'état avant sauvegarde
+    const descriptions = debugDescriptionsBeforeSave();
+    
     if (descriptions.length === 0) {
-        if (!confirm('Aucune description saisie. Voulez-vous vraiment continuer ?')) {
+        console.warn("⚠️ Aucune description trouvée!");
+        if (!confirm('Aucune description saisie. Voulez-vous vraiment continuer sans descriptions ?')) {
             return;
         }
     }
     
     // Désactiver les boutons
     setButtonsDisabled(true);
-    showStatus('Enregistrement en cours...', 'info');
+    showStatus(`💾 Sauvegarde de ${descriptions.length} description(s) en cours...`, 'info');
     
     try {
         const token = localStorage.getItem('access_token');
+        console.log("📤 Envoi au backend:", JSON.stringify({ descriptions }, null, 2));
+        
         const response = await fetch(`${API_URL}/api/datasets/${currentDatasetId}/descriptions`, {
             method: 'POST',
             headers: {
@@ -319,23 +438,29 @@ async function saveDescriptions(e) {
             body: JSON.stringify({ descriptions })
         });
         
+        console.log("📥 Réponse backend:", {
+            status: response.status,
+            statusText: response.statusText
+        });
+        
         if (!response.ok) {
             const error = await response.json();
+            console.error("❌ Erreur backend:", error);
             throw new Error(error.detail || 'Erreur sauvegarde');
         }
         
         const result = await response.json();
+        console.log("✅ Résultat:", result);
         
         showStatus(`✅ ${result.saved_count} descriptions enregistrées ! Redirection...`, 'success');
         
-        // Redirection automatique vers tests
         setTimeout(() => {
             window.location.href = 'tests.html';
         }, 1500);
         
     } catch (error) {
-        console.error('Erreur:', error);
-        showStatus('❌ Erreur lors de la sauvegarde', 'error');
+        console.error('❌ Erreur:', error);
+        showStatus('❌ Erreur lors de la sauvegarde: ' + error.message, 'error');
         setButtonsDisabled(false);
     }
 }

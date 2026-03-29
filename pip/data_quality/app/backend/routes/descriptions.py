@@ -76,39 +76,44 @@ async def save_descriptions(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    """
-    Sauvegarde les descriptions des colonnes pour la version courante du dataset
-    """
-    logger.info(f"💾 Sauvegarde descriptions pour dataset {dataset_id} par {user['sub']}")
+    # 🔥 DEBUG DÉTAILLÉ
+    logger.info("=" * 60)
+    logger.info(f"📥 POST /descriptions pour dataset {dataset_id}")
+    logger.info(f"👤 Utilisateur: {user['sub']}")
+    logger.info(f"📦 Nombre de descriptions reçues: {len(input_data.descriptions)}")
     
-    # 1️⃣ Vérifier que le dataset appartient à l'utilisateur
+    # Afficher les 10 premières descriptions
+    for i, desc in enumerate(input_data.descriptions[:10]):
+        logger.info(f"  [{i}] column='{desc.column_name}', description='{desc.description[:50]}...' (len={len(desc.description)})")
+    
+    if len(input_data.descriptions) == 0:
+        logger.warning("⚠️⚠️⚠️ AUCUNE DESCRIPTION REÇUE DANS LA REQUÊTE! ⚠️⚠️⚠️")
+    
+    # 1️⃣ Vérifier le dataset
     dataset = db.query(Dataset).filter(
         Dataset.id == dataset_id,
         Dataset.owner_employee_id == user["sub"]
     ).first()
 
     if not dataset:
+        logger.error(f"❌ Dataset {dataset_id} non trouvé")
         raise HTTPException(status_code=404, detail="Dataset introuvable")
+    
+    logger.info(f"✅ Dataset trouvé: {dataset.name}")
 
-    # 2️⃣ Récupérer ou créer la version en cours (celle qui n'a pas encore de GUID Atlas)
+    # 2️⃣ Gestion de la version
     dataset_version = db.query(DatasetVersion).filter(
         DatasetVersion.dataset_id == dataset_id,
-        DatasetVersion.atlas_guid.is_(None)  # Pas encore pushée
-    ).first()  # Pas besoin de order_by, on veut une seule version non pushée
+        DatasetVersion.atlas_guid.is_(None)
+    ).first()
 
     if not dataset_version:
-        # ✅ Récupérer la dernière version (peu importe son statut)
         last_version = db.query(DatasetVersion).filter(
             DatasetVersion.dataset_id == dataset_id
         ).order_by(DatasetVersion.version_number.desc()).first()
         
-        # Déterminer le prochain numéro de version
-        if last_version:
-            next_version = last_version.version_number + 1
-        else:
-            next_version = 1  # Première version
+        next_version = (last_version.version_number + 1) if last_version else 1
         
-        # Créer une nouvelle version temporaire
         dataset_version = DatasetVersion(
             dataset_id=dataset_id,
             version_number=next_version,
@@ -118,18 +123,25 @@ async def save_descriptions(
         db.add(dataset_version)
         db.commit()
         db.refresh(dataset_version)
-        logger.info(f"🆕 Nouvelle version temporaire créée: v{dataset_version.version_number}")
+        logger.info(f"🆕 Nouvelle version temporaire créée: v{dataset_version.version_number} (ID: {dataset_version.id})")
     else:
-        logger.info(f"✅ Version temporaire existante réutilisée: v{dataset_version.version_number}")
+        logger.info(f"✅ Version temporaire existante: v{dataset_version.version_number} (ID: {dataset_version.id})")
 
-    # 3️⃣ Convertir la liste en dictionnaire pour le bulk insert
+    # 3️⃣ Convertir et filtrer
     descriptions_dict = {
         desc.column_name: desc.description 
         for desc in input_data.descriptions 
         if desc.description and desc.description.strip()
     }
+    
+    logger.info(f"📊 Après filtrage: {len(descriptions_dict)} descriptions non vides")
+    
+    if len(descriptions_dict) == 0 and len(input_data.descriptions) > 0:
+        logger.warning(f"⚠️ Toutes les {len(input_data.descriptions)} descriptions étaient vides après trim!")
+        for desc in input_data.descriptions:
+            logger.warning(f"   - '{desc.column_name}': '{repr(desc.description)}'")
 
-    # 4️⃣ Sauvegarder les descriptions
+    # 4️⃣ Sauvegarde
     saved_count = bulk_create_or_update_descriptions(
         db=db,
         dataset_version_id=str(dataset_version.id),
@@ -137,7 +149,8 @@ async def save_descriptions(
         user_id=user["sub"]
     )
 
-    logger.info(f"✅ {saved_count} descriptions sauvegardées pour version {dataset_version.id}")
+    logger.info(f"✅ {saved_count} descriptions sauvegardées")
+    logger.info("=" * 60)
 
     return {
         "message": f"{saved_count} descriptions sauvegardées",
@@ -265,8 +278,7 @@ async def delete_all_descriptions(
     }
 
 
-    # ===================== ROUTES D'HÉRITAGE =====================
-# À AJOUTER À LA FIN DU FICHIER, après delete_all_descriptions()
+# ===================== ROUTES D'HÉRITAGE =====================
 
 @router.get("/api/datasets/{dataset_id}/inherited-descriptions")
 async def get_inherited_descriptions(
