@@ -371,10 +371,15 @@ async def get_parent_suggestions(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
+    """
+    Suggère des descriptions depuis des datasets similaires dans le même projet
+    Utilise le même scoring que find_smart_parent
+    """
     logger.info("=" * 80)
     logger.info(f"🔍 DEBUG get_parent_suggestions")
     logger.info(f"Dataset ID reçu: {dataset_id}")
     
+    # 1️⃣ Vérifier le dataset
     dataset = db.query(Dataset).filter(
         Dataset.id == dataset_id,
         Dataset.owner_employee_id == user["sub"]
@@ -385,59 +390,111 @@ async def get_parent_suggestions(
     
     logger.info(f"📊 Dataset courant: {dataset.name}, project_id={dataset.project_id}")
     
+    # 2️⃣ Importer compute_similarity_score
+    from atlas.signatures import compute_similarity_score
     from db.dataset_signatures import DatasetSignature
     from db.dataset_versions import DatasetVersion
     
+    # 3️⃣ Récupérer la signature courante
     current_sig = db.query(DatasetSignature).filter(
         DatasetSignature.dataset_id == dataset_id
     ).order_by(DatasetSignature.created_at.desc()).first()
     
     if not current_sig:
-        logger.info("❌ Aucune signature trouvée")
+        logger.info("❌ Aucune signature trouvée pour le dataset courant")
         return {"has_parent": False, "suggestions": []}
     
     logger.info(f"📊 Signature courante: structure_hash={current_sig.structure_hash[:16]}...")
     
-    # Chercher des datasets similaires
-    similar_datasets = db.query(DatasetSignature).join(
-        Dataset, Dataset.id == DatasetSignature.dataset_id
-    ).filter(
-        DatasetSignature.structure_hash == current_sig.structure_hash,
-        DatasetSignature.dataset_id != dataset_id,
-        Dataset.project_id == dataset.project_id
-    ).order_by(DatasetSignature.created_at.desc()).limit(3).all()
+    # 4️⃣ Récupérer TOUS les datasets du même projet (sauf le courant)
+    all_datasets_in_project = db.query(Dataset).filter(
+        Dataset.project_id == dataset.project_id,
+        Dataset.id != dataset_id
+    ).all()
     
-    logger.info(f"📊 Datasets similaires trouvés: {len(similar_datasets)}")
+    logger.info(f"📦 {len(all_datasets_in_project)} datasets trouvés dans le projet (hors courant)")
     
+    # 5️⃣ Calculer le score pour chaque dataset
+    candidates = []
+    
+    for ds in all_datasets_in_project:
+        # Récupérer la dernière signature
+        sig = db.query(DatasetSignature).filter(
+            DatasetSignature.dataset_id == ds.id
+        ).order_by(DatasetSignature.created_at.desc()).first()
+        
+        if not sig or not sig.signature:
+            logger.debug(f"   ⚠️ Dataset {ds.name}: pas de signature")
+            continue
+        
+        # Calculer le score de similarité
+        score = compute_similarity_score(current_sig.signature, sig.signature)
+        
+        logger.info(f"   📊 {ds.name}: score={score:.3f}")
+        
+        # Récupérer la dernière version avec atlas_guid
+        version = db.query(DatasetVersion).filter(
+            DatasetVersion.dataset_id == ds.id,
+            DatasetVersion.atlas_guid.isnot(None)
+        ).order_by(DatasetVersion.version_number.desc()).first()
+        
+        if not version:
+            logger.debug(f"   ⚠️ Dataset {ds.name}: pas de version avec atlas_guid")
+            continue
+        
+        # Seuil adaptatif basé sur la similarité des colonnes
+        cols_current = set(current_sig.signature.get("columns", {}).keys())
+        cols_parent = set(ds.columns_list) if ds.columns_list else set()
+        jaccard = len(cols_current & cols_parent) / len(cols_current | cols_parent) if (cols_current | cols_parent) else 0
+        
+        # Ajuster le seuil
+        if cols_parent.issubset(cols_current):
+            # Le dataset courant a TOUTES les colonnes du parent → c'est une extension
+            threshold = 0.45
+            logger.debug(f"   → Extension détectée (jaccard={jaccard:.2f}), seuil={threshold}")
+        elif jaccard > 0.8:
+            threshold = 0.55
+        else:
+            threshold = 0.60
+        
+        if score >= threshold:
+            candidates.append({
+                "dataset": ds,
+                "version": version,
+                "score": score,
+                "signature": sig
+            })
+            logger.info(f"   ✅ Accepté (score={score:.3f} >= {threshold})")
+        else:
+            logger.debug(f"   ❌ Rejeté (score={score:.3f} < {threshold})")
+    
+    # 6️⃣ Trier par score décroissant
+    candidates.sort(key=lambda x: x["score"], reverse=True)
+    logger.info(f"🏆 {len(candidates)} candidats retenus après scoring")
+    
+    # 7️⃣ Récupérer les descriptions des meilleurs candidats
     suggestions = []
     seen_columns = set()
     
-    for sig in similar_datasets:
-        # Récupérer le dataset
-        similar_dataset = db.query(Dataset).filter(Dataset.id == sig.dataset_id).first()
-        logger.info(f"   - Dataset similaire: {similar_dataset.name if similar_dataset else 'N/A'}, project_id={similar_dataset.project_id if similar_dataset else 'N/A'}")
+    for candidate in candidates[:5]:  # Top 5
+        descriptions = db.query(ColumnDescription).filter(
+            ColumnDescription.dataset_version_id == candidate["version"].id
+        ).all()
         
-        version = db.query(DatasetVersion).filter(
-            DatasetVersion.dataset_id == sig.dataset_id
-        ).order_by(DatasetVersion.version_number.desc()).first()
+        logger.info(f"   📝 {candidate['dataset'].name} (v{candidate['version'].version_number}, score={candidate['score']:.3f}): {len(descriptions)} descriptions")
         
-        if version:
-            descriptions = db.query(ColumnDescription).filter(
-                ColumnDescription.dataset_version_id == version.id
-            ).all()
-            logger.info(f"      → {len(descriptions)} descriptions trouvées")
-            
-            for desc in descriptions:
-                if desc.column_name not in seen_columns:
-                    suggestions.append({
-                        "column_name": desc.column_name,
-                        "description": desc.description,
-                        "source_dataset": version.dataset_id,
-                        "source_version": version.version_number
-                    })
-                    seen_columns.add(desc.column_name)
+        for desc in descriptions:
+            if desc.column_name not in seen_columns:
+                suggestions.append({
+                    "column_name": desc.column_name,
+                    "description": desc.description,
+                    "source_dataset": candidate["dataset"].name,
+                    "source_version": candidate["version"].version_number,
+                    "similarity_score": round(candidate["score"], 3)
+                })
+                seen_columns.add(desc.column_name)
     
-    logger.info(f"📊 Suggestions finales: {len(suggestions)}")
+    logger.info(f"📊 Suggestions finales: {len(suggestions)} colonnes uniques")
     logger.info("=" * 80)
     
     return {
