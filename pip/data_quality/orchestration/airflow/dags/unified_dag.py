@@ -25,11 +25,6 @@ for path in paths_to_add:
     if path not in sys.path:
         sys.path.insert(0, path)
 
-# -----------------------------
-# IMPORTS APRES AJOUT AU PATH
-# -----------------------------
-from utils.db_utils import save_results_to_postgres
-
 
 def run_modular_validations(**kwargs):
     dag_run = kwargs.get("dag_run")
