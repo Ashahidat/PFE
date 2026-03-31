@@ -29,7 +29,7 @@ async def run_dag(request: DAGRunRequest, db: Session = Depends(get_db), user=De
         raise HTTPException(status_code=404, detail="Dataset introuvable")
 
     config = {"file_path": dataset.file_path, "rules": request.rules}
-    dag_run_id, resp = trigger_dag(config)
+    dag_run_id, resp = trigger_dag("modular_validation_dag", config)
     if not dag_run_id:
         raise HTTPException(status_code=500, detail="Erreur lancement DAG")
 
@@ -47,6 +47,43 @@ async def run_dag(request: DAGRunRequest, db: Session = Depends(get_db), user=De
     return {"message": "DAG lancé", "dag_run_id": dag_run_id}
 
 
+@router.post("/run-dag-v2")
+async def run_dag_v2(
+    request: DAGRunRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    """
+    Version 2 du DAG avec orchestration modulaire
+    """
+    dataset = db.query(Dataset).filter(Dataset.id == request.dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset introuvable")
+
+    config = {
+        "file_path": dataset.file_path,
+        "rules": request.rules,
+        "dataset_version_id": None
+    }
+    
+    dag_run_id, resp = trigger_dag("data_quality_pipeline_v2", config)
+    
+    if not dag_run_id:
+        raise HTTPException(status_code=500, detail="Erreur lancement DAG")
+
+    dag_run = DAGRun(
+        id=str(uuid.uuid4()),
+        dataset_id=dataset.id,
+        dag_run_id=dag_run_id,
+        rules=request.rules,
+        status="running"
+    )
+    db.add(dag_run)
+    db.commit()
+
+    return {"message": "DAG v2 lancé", "dag_run_id": dag_run_id}
+
+
 @router.get("/dag-status/{dag_run_id}")
 async def dag_status(dag_run_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     dag_run = db.query(DAGRun).filter(DAGRun.dag_run_id == dag_run_id).first()
@@ -57,4 +94,3 @@ async def dag_status(dag_run_id: str, db: Session = Depends(get_db), user=Depend
     dag_run.status = state
     db.commit()
     return {"state": state}
-
