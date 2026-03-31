@@ -1,3 +1,26 @@
+import sys
+from pathlib import Path
+
+# ============================================================================
+# AJOUTER LES CHEMINS AU PYTHONPATH - VERSION CORRIGÉE
+# ============================================================================
+# main.py est dans app/backend/
+# Pour arriver à la racine (data_quality), il faut remonter 3 niveaux :
+# app/backend/main.py -> app/ -> data_quality/
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BACKEND_DIR = BASE_DIR / "app" / "backend"
+
+# Ajouter au sys.path
+sys.path.insert(0, str(BASE_DIR))
+sys.path.insert(0, str(BACKEND_DIR))
+
+print(f"BASE_DIR: {BASE_DIR}")
+print(f"BACKEND_DIR: {BACKEND_DIR}")
+print(f"sys.path: {sys.path[:3]}")
+
+# ============================================================================
+# IMPORTS
+# ============================================================================
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -8,6 +31,7 @@ from config import FRONTEND_DIR
 from routes import upload, dag, results, push_atlas, register, login, classifications, classifications_col, projects, descriptions, versionning
 
 app = FastAPI()
+
 
 # CORS
 app.add_middleware(

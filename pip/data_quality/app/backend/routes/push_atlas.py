@@ -1,3 +1,8 @@
+import sys
+from pathlib import Path
+
+# Ajouter la racine du projet au PYTHONPATH
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
@@ -47,11 +52,7 @@ from db.column_descriptions import ColumnDescription
 router = APIRouter()
 logger = logging.getLogger("push-atlas")
 logger.setLevel(logging.DEBUG)
-
-TMP_DIR = "/home/ashahi/PFE/pip/data_quality/tmp"
-RESULTS_DIR = "/home/ashahi/PFE/pip/data_quality/results"
-os.makedirs(TMP_DIR, exist_ok=True)
-os.makedirs(RESULTS_DIR, exist_ok=True)
+from settings.config_paths import TMP_DIR, RESULTS_DIR
 
 # ============================================================
 # ROUTE PRINCIPALE
@@ -442,7 +443,7 @@ def push_atlas(
         # Collecter tous les checks pour le résumé global
         all_checks_data = []
 
-        archive_dir = os.path.join(RESULTS_DIR, "archive")
+        archive_dir = RESULTS_DIR / "archive"
         os.makedirs(archive_dir, exist_ok=True)
 
         json_files = []
@@ -458,7 +459,7 @@ def push_atlas(
             logger.warning(f"⚠️ Dossier results introuvable")
 
         for jf in json_files:
-            json_path = os.path.join(RESULTS_DIR, jf)
+            json_path = RESULTS_DIR / jf
 
             try:
                 logger.info(f"📤 Traitement du fichier qualité: {jf}")
@@ -581,31 +582,27 @@ def push_atlas(
         # 🧹 Nettoyage TMP
         try:
             for f in os.listdir(TMP_DIR):
-                full = os.path.join(TMP_DIR, f)
-                if os.path.isfile(full):
-                    os.remove(full)
+                full = TMP_DIR / f
+                if full.is_file():  # ou os.path.isfile(full)
+                    full.unlink()   # ou os.remove(full)
             logger.debug("🧹 Nettoyage tmp effectué")
         except Exception as e:
             logger.warning(f"⚠️ Erreur nettoyage tmp: {e}")
 
         # 📦 Archivage des fichiers JSON
         try:
-            archive_dir = os.path.join(RESULTS_DIR, "archive")
-            os.makedirs(archive_dir, exist_ok=True)
+            archive_dir = RESULTS_DIR / "archive"
+            archive_dir.mkdir(parents=True, exist_ok=True)  # os.makedirs → mkdir
             
             archived_count = 0
-            if os.path.exists(RESULTS_DIR):
-                for f in os.listdir(RESULTS_DIR):
-                    if f.endswith('.json') and f != 'archive':
-                        source = os.path.join(RESULTS_DIR, f)
-                        destination = os.path.join(
-                            archive_dir,
-                            f"{int(time.time())}_{f}"
-                        )
-                        if os.path.isfile(source):
-                            shutil.move(source, destination)
+            if RESULTS_DIR.exists():  # os.path.exists → .exists()
+                for f in RESULTS_DIR.glob("*.json"):  # plus simple que os.listdir + filter
+                    if f.name != 'archive':
+                        destination = archive_dir / f"{int(time.time())}_{f.name}"
+                        if f.is_file():
+                            f.rename(destination)
                             archived_count += 1
-                            
+                                
             logger.info(f"📦 {archived_count} fichiers qualité archivés")
         except Exception as e:
             logger.warning(f"⚠️ Erreur archivage results: {e}")

@@ -1,7 +1,5 @@
 from fastapi import APIRouter, HTTPException
 from passlib.context import CryptContext
-import sys
-sys.path.append("/home/ashahi/PFE/pip/data_quality/app/backend")
 from db.connexion_db import SessionLocal
 from db.users import User
 

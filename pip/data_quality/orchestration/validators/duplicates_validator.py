@@ -3,11 +3,14 @@ from typing import Dict, Any, List
 from pyspark.sql import DataFrame, SparkSession
 import sys
 import os
+from pathlib import Path
 
 # chemin projet (ajuste si nécessaire)
-sys.path.append("/home/ashahi/PFE/pip/data_quality")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 os.environ["SPARK_VERSION"] = "3.3"
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pyspark.sql.functions import col, count as _count
 

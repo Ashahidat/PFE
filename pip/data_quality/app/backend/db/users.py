@@ -1,6 +1,4 @@
 from sqlalchemy import Column, Integer, String, Text
-import sys
-sys.path.append("/home/ashahi/PFE/pip/data_quality/app/backend")
 from db.connexion_db import Base
 
 class User(Base):

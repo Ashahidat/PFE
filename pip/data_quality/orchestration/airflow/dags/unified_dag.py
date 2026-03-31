@@ -8,17 +8,21 @@ import json
 import importlib
 from pyspark.sql import SparkSession
 from datetime import datetime as dt
+from pathlib import Path
 
-# -----------------------------
-# CONFIGURATION DU PYTHON PATH
-# -----------------------------
-PROJECT_ROOT = "/home/ashahi/PFE/pip/data_quality"
+# ============================================================================
+# CONFIGURATION DU PYTHON PATH - VERSION RELATIVE
+# ============================================================================
+# Détection automatique de la racine du projet
+# Ce fichier est dans orchestration/
+# La racine est donc parent du dossier orchestration
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 paths_to_add = [
-    PROJECT_ROOT,
-    os.path.join(PROJECT_ROOT, "app/backend"),
-    os.path.join(PROJECT_ROOT, "orchestration"),
-    os.path.join(PROJECT_ROOT, "utils")
+    str(PROJECT_ROOT),
+    str(PROJECT_ROOT / "app/backend"),
+    str(PROJECT_ROOT / "orchestration"),
+    str(PROJECT_ROOT / "utils")
 ]
 
 for path in paths_to_add:
@@ -27,6 +31,8 @@ for path in paths_to_add:
 
 
 def run_modular_validations(**kwargs):
+    from settings.config_paths import RESULTS_DIR
+    
     dag_run = kwargs.get("dag_run")
     conf = dag_run.conf or {}
 
@@ -39,9 +45,7 @@ def run_modular_validations(**kwargs):
     if not file_path or not rules:
         raise ValueError(f"Paramètres manquants : file_path={file_path}, rules={rules}")
 
-    # -----------------------------
     # INITIALISATION SPARK
-    # -----------------------------
     spark = SparkSession.builder \
         .master("local[*]") \
         .appName("ModularValidation") \
@@ -49,12 +53,9 @@ def run_modular_validations(**kwargs):
         .getOrCreate()
 
     df = spark.read.parquet(file_path)
-
     results = {}
 
-    # -----------------------------
     # EXECUTION DYNAMIQUE DES VALIDATORS
-    # -----------------------------
     for validation_type, validation_rules in rules.items():
         try:
             module_name = f"validators.{validation_type}_validator"
@@ -76,9 +77,7 @@ def run_modular_validations(**kwargs):
             print(f"❌ Erreur dans '{validation_type}': {e}")
             results[validation_type] = {"error": str(e)}
 
-    # -----------------------------
     # STANDARDISATION DES RESULTATS
-    # -----------------------------
     standardized = {
         "dag_run_id": dag_run_uuid,
         "dataset_version_id": dataset_version_id,
@@ -86,13 +85,10 @@ def run_modular_validations(**kwargs):
         "checks": []
     }
 
-    # 🔥 MAPPING EN FRANÇAIS
     def map_status(statut):
         if not statut:
             return "inconnu"
-
         statut = statut.strip().lower()
-
         if statut in ["réussi", "pass"]:
             return "réussi"
         elif statut in ["échoué", "fail"]:
@@ -103,13 +99,9 @@ def run_modular_validations(**kwargs):
             return "inconnu"
 
     for validation_type, validation_output in results.items():
-
         if isinstance(validation_output, dict) and "error" in validation_output:
             continue
 
-        # -----------------------------
-        # CAS 1 : LISTE
-        # -----------------------------
         if isinstance(validation_output, list):
             for r in validation_output:
                 standardized["checks"].append({
@@ -121,9 +113,6 @@ def run_modular_validations(**kwargs):
                     "examples": r.get("exemples", [])
                 })
 
-        # -----------------------------
-        # CAS 2 : DICT IMBRIQUE
-        # -----------------------------
         elif isinstance(validation_output, dict):
             for subkey, subtests in validation_output.items():
                 if isinstance(subtests, list):
@@ -137,13 +126,11 @@ def run_modular_validations(**kwargs):
                             "examples": r.get("exemples", [])
                         })
 
-    # -----------------------------
-    # SAUVEGARDE JSON
-    # -----------------------------
-    output_dir = "/home/ashahi/PFE/pip/data_quality/results"
-    os.makedirs(output_dir, exist_ok=True)
+    # SAUVEGARDE JSON - Utilisation de RESULTS_DIR
+    output_dir = RESULTS_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    output_path = os.path.join(output_dir, f"{dag_run_uuid}_validation.json")
+    output_path = output_dir / f"{dag_run_uuid}_validation.json"
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(standardized, f, ensure_ascii=False, indent=2)
@@ -154,9 +141,7 @@ def run_modular_validations(**kwargs):
     return standardized
 
 
-# -----------------------------
 # DEFINITION DU DAG
-# -----------------------------
 with DAG(
     dag_id="modular_validation_dag",
     start_date=datetime(2025, 1, 1),

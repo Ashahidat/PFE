@@ -4,7 +4,13 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from jwt_dependencies import get_current_user
 
-RESULTS_DIR = "/home/ashahi/PFE/pip/data_quality/results"
+import sys
+from pathlib import Path
+
+# Ajouter la racine au PYTHONPATH
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from settings.config_paths import RESULTS_DIR
 router = APIRouter()
 
 

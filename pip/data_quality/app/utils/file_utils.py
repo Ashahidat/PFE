@@ -1,19 +1,32 @@
+import sys
+from pathlib import Path
+
+# Ajouter la racine au PYTHONPATH
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import os
 import shutil
 from fastapi import UploadFile
 
-TMP_DIR = "/home/ashahi/PFE/pip/data_quality/tmp"
-RESULTS_DIR = "/home/ashahi/PFE/pip/data_quality/results"
-
-os.makedirs(TMP_DIR, exist_ok=True)
-os.makedirs(RESULTS_DIR, exist_ok=True)
+from settings.config_paths import TMP_DIR, RESULTS_DIR
 
 def save_uploaded_file(uploaded_file: UploadFile) -> str:
-    os.makedirs(TMP_DIR, exist_ok=True)
-    tmp_file_path = os.path.join(TMP_DIR, uploaded_file.filename)
+    tmp_file_path = TMP_DIR / uploaded_file.filename
 
     with open(tmp_file_path, "wb") as f:
-        # Copie directement le contenu binaire
         shutil.copyfileobj(uploaded_file.file, f)
 
-    return tmp_file_path
+    return str(tmp_file_path)
+
+
+def get_results_file(dag_run_id: str) -> str:
+    """Retourne le chemin du fichier de résultats"""
+    result_file = RESULTS_DIR / f"{dag_run_id}_validation.json"
+    return str(result_file)
+
+
+def cleanup_tmp_files():
+    """Nettoie les fichiers temporaires"""
+    for f in TMP_DIR.glob("*"):
+        if f.is_file():
+            f.unlink()

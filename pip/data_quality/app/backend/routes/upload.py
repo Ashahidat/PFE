@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# Ajouter la racine au PYTHONPATH
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
 import os
 import uuid
 import datetime
@@ -6,6 +12,7 @@ import hashlib
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Form
 from sqlalchemy.orm import Session
 
+from settings.config_paths import TMP_DIR
 from config import spark
 from jwt_dependencies import get_current_user
 from db.connexion_db import get_db
@@ -13,12 +20,9 @@ from db.datasets import Dataset
 from db.projects import Project  
 from core.permissions import can_upload_to_project
 import logging 
+
 logger = logging.getLogger("upload")
 logger.setLevel(logging.DEBUG)
-
-# --- Dossier temporaire ---
-TMP_DIR = "/home/ashahi/PFE/pip/data_quality/tmp"
-os.makedirs(TMP_DIR, exist_ok=True)
 
 router = APIRouter()
 
@@ -26,20 +30,17 @@ router = APIRouter()
 spark_cache = {}  # clé = dataset_id, valeur = df Spark
 
 
-# ================= Upload CSV =================
-# routes/upload.py
-
 @router.post("/upload")
 async def upload_csv(
     file: UploadFile = File(...),
     project_id: str = Form(...),  
-    description: str = Form(None),  # ✅ NOUVEAU : description optionnelle
+    description: str = Form(None),
     user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     print(f"📄 Fichier reçu : {file.filename}")
     print(f"📁 Projet ID : {project_id}")
-    print(f"📝 Description : {description}")  # ✅ Debug
+    print(f"📝 Description : {description}")
     print(f"👤 Utilisateur : {user['sub']} (role: {user['role']}, department: {user['department']})")
 
     # 1️⃣ Vérifier que le projet existe
@@ -67,7 +68,7 @@ async def upload_csv(
 
     # 3️⃣ Sauvegarde temporaire CSV
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    csv_path = os.path.join(TMP_DIR, f"{file.filename}_{timestamp}.csv")
+    csv_path = TMP_DIR / f"{file.filename}_{timestamp}.csv"
 
     with open(csv_path, "wb") as f:
         f.write(await file.read())
@@ -80,9 +81,9 @@ async def upload_csv(
     hash_value = h.hexdigest()
 
     # 5️⃣ Lecture CSV → Parquet via Spark
-    df = spark.read.option("header", True).option("inferSchema", True).csv(csv_path)
+    df = spark.read.option("header", True).option("inferSchema", True).csv(str(csv_path))
 
-    parquet_path = csv_path.replace(".csv", ".parquet")
+    parquet_path = str(csv_path).replace(".csv", ".parquet")
     df.write.mode("overwrite").parquet(parquet_path)
 
     columns_list = df.columns
@@ -90,7 +91,7 @@ async def upload_csv(
 
     # 6️⃣ Suppression CSV temporaire
     try:
-        os.remove(csv_path)
+        csv_path.unlink()  # équivalent à os.remove
         print(f"🗑️ CSV supprimé : {csv_path}")
     except Exception as e:
         print("Erreur suppression CSV :", e)
@@ -107,7 +108,7 @@ async def upload_csv(
         owner_employee_id=user["sub"],
         atlas_guid=None,
         project_id=project_id,
-        description=description  # ✅ NOUVEAU champ
+        description=description
     )
 
     db.add(db_dataset)
@@ -122,11 +123,10 @@ async def upload_csv(
         "hash": hash_value,
         "dataset_id": dataset_id,
         "project_id": project_id,
-        "description": description  # ✅ Retourner aussi
+        "description": description
     }
 
 
-# ================= Aperçu dataset =================
 @router.get("/preview/{dataset_id}")
 def preview(
     dataset_id: str,
@@ -136,13 +136,12 @@ def preview(
 ):
     dataset = db.query(Dataset).filter(
         Dataset.id == dataset_id,
-        Dataset.owner_employee_id == user["sub"]  # 🔒 sécurité ajoutée
+        Dataset.owner_employee_id == user["sub"]
     ).first()
 
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset introuvable ou non autorisé")
 
-    # Vérifier si le DataFrame est déjà en cache
     if dataset_id in spark_cache:
         df = spark_cache[dataset_id]
     else:
@@ -155,7 +154,6 @@ def preview(
     return preview_list
 
 
-# ================= Obtenir les colonnes =================
 @router.get("/get-columns/{dataset_id}")
 def get_columns(
     dataset_id: str,
@@ -164,7 +162,7 @@ def get_columns(
 ):
     dataset = db.query(Dataset).filter(
         Dataset.id == dataset_id,
-        Dataset.owner_employee_id == user["sub"]  # 🔒 sécurité ajoutée
+        Dataset.owner_employee_id == user["sub"]
     ).first()
 
     if not dataset:
