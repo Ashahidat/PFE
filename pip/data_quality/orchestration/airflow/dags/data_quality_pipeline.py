@@ -12,16 +12,19 @@ import sys
 from pathlib import Path
 
 # Configuration des chemins
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "app/backend"))
-sys.path.insert(0, str(PROJECT_ROOT / "validators"))
-sys.path.insert(0, str(PROJECT_ROOT / "settings"))
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-try:
-    from settings.config_paths import RESULTS_DIR
-except ImportError:
-    RESULTS_DIR = PROJECT_ROOT / "results"
+paths_to_add = [
+    str(PROJECT_ROOT),
+    str(PROJECT_ROOT / "app/backend"),
+    str(PROJECT_ROOT / "orchestration"),
+    str(PROJECT_ROOT / "utils")
+]
+
+for path in paths_to_add:
+    if path not in sys.path:
+        sys.path.insert(0, path)
+RESULTS_DIR = PROJECT_ROOT / "results"
 
 from pyspark.sql import SparkSession
 
