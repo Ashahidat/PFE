@@ -121,37 +121,6 @@ def validate_regex(init_data: Dict) -> List[Dict]:
     
     return results.get("regex", [])
 
-
-@task
-def aggregate_results(
-    init_data: Dict,
-    duplicates_results: List[Dict],
-    regex_results: List[Dict]
-) -> Dict:
-    """Agrège tous les résultats et sauvegarde"""
-    from datetime import datetime as dt
-    
-    standardized = {
-        "dag_run_id": init_data["dag_run_uuid"],
-        "dataset_version_id": init_data["dataset_version_id"],
-        "execution_date": dt.utcnow().isoformat(),
-        "checks": []
-    }
-    
-    standardized["checks"].extend(duplicates_results)
-    standardized["checks"].extend(regex_results)
-    
-    output_path = RESULTS_DIR / f"{init_data['dag_run_uuid']}_validation.json"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(standardized, f, ensure_ascii=False, indent=2)
-    
-    print(f"📄 Résultats sauvegardés : {output_path}")
-    print(f"📊 {len(standardized['checks'])} checks exécutés")
-    
-    return standardized
-
 @task
 def aggregate_results(
     init_data: Dict,

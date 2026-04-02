@@ -37,7 +37,7 @@ async function fetchResults() {
         
         let state = null;
         let attempts = 0;
-        const maxAttempts = 120;
+        const maxAttempts = 80;
 
         while (state !== "success" && state !== "failed" && attempts < maxAttempts) {
             try {
