@@ -94,7 +94,7 @@ document.getElementById("runDagBtn")?.addEventListener("click", async () => {
     if (!dataset_id) return alert("Impossible de lancer le DAG sans dataset.");
 
     try {
-        const res = await fetch(`${API_URL}/run-dag`, {
+        const res = await fetch(`${API_URL}/run-dag-v2`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
             body: JSON.stringify({ rules, dataset_id })

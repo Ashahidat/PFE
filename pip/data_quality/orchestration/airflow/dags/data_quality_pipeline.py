@@ -152,6 +152,68 @@ def aggregate_results(
     
     return standardized
 
+@task
+def aggregate_results(
+    init_data: Dict,
+    duplicates_results: List[Dict],
+    regex_results: List[Dict]
+) -> Dict:
+    """Agrège tous les résultats et sauvegarde"""
+    from datetime import datetime as dt
+    
+    standardized = {
+        "dag_run_id": init_data["dag_run_uuid"],
+        "dataset_version_id": init_data["dataset_version_id"],
+        "execution_date": dt.utcnow().isoformat(),
+        "checks": []
+    }
+    
+    # Fonction de standardisation (copiée de l'ancien DAG)
+    def map_status(statut):
+        if not statut:
+            return "inconnu"
+        statut = statut.strip().lower()
+        if statut in ["réussi", "pass"]:
+            return "réussi"
+        elif statut in ["échoué", "fail"]:
+            return "échoué"
+        elif statut in ["skipped"]:
+            return "ignoré"
+        else:
+            return "inconnu"
+    
+    # Standardiser les résultats des doublons
+    for check in duplicates_results:
+        standardized["checks"].append({
+            "rule_type": check.get("type de test", "doublons"),
+            "column_name": check.get("colonne testée"),
+            "status": map_status(check.get("statut")),
+            "error_count": check.get("nombre", 0),
+            "ratio": check.get("ratio", "0/0"),
+            "examples": check.get("exemples", [])
+        })
+    
+    # Standardiser les résultats des regex
+    for check in regex_results:
+        standardized["checks"].append({
+            "rule_type": check.get("type de test", "regex"),
+            "column_name": check.get("colonne testée"),
+            "status": map_status(check.get("statut")),
+            "error_count": check.get("nombre", 0),
+            "ratio": check.get("ratio", "0/0"),
+            "examples": check.get("exemples", [])
+        })
+    
+    output_path = RESULTS_DIR / f"{init_data['dag_run_uuid']}_validation.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(standardized, f, ensure_ascii=False, indent=2)
+    
+    print(f"📄 Résultats sauvegardés : {output_path}")
+    print(f"📊 {len(standardized['checks'])} checks exécutés")
+    
+    return standardized
 
 # ============================================================================
 # DÉFINITION DU DAG
