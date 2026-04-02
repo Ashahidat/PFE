@@ -7,29 +7,58 @@ async function fetchResults() {
 
     try {
         const dag_run_id = localStorage.getItem("last_dag_run_id");
+        console.log("🔍 DAG Run ID récupéré:", dag_run_id);
+        
         if (!dag_run_id) {
             alert("Pas de DAG en cours");
             return;
         }
 
+        // Test direct : récupérer les résultats sans attendre
+        const token = localStorage.getItem("access_token");
+        console.log("🔍 Test direct de l'API results...");
+        const testRes = await fetch(`${API_URL}/results/${dag_run_id}`, {
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+        const testData = await testRes.json();
+        console.log("🔍 Test direct - résultats:", testData);
+        
+        if (testData && testData.length > 0) {
+            console.log("✅ Les résultats existent déjà !");
+            renderSummary(testData);
+            renderResultsJSON(testData);
+            statusDiv.style.display = "none";
+            addPushAtlasButton();
+            return;
+        }
+        
+        // Sinon, attendre le DAG...
         statusDiv.innerText = "DAG en cours d'exécution...";
-
+        
         let state = null;
         let attempts = 0;
-        const maxAttempts = 60;
+        const maxAttempts = 80;
 
         while (state !== "success" && state !== "failed" && attempts < maxAttempts) {
             try {
-                const token = localStorage.getItem("access_token");
+                console.log(`🔍 Tentative ${attempts + 1}: vérification statut...`);
                 const res = await fetch(`${API_URL}/dag-status/${dag_run_id}`, {
                     method: "GET",
                     headers: { "Authorization": `Bearer ${token}` }
                 });
 
-                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                console.log(`📡 Réponse dag-status: ${res.status}`);
+                
+                if (!res.ok) {
+                    console.error(`HTTP error! status: ${res.status}`);
+                    const errorText = await res.text();
+                    console.error("Corps erreur:", errorText);
+                    throw new Error(`HTTP error! status: ${res.status}`);
+                }
 
                 const data = await res.json();
                 state = data?.state || null;
+                console.log(`📊 État du DAG: ${state}`);
 
                 if (state === "running" || !state) {
                     statusDiv.innerText = `DAG en cours d'exécution... (${attempts + 1}/${maxAttempts})`;
@@ -40,7 +69,7 @@ async function fetchResults() {
                 }
 
             } catch (error) {
-                console.error(error);
+                console.error("Erreur dans la boucle:", error);
                 statusDiv.innerText = "Erreur de connexion au serveur";
                 await new Promise(r => setTimeout(r, 5000));
                 attempts++;
@@ -50,15 +79,17 @@ async function fetchResults() {
         if (state === "success") {
             statusDiv.innerText = "DAG terminé, récupération des résultats...";
 
-            const token = localStorage.getItem("access_token");
             const res2 = await fetch(`${API_URL}/results/${dag_run_id}`, {
                 method: "GET",
                 headers: { "Authorization": `Bearer ${token}` }
             });
 
+            console.log(`📡 Réponse results: ${res2.status}`);
+            
             if (!res2.ok) throw new Error(`HTTP error! status: ${res2.status}`);
 
             const results = await res2.json();
+            console.log("📊 Résultats finaux:", results);
 
             if (!results || results.length === 0) {
                 statusDiv.innerText = "Aucun résultat disponible !";
@@ -79,12 +110,11 @@ async function fetchResults() {
         }
 
     } catch (err) {
-        console.error(err);
+        console.error("Erreur globale:", err);
         statusDiv.innerText = "Erreur lors de la récupération";
         resultsSection.style.display = "none";
     }
 }
-
 // ===================== RÉSUMÉ =====================
 function renderSummary(data) {
     const container = document.querySelector('.container');

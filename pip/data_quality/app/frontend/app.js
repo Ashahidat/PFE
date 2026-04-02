@@ -97,7 +97,7 @@ document.getElementById("runDagBtn")?.addEventListener("click", async () => {
     };
 
     try {
-        const res = await fetch(`${API_URL}/run-dag`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rules) });
+        const res = await fetch(`${API_URL}/run-dag-v2`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rules) });
         const data = await res.json();
         if (data.dag_run_id) { alert("DAG lancé !"); pollDagStatus(data.dag_run_id); } 
         else { console.error(data); alert("Erreur lancement DAG"); }
