@@ -10,6 +10,8 @@ from typing import Dict, List, Any
 import json
 import sys
 from pathlib import Path
+import os
+os.environ["SPARK_VERSION"] = "3.3"
 
 # Configuration des chemins
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -51,7 +53,7 @@ def init_context(**context) -> Dict[str, Any]:
     spark = SparkSession.builder \
         .master("local[*]") \
         .appName(f"DQ_{dag_run_uuid[:8]}") \
-        .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.7-spark-3.3") \
+        .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.3-spark-3.3") \
         .getOrCreate()
     
     df = spark.read.parquet(file_path)
@@ -82,7 +84,7 @@ def validate_duplicates(init_data: Dict) -> List[Dict]:
     spark = SparkSession.builder \
         .master("local[*]") \
         .appName("ValidateDuplicates") \
-        .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.7-spark-3.3") \
+        .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.3-spark-3.3") \
         .getOrCreate()
     
     file_path = init_data["file_path"]
@@ -107,7 +109,7 @@ def validate_regex(init_data: Dict) -> List[Dict]:
     spark = SparkSession.builder \
         .master("local[*]") \
         .appName("ValidateRegex") \
-        .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.7-spark-3.3") \
+        .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.3-spark-3.3") \
         .getOrCreate()
     
     file_path = init_data["file_path"]
@@ -121,11 +123,40 @@ def validate_regex(init_data: Dict) -> List[Dict]:
     
     return results.get("regex", [])
 
+
+# Dans le DAG, AJOUTER cette tâche APRES validate_regex
+@task
+def validate_deequ(init_data: Dict) -> List[Dict]:
+    """Valide les contraintes Deequ (complétude, min, max, valeurs autorisées)"""
+    from validators.deequ_validator import run as run_deequ
+    from pyspark.sql import SparkSession
+    
+    constraints = init_data["rules"].get("deequ", [])
+    if not constraints:
+        return []
+    
+    # Créer une nouvelle session Spark pour cette tâche
+    spark = SparkSession.builder \
+        .master("local[*]") \
+        .appName("ValidateDeequ") \
+        .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.3-spark-3.3") \
+        .getOrCreate()
+    
+    file_path = init_data["file_path"]
+    df = spark.read.parquet(file_path)
+    results = run_deequ(spark, df, constraints)
+    
+    spark.stop()
+    return results
+
+
+# MODIFIER aggregate_results pour accepter deequ_results
 @task
 def aggregate_results(
     init_data: Dict,
     duplicates_results: List[Dict],
-    regex_results: List[Dict]
+    regex_results: List[Dict],
+    deequ_results: List[Dict]  # ← NOUVEAU paramètre
 ) -> Dict:
     """Agrège tous les résultats et sauvegarde"""
     from datetime import datetime as dt
@@ -137,7 +168,6 @@ def aggregate_results(
         "checks": []
     }
     
-    # Fonction de standardisation (copiée de l'ancien DAG)
     def map_status(statut):
         if not statut:
             return "inconnu"
@@ -146,7 +176,7 @@ def aggregate_results(
             return "réussi"
         elif statut in ["échoué", "fail"]:
             return "échoué"
-        elif statut in ["skipped"]:
+        elif statut in ["ignoré", "skipped"]:
             return "ignoré"
         else:
             return "inconnu"
@@ -173,6 +203,17 @@ def aggregate_results(
             "examples": check.get("exemples", [])
         })
     
+    # NOUVEAU: Standardiser les résultats Deequ
+    for check in deequ_results:
+        standardized["checks"].append({
+            "rule_type": check.get("type de test", "deequ"),
+            "column_name": check.get("colonne testée"),
+            "status": map_status(check.get("statut")),
+            "error_count": check.get("nombre", 0),
+            "ratio": check.get("ratio", "0/0"),
+            "examples": check.get("exemples", [])
+        })
+    
     output_path = RESULTS_DIR / f"{init_data['dag_run_uuid']}_validation.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
@@ -183,6 +224,7 @@ def aggregate_results(
     print(f"📊 {len(standardized['checks'])} checks exécutés")
     
     return standardized
+
 
 # ============================================================================
 # DÉFINITION DU DAG
@@ -209,10 +251,14 @@ with DAG(
     # 3. Validation des regex (1 tâche)
     regex = validate_regex(init)
     
-    # 4. Agrégation
-    final = aggregate_results(init, duplicates, regex)
+    # 4. Validation Deequ (1 tâche) - NOUVEAU
+    deequ = validate_deequ(init)
     
-    # Dépendances : duplicates et regex s'exécutent en parallèle
-    init >> [duplicates, regex]
+    # 5. Agrégation
+    final = aggregate_results(init, duplicates, regex, deequ)
+    
+    # Dépendances : duplicates, regex et deequ s'exécutent en parallèle
+    init >> [duplicates, regex, deequ]  # ← Les 3 en parallèle
     duplicates >> final
     regex >> final
+    deequ >> final  # ← NOUVEAU

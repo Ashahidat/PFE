@@ -49,7 +49,7 @@ def run_modular_validations(**kwargs):
     spark = SparkSession.builder \
         .master("local[*]") \
         .appName("ModularValidation") \
-        .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.7-spark-3.3") \
+        .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.3-spark-3.3") \
         .getOrCreate()
 
     df = spark.read.parquet(file_path)

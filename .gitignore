@@ -79,6 +79,8 @@ datasets/
 *.log
 
 pip/data_quality/orchestration/airflow/dags/__pycache__/
+/home/ashahi/PFE/deequ_test_all.csv
+/.codex
 
 
 

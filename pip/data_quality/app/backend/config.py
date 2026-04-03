@@ -1,10 +1,17 @@
 import os
 import signal
+os.environ["SPARK_VERSION"] = "3.3"
 from pyspark.sql import SparkSession
 import atexit
+import pydeequ
+
 
 # Spark
-spark = SparkSession.builder.appName("DataQualityApp").getOrCreate()
+spark = SparkSession.builder \
+    .appName("DataQualityApp") \
+    .config("spark.jars.packages", pydeequ.deequ_maven_coord) \
+    .config("spark.jars.excludes", pydeequ.f2j_maven_coord) \
+    .getOrCreate()
 
 # Fermeture propre
 def stop_spark():
