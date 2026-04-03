@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin - Gestion utilisateurs</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="container">
+    <h1>Gestion des utilisateurs</h1>
+    
+    <h2>Créer un utilisateur</h2>
+    <input type="text" id="emp_id" placeholder="Employee ID">
+    <input type="text" id="username" placeholder="Username">
+    <input type="password" id="password" placeholder="Mot de passe">
+    <input type="text" id="department" placeholder="Département">
+    <select id="role">
+        <option value="DATA_OWNER">DATA_OWNER</option>
+        <option value="ADMIN">ADMIN</option>
+    </select>
+    <button id="createBtn">Créer</button>
+    
+    <h2>Liste des utilisateurs</h2>
+    <div id="usersList"></div>
+    
+    <button id="logoutBtn">Déconnexion</button>
+</div>
+<script>
+const API_URL = "http://localhost:8000";
+const token = localStorage.getItem("access_token");
+
+if (!token || localStorage.getItem("user_role") !== "ADMIN") {
+    window.location.href = "login.html";
+}
+
+async function loadUsers() {
+    const res = await fetch(`${API_URL}/users`, {
+        headers: { "Authorization": `Bearer ${token}` }
+    });
+    const users = await res.json();
+    const container = document.getElementById("usersList");
+    container.innerHTML = "";
+    for (const u of users) {
+        const div = document.createElement("div");
+        div.className = "user-item";
+        div.innerHTML = `
+            <strong>${u.employee_id}</strong> - ${u.username} - ${u.department} - ${u.role}
+            <button onclick="editUser('${u.employee_id}', '${u.username}', '${u.department}', '${u.role}')">Modifier</button>
+        `;
+        container.appendChild(div);
+    }
+}
+
+window.editUser = (empId, username, department, role) => {
+    const newUsername = prompt("Nouveau username:", username);
+    const newDepartment = prompt("Nouveau département:", department);
+    const newRole = prompt("Nouveau rôle (DATA_OWNER/ADMIN):", role);
+    const newPassword = prompt("Nouveau mot de passe (laisser vide pour ne pas changer):", "");
+    
+    const body = {};
+    if (newUsername && newUsername !== username) body.username = newUsername;
+    if (newDepartment && newDepartment !== department) body.department = newDepartment;
+    if (newRole && (newRole === "DATA_OWNER" || newRole === "ADMIN")) body.role = newRole;
+    if (newPassword && newPassword !== "") body.password = newPassword;
+    
+    if (Object.keys(body).length === 0) return;
+    
+    fetch(`${API_URL}/users/${empId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify(body)
+    }).then(() => loadUsers());
+};
+
+document.getElementById("createBtn").addEventListener("click", async () => {
+    const body = {
+        employee_id: document.getElementById("emp_id").value,
+        username: document.getElementById("username").value,
+        password: document.getElementById("password").value,
+        department: document.getElementById("department").value,
+        role: document.getElementById("role").value
+    };
+    const res = await fetch(`${API_URL}/users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify(body)
+    });
+    if (res.ok) {
+        alert("Utilisateur créé");
+        loadUsers();
+    } else {
+        const err = await res.json();
+        alert("Erreur: " + err.detail);
+    }
+});
+
+document.getElementById("logoutBtn").onclick = () => {
+    localStorage.clear();
+    window.location.href = "login.html";
+};
+
+loadUsers();
+</script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Mon Profil</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="container">
+    <h1>Mon Profil</h1>
+    <div id="profile">
+        <p><strong>Employee ID:</strong> <span id="emp_id"></span></p>
+        <p><strong>Username:</strong> <span id="username_display"></span></p>
+        <p><strong>Département:</strong> <span id="department"></span></p>
+        <p><strong>Rôle:</strong> <span id="role"></span></p>
+    </div>
+    
+    <h2>Modifier</h2>
+    <input type="text" id="new_username" placeholder="Nouveau username">
+    <input type="password" id="new_password" placeholder="Nouveau mot de passe">
+    <button id="updateBtn">Mettre à jour</button>
+    <div id="status"></div>
+    
+    <button id="logoutBtn">Se déconnecter</button>
+</div>
+<script>
+const API_URL = "http://localhost:8000";
+const token = localStorage.getItem("access_token");
+
+if (!token) window.location.href = "login.html";
+
+async function loadProfile() {
+    const res = await fetch(`${API_URL}/me`, {
+        headers: { "Authorization": `Bearer ${token}` }
+    });
+    const user = await res.json();
+    document.getElementById("emp_id").innerText = user.employee_id;
+    document.getElementById("username_display").innerText = user.username;
+    document.getElementById("department").innerText = user.department;
+    document.getElementById("role").innerText = user.role;
+}
+
+document.getElementById("updateBtn").addEventListener("click", async () => {
+    const username = document.getElementById("new_username").value;
+    const password = document.getElementById("new_password").value;
+    const body = {};
+    if (username) body.username = username;
+    if (password) body.password = password;
+    
+    if (Object.keys(body).length === 0) {
+        document.getElementById("status").innerText = "Remplissez au moins un champ";
+        return;
+    }
+    
+    const res = await fetch(`${API_URL}/me`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (res.ok) {
+        document.getElementById("status").innerText = "Profil mis à jour";
+        if (username) localStorage.setItem("username", username);
+        loadProfile();
+    } else {
+        document.getElementById("status").innerText = data.detail || "Erreur";
+    }
+});
+
+document.getElementById("logoutBtn").onclick = () => {
+    localStorage.clear();
+    window.location.href = "login.html";
+};
+
+loadProfile();
+</script>
+</body>
+</html>

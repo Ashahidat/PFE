@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Connexion</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="container">
+    <h1>Connexion</h1>
+    <input type="text" id="employee_id" placeholder="Employee ID">
+    <input type="password" id="password" placeholder="Mot de passe">
+    <button id="loginBtn">Se connecter</button>
+    <div id="status"></div>
+</div>
+<script>
+const API_URL = "http://localhost:8000";
+
+document.getElementById("loginBtn").addEventListener("click", async () => {
+    const employee_id = document.getElementById("employee_id").value;
+    const password = document.getElementById("password").value;
+    const status = document.getElementById("status");
+
+    try {
+        const res = await fetch(`${API_URL}/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ employee_id, password })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+            status.innerText = data.detail || "Erreur";
+            return;
+        }
+
+        localStorage.setItem("access_token", data.access_token);
+        localStorage.setItem("user_role", data.role);
+        localStorage.setItem("user_employee_id", data.employee_id);
+        localStorage.setItem("username", data.username);
+        localStorage.setItem("department", data.department);
+
+        if (data.role === "ADMIN") {
+            window.location.href = "admin.html";
+        } else {
+            window.location.href = "profile.html";
+        }
+    } catch (err) {
+        status.innerText = "Erreur de connexion";
+    }
+});
+</script>
+</body>
+</html>
