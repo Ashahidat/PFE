@@ -10,7 +10,7 @@ async function loadProjects() {
     const token = localStorage.getItem("access_token");
     
     if (!token) {
-        window.location.href = "login.html";
+        window.location.href = "index.html";
         return;
     }
     

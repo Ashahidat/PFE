@@ -27,7 +27,7 @@
 const API_URL = "http://localhost:8000";
 const token = localStorage.getItem("access_token");
 
-if (!token) window.location.href = "login.html";
+if (!token) window.location.href = "index.html";
 
 async function loadProfile() {
     const res = await fetch(`${API_URL}/me`, {
@@ -69,7 +69,7 @@ document.getElementById("updateBtn").addEventListener("click", async () => {
 
 document.getElementById("logoutBtn").onclick = () => {
     localStorage.clear();
-    window.location.href = "login.html";
+    window.location.href = "index.html";
 };
 
 loadProfile();

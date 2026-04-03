@@ -3,7 +3,7 @@ const token = localStorage.getItem("access_token");
 
 // Vérification authentification et rôle ADMIN
 if (!token || localStorage.getItem("user_role") !== "ADMIN") {
-    window.location.href = "login.html";
+    window.location.href = "index.html";
 }
 
 let currentEditEmployeeId = null;
@@ -18,7 +18,7 @@ async function loadUsers() {
         if (!res.ok) {
             if (res.status === 401) {
                 localStorage.clear();
-                window.location.href = "login.html";
+                window.location.href = "index.html";
             }
             throw new Error("Erreur chargement");
         }
@@ -153,7 +153,7 @@ document.getElementById("createBtn").addEventListener("click", async () => {
 // Déconnexion
 document.getElementById("logoutBtn").addEventListener("click", () => {
     localStorage.clear();
-    window.location.href = "login.html";
+    window.location.href = "index.html";
 });
 
 // Chargement initial
