@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse
 import os
 
 from config import FRONTEND_DIR
-from routes import upload, dag, results, push_atlas, register, login, classifications, classifications_col, projects, descriptions, versionning
+from routes import upload, dag, results, push_atlas, register, login, classifications, classifications_col, projects, descriptions, versionning, profile
 
 app = FastAPI()
 
@@ -55,6 +55,7 @@ app.include_router(classifications_col.router)
 app.include_router(projects.router)
 app.include_router(descriptions.router)
 app.include_router(versionning.router)
+app.include_router(profile.router)
 
 # Frontend
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
