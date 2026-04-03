@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 import os
 os.environ["SPARK_VERSION"] = "3.3"
 from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
 from pydeequ.verification import VerificationSuite, VerificationResult 
 from pydeequ.checks import Check, CheckLevel  
 
@@ -111,14 +112,33 @@ def run(spark: SparkSession, df: DataFrame, constraints: List[Dict[str, Any]]) -
                 })
             else:
                 actual_value = None
+                error_count = 1
+
+                # Uniformiser la sémantique du ratio avec le reste: x/total_rows
+                if constraint_type == "completeness":
+                    error_count = df.filter(
+                        F.col(column).isNull() | (F.trim(F.col(column).cast("string")) == "")
+                    ).count()
+                elif constraint_type == "min":
+                    error_count = df.filter(
+                        F.col(column).isNotNull() & (F.col(column) < F.lit(threshold))
+                    ).count()
+                elif constraint_type == "max":
+                    error_count = df.filter(
+                        F.col(column).isNotNull() & (F.col(column) > F.lit(threshold))
+                    ).count()
+                elif constraint_type == "allowed_values":
+                    error_count = df.filter(
+                        F.col(column).isNull() | (~F.col(column).isin(values))
+                    ).count()
                 
                 results.append({
                     "alerte": f"Contrainte non respectée: {description}",
                     "type de test": f"deequ_{constraint_type}",
                     "statut": "échoué",
                     "colonne testée": column,
-                    "nombre": 1,
-                    "ratio": f"1/1",
+                    "nombre": error_count,
+                    "ratio": f"{error_count}/{total_rows}",
                     "description": description,
                     "valeur_actuelle": actual_value,
                     "exemples": [
