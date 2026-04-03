@@ -26,10 +26,12 @@ def run(spark: SparkSession, df: DataFrame, constraints: List[Dict[str, Any]]) -
         return results
     
     total_rows = df.count()
+    print(f"[DEEQU][BACK] contraintes reçues: {constraints}")
     
     for constraint in constraints:
         constraint_type = constraint.get("type")
         column = constraint.get("column")
+        print(f"[DEEQU][BACK] contrainte en cours: type={constraint_type}, column={column}")
         
         # Validation de base
         if not column:
@@ -75,6 +77,7 @@ def run(spark: SparkSession, df: DataFrame, constraints: List[Dict[str, Any]]) -
                 
             elif constraint_type == "allowed_values":
                 values = constraint.get("values", [])
+                print(f"[DEEQU][BACK] allowed_values params: column={column}, values={values}")
                 check = check.isContainedIn(column, values)
                 description = f"Valeurs autorisées: {values}"
                 
@@ -148,6 +151,7 @@ def run(spark: SparkSession, df: DataFrame, constraints: List[Dict[str, Any]]) -
                         F.col(column).isNull() | (~F.col(column).isin(values))
                     )
                     error_count = failed_df.count()
+                    print(f"[DEEQU][BACK] allowed_values failed_count={error_count}/{total_rows}")
                     bad_vals = [
                         "NULL" if r[0] is None else str(r[0])
                         for r in failed_df.select(column).distinct().limit(5).collect()

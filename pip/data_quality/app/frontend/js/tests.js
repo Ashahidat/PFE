@@ -129,7 +129,7 @@ function renderDeequRules() {
     });
     
     document.querySelectorAll('.deequ-threshold').forEach(input => {
-        input.addEventListener('change', (e) => {
+        input.addEventListener('input', (e) => {
             const id = parseInt(input.dataset.id);
             updateDeequRule(id, "threshold", input.value);
             input.value = deequRules.find(r => r.id === id)?.threshold ?? input.value;
@@ -137,7 +137,7 @@ function renderDeequRules() {
     });
     
     document.querySelectorAll('.deequ-values').forEach(input => {
-        input.addEventListener('change', (e) => {
+        input.addEventListener('input', (e) => {
             const id = parseInt(input.dataset.id);
             updateDeequRule(id, "values", input.value);
         });
@@ -228,9 +228,48 @@ document.getElementById("addDeequRuleBtn")?.addEventListener("click", addDeequRu
 
 // ===================== Lancer le DAG =====================
 document.getElementById("runDagBtn")?.addEventListener("click", async () => {
+    const deequEnabled = document.getElementById("deequTest")?.checked;
+
+    if (deequEnabled) {
+        for (let i = 0; i < deequRules.length; i++) {
+            const r = deequRules[i];
+            const idx = i + 1;
+
+            if (!r.column || !String(r.column).trim()) {
+                alert(`La contrainte #${idx} (${r.type}) est incomplète : colonne obligatoire.`);
+                return;
+            }
+
+            if (r.type === "allowed_values") {
+                const vals = Array.isArray(r.values)
+                    ? r.values.filter(v => String(v).trim().length > 0)
+                    : [];
+                if (vals.length === 0) {
+                    alert(`La contrainte #${idx} (allowed_values) est incomplète : au moins une valeur autorisée est obligatoire.`);
+                    return;
+                }
+            }
+
+            if (r.type === "completeness") {
+                const t = Number(r.threshold);
+                if (!Number.isFinite(t) || t < 0 || t > 1) {
+                    alert(`La contrainte #${idx} (completeness) est invalide : seuil attendu entre 0 et 1.`);
+                    return;
+                }
+            }
+
+            if (r.type === "min" || r.type === "max") {
+                const t = Number(r.threshold);
+                if (!Number.isFinite(t)) {
+                    alert(`La contrainte #${idx} (${r.type}) est invalide : seuil numérique obligatoire.`);
+                    return;
+                }
+            }
+        }
+    }
+
     // Construire les règles Deequ au bon format
     const deequRulesFormatted = deequRules
-        .filter(rule => rule.column) // Ignorer les règles sans colonne
         .map(rule => {
             const baseRule = {
                 type: rule.type,
@@ -243,6 +282,9 @@ document.getElementById("runDagBtn")?.addEventListener("click", async () => {
             }
             return baseRule;
         });
+    
+    console.log("[DEEQU][FRONT] deequRules brut:", deequRules);
+    console.log("[DEEQU][FRONT] deequRules formaté:", deequRulesFormatted);
     
     const rules = {
         duplicates: {
@@ -260,6 +302,7 @@ document.getElementById("runDagBtn")?.addEventListener("click", async () => {
         },
         deequ: document.getElementById("deequTest")?.checked ? deequRulesFormatted : []  // ← NOUVEAU
     };
+    console.log("[DEEQU][FRONT] payload /run-dag-v2:", { rules, dataset_id: localStorage.getItem("last_uploaded_dataset_id") });
 
     const token = localStorage.getItem("access_token");
     const dataset_id = localStorage.getItem("last_uploaded_dataset_id");
@@ -273,6 +316,7 @@ document.getElementById("runDagBtn")?.addEventListener("click", async () => {
         });
 
         const data = await res.json();
+        console.log("[DEEQU][FRONT] réponse /run-dag-v2:", data);
         if (data.dag_run_id) {
             localStorage.setItem("last_dag_run_id", data.dag_run_id);
             alert("✅ DAG lancé !");
