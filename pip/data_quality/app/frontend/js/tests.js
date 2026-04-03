@@ -55,6 +55,17 @@ function renderDeequRules() {
     
     container.innerHTML = "";
     deequRules.forEach(rule => {
+        const thresholdLabel =
+            rule.type === "completeness"
+                ? "Seuil de complétude:"
+                : rule.type === "min"
+                    ? "Valeur minimale attendue:"
+                    : "Valeur maximale attendue:";
+        const thresholdHint =
+            rule.type === "completeness"
+                ? "(0-1, ex: 0.95 = 95%)"
+                : "(valeur numérique, ex: 18)";
+
         const ruleDiv = document.createElement("div");
         ruleDiv.className = "deequ-rule-card";
         ruleDiv.innerHTML = `
@@ -78,9 +89,9 @@ function renderDeequRules() {
                 </select>
                 
                 <div class="deequ-threshold-group" style="display: ${rule.type === 'allowed_values' ? 'none' : 'block'}">
-                    <label>Seuil/Valeur:</label>
+                    <label>${thresholdLabel}</label>
                     <input type="number" class="deequ-threshold" data-id="${rule.id}" value="${rule.threshold}" step="0.01" ${rule.type === 'allowed_values' ? 'disabled' : ''}>
-                    <small>${rule.type === 'completeness' ? '(0-1, ex: 0.95 = 95%)' : rule.type === 'min' || rule.type === 'max' ? '(valeur numérique)' : ''}</small>
+                    <small>${thresholdHint}</small>
                 </div>
                 
                 <div class="deequ-values-group" style="display: ${rule.type === 'allowed_values' ? 'block' : 'none'}">
@@ -105,19 +116,9 @@ function renderDeequRules() {
             const id = parseInt(select.dataset.id);
             const newType = select.value;
             updateDeequRule(id, "type", newType);
-            
-            // Afficher/masquer les champs appropriés
-            const ruleDiv = select.closest('.deequ-rule-card');
-            const thresholdGroup = ruleDiv.querySelector('.deequ-threshold-group');
-            const valuesGroup = ruleDiv.querySelector('.deequ-values-group');
-            
-            if (newType === 'allowed_values') {
-                thresholdGroup.style.display = 'none';
-                valuesGroup.style.display = 'block';
-            } else {
-                thresholdGroup.style.display = 'block';
-                valuesGroup.style.display = 'none';
-            }
+
+            // Re-render complet pour mettre à jour libellés/hints dynamiques
+            renderDeequRules();
         });
     });
     
