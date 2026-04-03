@@ -21,7 +21,11 @@
     <button id="updateBtn">Mettre à jour</button>
     <div id="status"></div>
     
-    <button id="logoutBtn">Se déconnecter</button>
+    <!-- ✅ Liens -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd;">
+        <a href="projects.html" style="background: #007bff; color: white; padding: 8px 15px; border-radius: 5px; text-decoration: none;">📁 Retour aux projets</a>
+        <button id="logoutBtn" style="background: #dc3545; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">Déconnexion</button>
+    </div>
 </div>
 <script>
 const API_URL = "http://localhost:8000";

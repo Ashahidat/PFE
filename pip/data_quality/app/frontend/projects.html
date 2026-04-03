@@ -8,7 +8,11 @@
 </head>
 <body>
     <div class="container">
-        <h1>📁 Mes Projets</h1>
+        <!-- ✅ En-tête avec lien vers profil -->
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h1>📁 Mes Projets</h1>
+            <a href="profile.html" style="background: #4CAF50; color: white; padding: 8px 15px; border-radius: 5px; text-decoration: none;">👤 Mon profil</a>
+        </div>
         
         <!-- Formulaire création projet -->
         <div class="card">
@@ -16,7 +20,6 @@
             <input type="text" id="projectName" placeholder="Nom du projet">
             <textarea id="projectDesc" placeholder="Description (optionnel)"></textarea>
             
-            <!-- ✅ NOUVEAU : Choix de visibilité -->
             <div class="visibility-choice">
                 <p><strong>Visibilité du projet :</strong></p>
                 <label class="radio-label">
@@ -38,6 +41,11 @@
             <div id="projectsList">
                 <p class="loading">Chargement...</p>
             </div>
+        </div>
+        
+        <!-- ✅ Bouton déconnexion -->
+        <div style="margin-top: 20px; text-align: right;">
+            <button id="logoutBtn" style="background: #dc3545; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">Déconnexion</button>
         </div>
     </div>
 

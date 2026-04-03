@@ -28,6 +28,11 @@ async function loadUsers() {
         container.innerHTML = "";
         
         for (const u of users) {
+            // ✅ Ignorer l'admin connecté lui-même
+            if (u.employee_id === localStorage.getItem("user_employee_id")) {
+                continue;
+            }
+            
             const div = document.createElement("div");
             div.className = "user-item";
             

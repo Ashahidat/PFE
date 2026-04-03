@@ -8,7 +8,11 @@
 </head>
 <body>
 <div class="container">
-    <h1>👥 Gestion des utilisateurs</h1>
+    <!-- ✅ En-tête avec lien vers profil -->
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h1>👥 Gestion des utilisateurs</h1>
+        <a href="profile.html" style="background: #4CAF50; color: white; padding: 8px 15px; border-radius: 5px; text-decoration: none;">👤 Mon profil</a>
+    </div>
     
     <!-- Formulaire de création -->
     <div class="create-section">
@@ -24,7 +28,7 @@
         <button id="createBtn">Créer</button>
     </div>
     
-    <!-- Formulaire de modification (caché par défaut) -->
+    <!-- Formulaire de modification -->
     <div id="editForm" class="edit-form">
         <h2>✏️ Modifier l'utilisateur</h2>
         <input type="hidden" id="edit_employee_id">
@@ -34,7 +38,7 @@
         </div>
         <div class="form-group">
             <label>Mot de passe :</label>
-            <input type="password" id="edit_password" placeholder="Nouveau mot de passe (laisser vide = inchangé)">
+            <input type="password" id="edit_password" placeholder="Nouveau mot de passe">
         </div>
         <div class="form-group">
             <label>Département :</label>
@@ -57,7 +61,11 @@
     <h2>📋 Liste des utilisateurs</h2>
     <div id="usersList"></div>
     
-    <button id="logoutBtn" class="logout-btn">Déconnexion</button>
+    <!-- ✅ Liens en bas -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd;">
+        <a href="projects.html" style="background: #007bff; color: white; padding: 8px 15px; border-radius: 5px; text-decoration: none;">📁 Accéder aux projets</a>
+        <button id="logoutBtn" style="background: #dc3545; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">Déconnexion</button>
+    </div>
 </div>
 
 <script src="js/admin.js"></script>

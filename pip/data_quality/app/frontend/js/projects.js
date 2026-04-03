@@ -113,3 +113,9 @@ function selectProject(projectId, projectName) {
     localStorage.setItem("current_project_name", projectName);
     window.location.href = "upload.html";
 }
+
+// Déconnexion
+document.getElementById("logoutBtn")?.addEventListener("click", () => {
+    localStorage.clear();
+    window.location.href = "index.html";
+});
