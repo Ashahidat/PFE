@@ -54,7 +54,7 @@ function renderDeequRules() {
     }
     
     container.innerHTML = "";
-    deequRules.forEach(rule => {
+    deequRules.forEach((rule, idx) => {
         const thresholdLabel =
             rule.type === "completeness"
                 ? "Seuil de complétude:"
@@ -70,7 +70,7 @@ function renderDeequRules() {
         ruleDiv.className = "deequ-rule-card";
         ruleDiv.innerHTML = `
             <div class="rule-header">
-                <strong>Contrainte #${rule.id}</strong>
+                <strong>Contrainte ${idx + 1}</strong>
                 <button type="button" class="remove-rule-btn" data-id="${rule.id}">✖</button>
             </div>
             <div class="rule-fields">
