@@ -20,6 +20,11 @@ class DAGRunRequest(BaseModel):
     dataset_id: str
 
 
+class PushAtlasDAGRequest(BaseModel):
+    dataset_id: str
+    is_public: bool = False
+
+
 router = APIRouter()
 
 @router.post("/run-dag")
@@ -94,3 +99,35 @@ async def dag_status(dag_run_id: str, db: Session = Depends(get_db), user=Depend
     dag_run.status = state
     db.commit()
     return {"state": state}
+
+
+@router.post("/run-push-atlas-dag")
+async def run_push_atlas_dag(
+    request: PushAtlasDAGRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    dataset = db.query(Dataset).filter(Dataset.id == request.dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset introuvable")
+
+    config = {
+        "dataset_id": request.dataset_id,
+        "is_public": request.is_public,
+    }
+    dag_run_id, resp = trigger_dag("push_atlas_pipeline", config)
+
+    if not dag_run_id:
+        raise HTTPException(status_code=500, detail="Erreur lancement DAG push_atlas_pipeline")
+
+    dag_run = DAGRun(
+        id=str(uuid.uuid4()),
+        dataset_id=dataset.id,
+        dag_run_id=dag_run_id,
+        rules={"operation": "push_atlas", "is_public": request.is_public},
+        status="running"
+    )
+    db.add(dag_run)
+    db.commit()
+
+    return {"message": "DAG push_atlas_pipeline lancé", "dag_run_id": dag_run_id}

@@ -14,7 +14,6 @@ import shutil
 import json
 from typing import List, Dict, Any, Optional  # 👈 AJOUTER Optional
 
-from config import spark
 from db.connexion_db import get_db
 from db.datasets import Dataset
 from db.dataset_signatures import DatasetSignature
@@ -54,6 +53,19 @@ logger = logging.getLogger("push-atlas")
 logger.setLevel(logging.DEBUG)
 from settings.config_paths import TMP_DIR, RESULTS_DIR
 
+
+def run_push_atlas_service(
+    dataset_id: str,
+    db: Session,
+    is_public: bool = False,
+    user: Optional[Dict[str, Any]] = None,
+):
+    """
+    Point d'entrée réutilisable (ex: DAG Airflow) sans changer la logique actuelle.
+    """
+    effective_user = user or {"sub": "airflow_service"}
+    return push_atlas(dataset_id=dataset_id, is_public=is_public, db=db, user=effective_user)
+
 # ============================================================
 # ROUTE PRINCIPALE
 # ============================================================
@@ -81,6 +93,10 @@ def push_atlas(
     security_success = False  # 👈 NOUVEAU
     
     try:
+        # Import Spark retardé pour éviter l'initialisation au chargement du module
+        # (important pour les workers Airflow).
+        from config import spark
+
         # ----------------------
         # 1️⃣ Récupérer dataset
         # ----------------------
