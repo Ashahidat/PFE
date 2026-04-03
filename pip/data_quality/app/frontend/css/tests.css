@@ -22,7 +22,7 @@
 #runDagBtn {
     padding: 14px 24px !important;
     border-radius: 6px !important;
-    border: none ! ;
+    border: none !important;
     background-color: #3498db !important;
     color: white !important;
     cursor: pointer !important;
@@ -32,12 +32,96 @@
     background-color: #2980b9;
 }
 
-/* #dagStatus {
-    font-weight: bold;
-    color: #3498db;
-    margin-top: 10px;
+/* Styles pour Deequ */
+#deequ-container {
+    margin-top: 20px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #f9f9f9;
 }
+
+.deequ-rule-card {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.rule-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+}
+
+.remove-rule-btn {
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+.remove-rule-btn:hover {
+    background: #c0392b;
+}
+
+.rule-fields {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    align-items: center;
+}
+
+.rule-fields label {
+    font-weight: bold;
+    color: #555;
+}
+
+.rule-fields select,
+.rule-fields input {
+    padding: 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.add-rule-btn {
+    margin-top: 10px;
+    padding: 8px 16px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.add-rule-btn:hover {
+    background: #2980b9;
+}
+
+.info-text {
+    color: #999;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+
+.columns-container {
+    margin: 15px 0;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #fafafa;
+}
+
 .hidden {
     display: none;
-} */
-
+}

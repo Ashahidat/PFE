@@ -12,6 +12,7 @@
     <label><input type="checkbox" id="dupSensitive"> Doublons sensibles</label>
     <label><input type="checkbox" id="dupFull"> Doublons ligne complète</label>
     <label><input type="checkbox" id="regexTest"> Regex</label>
+    <label><input type="checkbox" id="deequTest"> Deequ (qualité avancée)</label>
 
     <div id="dupSensitive-columns" class="hidden columns-container">
         <h3>Colonnes pour doublons sensibles :</h3>
@@ -25,9 +26,14 @@
         <div><strong>Code postal :</strong><div id="regex-postal-select"></div></div>
     </div>
 
-    <button id="runDagBtn">Lancer les validations</button>
-    <!-- <div id="dagStatus" class="hidden">En cours d'exécution...</div> -->
+    <!-- NOUVEAU : Section Deequ -->
+    <div id="deequ-container" class="hidden columns-container">
+        <h3>Contraintes Deequ :</h3>
+        <div id="deequ-rules-list"></div>
+        <button type="button" id="addDeequRuleBtn" class="add-rule-btn">+ Ajouter une contrainte</button>
+    </div>
 
+    <button id="runDagBtn">Lancer les validations</button>
 </div>
 <script src="js/tests.js"></script>
 </body>

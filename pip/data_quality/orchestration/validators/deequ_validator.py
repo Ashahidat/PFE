@@ -113,24 +113,47 @@ def run(spark: SparkSession, df: DataFrame, constraints: List[Dict[str, Any]]) -
             else:
                 actual_value = None
                 error_count = 1
+                examples = ["La contrainte n'a pas été satisfaite"]
 
                 # Uniformiser la sémantique du ratio avec le reste: x/total_rows
                 if constraint_type == "completeness":
-                    error_count = df.filter(
+                    failed_df = df.filter(
                         F.col(column).isNull() | (F.trim(F.col(column).cast("string")) == "")
-                    ).count()
+                    )
+                    error_count = failed_df.count()
+                    bad_vals = [
+                        ("NULL" if r[0] is None else ("VIDE" if str(r[0]).strip() == "" else str(r[0])))
+                        for r in failed_df.select(column).limit(5).collect()
+                    ]
+                    if bad_vals:
+                        examples = bad_vals
                 elif constraint_type == "min":
-                    error_count = df.filter(
+                    failed_df = df.filter(
                         F.col(column).isNotNull() & (F.col(column) < F.lit(threshold))
-                    ).count()
+                    )
+                    error_count = failed_df.count()
+                    bad_vals = [str(r[0]) for r in failed_df.select(column).limit(5).collect()]
+                    if bad_vals:
+                        examples = bad_vals
                 elif constraint_type == "max":
-                    error_count = df.filter(
+                    failed_df = df.filter(
                         F.col(column).isNotNull() & (F.col(column) > F.lit(threshold))
-                    ).count()
+                    )
+                    error_count = failed_df.count()
+                    bad_vals = [str(r[0]) for r in failed_df.select(column).limit(5).collect()]
+                    if bad_vals:
+                        examples = bad_vals
                 elif constraint_type == "allowed_values":
-                    error_count = df.filter(
+                    failed_df = df.filter(
                         F.col(column).isNull() | (~F.col(column).isin(values))
-                    ).count()
+                    )
+                    error_count = failed_df.count()
+                    bad_vals = [
+                        "NULL" if r[0] is None else str(r[0])
+                        for r in failed_df.select(column).distinct().limit(5).collect()
+                    ]
+                    if bad_vals:
+                        examples = bad_vals
                 
                 results.append({
                     "alerte": f"Contrainte non respectée: {description}",
@@ -141,10 +164,7 @@ def run(spark: SparkSession, df: DataFrame, constraints: List[Dict[str, Any]]) -
                     "ratio": f"{error_count}/{total_rows}",
                     "description": description,
                     "valeur_actuelle": actual_value,
-                    "exemples": [
-                        "La contrainte n'a pas été satisfaite",
-                        str(check_results_json)[:200]
-                    ]
+                    "exemples": examples
                 })
                 
         except Exception as e:

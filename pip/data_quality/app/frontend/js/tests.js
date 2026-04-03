@@ -1,6 +1,149 @@
 const API_URL = "http://localhost:8000";
 window.columns = []; // initialisation
 
+// ===================== GESTION DEEQU =====================
+let deequRules = [];
+
+function addDeequRule() {
+    const ruleId = Date.now();
+    deequRules.push({
+        id: ruleId,
+        type: "completeness",
+        column: "",
+        threshold: 1.0,
+        values: []
+    });
+    renderDeequRules();
+}
+
+function removeDeequRule(ruleId) {
+    deequRules = deequRules.filter(r => r.id !== ruleId);
+    renderDeequRules();
+}
+
+function updateDeequRule(ruleId, field, value) {
+    const rule = deequRules.find(r => r.id === ruleId);
+    if (rule) {
+        if (field === "values") {
+            rule.values = value
+                .split(",")
+                .map(v => v.trim())
+                .filter(v => v.length > 0);
+        } else if (field === "threshold") {
+            let parsed = Number(value);
+            if (!Number.isFinite(parsed)) {
+                parsed = rule.type === "completeness" ? 1.0 : 0;
+            }
+            if (rule.type === "completeness") {
+                parsed = Math.max(0, Math.min(1, parsed));
+            }
+            rule.threshold = parsed;
+        } else {
+            rule[field] = value;
+        }
+    }
+}
+
+function renderDeequRules() {
+    const container = document.getElementById("deequ-rules-list");
+    if (!container) return;
+    
+    if (deequRules.length === 0) {
+        container.innerHTML = '<p class="info-text">Aucune contrainte Deequ. Cliquez sur "Ajouter" pour commencer.</p>';
+        return;
+    }
+    
+    container.innerHTML = "";
+    deequRules.forEach(rule => {
+        const ruleDiv = document.createElement("div");
+        ruleDiv.className = "deequ-rule-card";
+        ruleDiv.innerHTML = `
+            <div class="rule-header">
+                <strong>Contrainte #${rule.id}</strong>
+                <button type="button" class="remove-rule-btn" data-id="${rule.id}">✖</button>
+            </div>
+            <div class="rule-fields">
+                <label>Type:</label>
+                <select class="deequ-type" data-id="${rule.id}">
+                    <option value="completeness" ${rule.type === "completeness" ? "selected" : ""}>Complétude</option>
+                    <option value="min" ${rule.type === "min" ? "selected" : ""}>Valeur minimale</option>
+                    <option value="max" ${rule.type === "max" ? "selected" : ""}>Valeur maximale</option>
+                    <option value="allowed_values" ${rule.type === "allowed_values" ? "selected" : ""}>Valeurs autorisées</option>
+                </select>
+                
+                <label>Colonne:</label>
+                <select class="deequ-column" data-id="${rule.id}">
+                    <option value="">Sélectionner une colonne</option>
+                    ${window.columns.map(col => `<option value="${col}" ${rule.column === col ? "selected" : ""}>${col}</option>`).join('')}
+                </select>
+                
+                <div class="deequ-threshold-group" style="display: ${rule.type === 'allowed_values' ? 'none' : 'block'}">
+                    <label>Seuil/Valeur:</label>
+                    <input type="number" class="deequ-threshold" data-id="${rule.id}" value="${rule.threshold}" step="0.01" ${rule.type === 'allowed_values' ? 'disabled' : ''}>
+                    <small>${rule.type === 'completeness' ? '(0-1, ex: 0.95 = 95%)' : rule.type === 'min' || rule.type === 'max' ? '(valeur numérique)' : ''}</small>
+                </div>
+                
+                <div class="deequ-values-group" style="display: ${rule.type === 'allowed_values' ? 'block' : 'none'}">
+                    <label>Valeurs autorisées (séparées par des virgules):</label>
+                    <input type="text" class="deequ-values" data-id="${rule.id}" value="${rule.values.join(', ')}" placeholder="ex: ACTIF, INACTIF, SUSPENDU">
+                </div>
+            </div>
+        `;
+        container.appendChild(ruleDiv);
+    });
+    
+    // Attacher les événements
+    document.querySelectorAll('.remove-rule-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const id = parseInt(btn.dataset.id);
+            removeDeequRule(id);
+        });
+    });
+    
+    document.querySelectorAll('.deequ-type').forEach(select => {
+        select.addEventListener('change', (e) => {
+            const id = parseInt(select.dataset.id);
+            const newType = select.value;
+            updateDeequRule(id, "type", newType);
+            
+            // Afficher/masquer les champs appropriés
+            const ruleDiv = select.closest('.deequ-rule-card');
+            const thresholdGroup = ruleDiv.querySelector('.deequ-threshold-group');
+            const valuesGroup = ruleDiv.querySelector('.deequ-values-group');
+            
+            if (newType === 'allowed_values') {
+                thresholdGroup.style.display = 'none';
+                valuesGroup.style.display = 'block';
+            } else {
+                thresholdGroup.style.display = 'block';
+                valuesGroup.style.display = 'none';
+            }
+        });
+    });
+    
+    document.querySelectorAll('.deequ-column').forEach(select => {
+        select.addEventListener('change', (e) => {
+            const id = parseInt(select.dataset.id);
+            updateDeequRule(id, "column", select.value);
+        });
+    });
+    
+    document.querySelectorAll('.deequ-threshold').forEach(input => {
+        input.addEventListener('change', (e) => {
+            const id = parseInt(input.dataset.id);
+            updateDeequRule(id, "threshold", input.value);
+            input.value = deequRules.find(r => r.id === id)?.threshold ?? input.value;
+        });
+    });
+    
+    document.querySelectorAll('.deequ-values').forEach(input => {
+        input.addEventListener('change', (e) => {
+            const id = parseInt(input.dataset.id);
+            updateDeequRule(id, "values", input.value);
+        });
+    });
+}
+
 // ===================== Chargement des colonnes =====================
 async function loadColumns() {
     try {
@@ -20,6 +163,7 @@ async function loadColumns() {
         if (data.columns && Array.isArray(data.columns)) {
             window.columns = data.columns;
             console.log("📊 Colonnes chargées:", window.columns);
+            renderDeequRules(); // Re-render si déjà ouvert
         } else {
             console.warn("⚠️ Aucune colonne reçue depuis l'API.");
         }
@@ -71,8 +215,35 @@ document.getElementById("regexTest")?.addEventListener("change", e => {
     if (e.target.checked) renderRegexColumns();
 });
 
+// NOUVEAU : Listener Deequ
+document.getElementById("deequTest")?.addEventListener("change", e => {
+    const container = document.getElementById("deequ-container");
+    container?.classList.toggle("hidden", !e.target.checked);
+    if (e.target.checked && deequRules.length === 0) {
+        addDeequRule(); // Ajouter une règle par défaut
+    }
+});
+
+document.getElementById("addDeequRuleBtn")?.addEventListener("click", addDeequRule);
+
 // ===================== Lancer le DAG =====================
 document.getElementById("runDagBtn")?.addEventListener("click", async () => {
+    // Construire les règles Deequ au bon format
+    const deequRulesFormatted = deequRules
+        .filter(rule => rule.column) // Ignorer les règles sans colonne
+        .map(rule => {
+            const baseRule = {
+                type: rule.type,
+                column: rule.column
+            };
+            if (rule.type === "allowed_values") {
+                baseRule.values = rule.values;
+            } else {
+                baseRule.threshold = rule.threshold;
+            }
+            return baseRule;
+        });
+    
     const rules = {
         duplicates: {
             sensitive: document.getElementById("dupSensitive")?.checked ?
@@ -86,7 +257,8 @@ document.getElementById("runDagBtn")?.addEventListener("click", async () => {
                 Array.from(document.querySelectorAll(".regex-phone-col:checked")).map(e => e.value) : [],
             postal_code: document.getElementById("regexTest")?.checked ?
                 Array.from(document.querySelectorAll(".regex-postal-col:checked")).map(e => e.value) : []
-        }
+        },
+        deequ: document.getElementById("deequTest")?.checked ? deequRulesFormatted : []  // ← NOUVEAU
     };
 
     const token = localStorage.getItem("access_token");
