@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse
 import os
 
 from config import FRONTEND_DIR
-from routes import upload, dag, results, push_atlas, register, login, classifications, classifications_col, projects, descriptions, versionning, profile
+from routes import upload, dag, results, push_atlas, login, classifications, classifications_col, projects, descriptions, versionning, profile
 
 app = FastAPI()
 
@@ -47,8 +47,7 @@ app.add_middleware(
 app.include_router(upload.router)
 app.include_router(dag.router)
 app.include_router(results.router)
-app.include_router(push_atlas.router) 
-app.include_router(register.router)
+app.include_router(push_atlas.router)
 app.include_router(login.router)
 app.include_router(classifications.router)
 app.include_router(classifications_col.router)
