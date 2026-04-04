@@ -1,13 +1,7 @@
--- ======================================================
---  PFE — Initialisation complète (FULL RESET)
--- ======================================================
-
-
 SELECT pg_terminate_backend(pid)
 FROM pg_stat_activity
 WHERE datname = 'pfe_db'
   AND pid <> pg_backend_pid();
-
 
 -- Supprimer la base si elle existe
 DROP DATABASE IF EXISTS pfe_db;
@@ -39,8 +33,9 @@ CREATE TABLE IF NOT EXISTS users (
     employee_id VARCHAR(50) UNIQUE NOT NULL,
     username VARCHAR(100) NOT NULL,
     password_hash TEXT NOT NULL,
-    department VARCHAR(100) NOT NULL,      -- ajouté !
-    role VARCHAR(50) NOT NULL DEFAULT 'DATA_OWNER'
+    department VARCHAR(100) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'DATA_OWNER',
+    is_protected BOOLEAN DEFAULT FALSE     -- ← NOUVEAU
 );
 
 -- Donner tous les droits à pfe_user sur la table users

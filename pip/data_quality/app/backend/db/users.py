@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Column, Integer, String, Text, Boolean
 from db.connexion_db import Base
 
 class User(Base):
@@ -10,3 +10,4 @@ class User(Base):
     password_hash = Column(Text, nullable=False)
     department = Column(String(100), nullable=False)
     role = Column(String(50), nullable=False, default="DATA_OWNER")
+    is_protected = Column(Boolean, default=False)  # ← NOUVEAU

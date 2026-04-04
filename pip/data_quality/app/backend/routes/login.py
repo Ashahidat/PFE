@@ -22,14 +22,15 @@ def login(data: dict, db: Session = Depends(get_db)):
         user = db.query(User).filter(User.employee_id == data["employee_id"]).first()
         
         if not user:
-            # Créer le premier utilisateur comme ADMIN
+            # Créer le premier utilisateur comme ADMIN protégé
             hashed = pwd.hash(data["password"])
             user = User(
                 employee_id=data["employee_id"],
                 username=data.get("username", data["employee_id"]),
                 password_hash=hashed,
                 department=data.get("department", "ADMIN"),
-                role="ADMIN"
+                role="ADMIN",
+                is_protected=True  # ← PREMIER ADMIN PROTÉGÉ
             )
             db.add(user)
             db.commit()
@@ -78,6 +79,7 @@ def login(data: dict, db: Session = Depends(get_db)):
         "department": user.department,
         "employee_id": user.employee_id
     }
+
 
 @router.get("/users/count-admin")
 def check_admin_exists(db: Session = Depends(get_db)):

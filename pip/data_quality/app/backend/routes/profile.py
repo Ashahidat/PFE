@@ -40,6 +40,7 @@ class UserSummaryResponse(BaseModel):
     username: str
     department: str
     role: str
+    is_protected: bool  # ← NOUVEAU
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -93,13 +94,12 @@ def get_users(
     return db.query(User).order_by(User.username.asc()).all()
 
 
-
 class UserCreate(BaseModel):
     employee_id: str
     username: str
     password: str
     department: str
-    role: str  # "DATA_OWNER" ou "ADMIN"
+    role: str
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -110,12 +110,10 @@ def create_user(
     db: Session = Depends(get_db),
     user=Depends(require_role(["ADMIN"]))
 ):
-    # Vérifier si employee_id existe déjà
     existing = db.query(User).filter(User.employee_id == payload.employee_id).first()
     if existing:
-        raise HTTPException(status_code=400, detail="employee_id déjà utilisé")
+        raise HTTPException(status_code=怕, detail="employee_id déjà utilisé")
 
-    # Vérifier que le rôle est valide
     if payload.role not in ["DATA_OWNER", "ADMIN"]:
         raise HTTPException(status_code=400, detail="Rôle invalide. Utilisez DATA_OWNER ou ADMIN")
 
@@ -126,7 +124,8 @@ def create_user(
         username=payload.username,
         password_hash=hashed_password,
         department=payload.department,
-        role=payload.role
+        role=payload.role,
+        is_protected=False  # Les nouveaux utilisateurs ne sont pas protégés
     )
 
     db.add(new_user)
@@ -152,20 +151,23 @@ def update_user_by_admin(
     db: Session = Depends(get_db),
     admin_user=Depends(require_role(["ADMIN"]))
 ):
-    # Vérifier que l'utilisateur cible existe
     target_user = db.query(User).filter(User.employee_id == employee_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
 
-    # Vérifier qu'au moins un champ est fourni
+    # ✅ Vérifier si l'utilisateur est protégé
+    if target_user.is_protected:
+        raise HTTPException(
+            status_code=403, 
+            detail="Cet utilisateur est protégé et ne peut pas être modifié"
+        )
+
     if all(field is None for field in [payload.username, payload.password, payload.department, payload.role]):
         raise HTTPException(status_code=400, detail="Aucun champ à mettre à jour")
 
-    # Vérifier que le rôle est valide si fourni
     if payload.role is not None and payload.role not in ["DATA_OWNER", "ADMIN"]:
         raise HTTPException(status_code=400, detail="Rôle invalide. Utilisez DATA_OWNER ou ADMIN")
 
-    # Appliquer les modifications
     if payload.username is not None:
         target_user.username = payload.username
     if payload.password is not None:
