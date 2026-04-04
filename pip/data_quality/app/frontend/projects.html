@@ -11,7 +11,8 @@
     <div class="container">
         <h1>📁 Mes Projets</h1>
         
-        <div class="create-section">
+        <!-- ✅ Formulaire de création : caché pour AUDIT -->
+        <div id="createProjectSection" class="create-section">
             <h2>➕ Créer un projet</h2>
             <input type="text" id="projectName" placeholder="Nom du projet">
             <input type="text" id="projectDesc" placeholder="Description">
@@ -27,6 +28,14 @@
     </div>
     
     <script src="js/navbar.js"></script>
+    <script>
+        const role = localStorage.getItem("user_role");
+        // Cacher le formulaire de création pour AUDIT
+        if (role === "AUDIT") {
+            const createSection = document.getElementById("createProjectSection");
+            if (createSection) createSection.style.display = "none";
+        }
+    </script>
     <script src="js/projects.js"></script>
 </body>
 </html>

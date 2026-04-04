@@ -114,8 +114,8 @@ def create_user(
     if existing:
         raise HTTPException(status_code=怕, detail="employee_id déjà utilisé")
 
-    if payload.role not in ["DATA_OWNER", "ADMIN"]:
-        raise HTTPException(status_code=400, detail="Rôle invalide. Utilisez DATA_OWNER ou ADMIN")
+    if payload.role not in ["DATA_OWNER", "ADMIN", "AUDIT"]:
+        raise HTTPException(status_code=400, detail="Rôle invalide. Utilisez DATA_OWNER, ADMIN ou AUDIT")
 
     hashed_password = pwd.hash(payload.password)
 
@@ -165,8 +165,8 @@ def update_user_by_admin(
     if all(field is None for field in [payload.username, payload.password, payload.department, payload.role]):
         raise HTTPException(status_code=400, detail="Aucun champ à mettre à jour")
 
-    if payload.role is not None and payload.role not in ["DATA_OWNER", "ADMIN"]:
-        raise HTTPException(status_code=400, detail="Rôle invalide. Utilisez DATA_OWNER ou ADMIN")
+    if payload.role is not None and payload.role not in ["DATA_OWNER", "ADMIN", "AUDIT"]:
+        raise HTTPException(status_code=400, detail="Rôle invalide")
 
     if payload.username is not None:
         target_user.username = payload.username

@@ -146,3 +146,7 @@
 .logout-btn:hover {
     background: #5a6268;
 }
+
+.role-badge.audit {
+    background: #17a2b8;
+}

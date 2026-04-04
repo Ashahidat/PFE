@@ -26,24 +26,23 @@ async function loadUsers() {
         container.innerHTML = "";
         
         for (const u of users) {
-            // Ignorer l'admin connecté lui-même
             if (u.employee_id === localStorage.getItem("user_employee_id")) {
                 continue;
             }
             
             const div = document.createElement("div");
             div.className = "user-item";
-            const roleClass = u.role === 'ADMIN' ? 'admin' : 'data_owner';
             
-            // ✅ Vérifier si l'utilisateur est protégé
+            let roleClass = 'data_owner';
+            if (u.role === 'ADMIN') roleClass = 'admin';
+            else if (u.role === 'AUDIT') roleClass = 'audit';
+            
             const isProtected = u.is_protected === true;
             
-            // Badge protégé
             const protectedBadge = isProtected 
                 ? '<span style="background: #e74c3c; color: white; padding: 2px 6px; border-radius: 12px; font-size: 10px; margin-left: 5px;">🔒 Protégé</span>'
                 : '';
             
-            // Bouton Modifier (désactivé si protégé)
             const editButton = isProtected 
                 ? '<button disabled style="background: gray; cursor: not-allowed; padding: 5px 10px; border-radius: 3px; border: none;">🔒 Protégé</button>'
                 : `<button onclick="openEditForm('${u.employee_id}', '${u.username}', '${u.department}', '${u.role}')" style="background: #ffc107; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">✏️ Modifier</button>`;
@@ -133,6 +132,11 @@ document.getElementById("createBtn").addEventListener("click", async () => {
     
     if (!body.employee_id || !body.username || !body.password || !body.department) {
         alert("Tous les champs sont obligatoires");
+        return;
+    }
+    
+    if (!["DATA_OWNER", "ADMIN", "AUDIT"].includes(body.role)) {
+        alert("Rôle invalide");
         return;
     }
     
