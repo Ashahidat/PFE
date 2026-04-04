@@ -1,14 +1,12 @@
 const API_URL = "http://localhost:8000";
 const token = localStorage.getItem("access_token");
 
-// Vérification authentification et rôle ADMIN
 if (!token || localStorage.getItem("user_role") !== "ADMIN") {
     window.location.href = "index.html";
 }
 
 let currentEditEmployeeId = null;
 
-// Charger la liste des utilisateurs
 async function loadUsers() {
     try {
         const res = await fetch(`${API_URL}/users`, {
@@ -28,14 +26,12 @@ async function loadUsers() {
         container.innerHTML = "";
         
         for (const u of users) {
-            // ✅ Ignorer l'admin connecté lui-même
             if (u.employee_id === localStorage.getItem("user_employee_id")) {
                 continue;
             }
             
             const div = document.createElement("div");
             div.className = "user-item";
-            
             const roleClass = u.role === 'ADMIN' ? 'admin' : 'data_owner';
             
             div.innerHTML = `
@@ -56,7 +52,6 @@ async function loadUsers() {
     }
 }
 
-// Ouvrir le formulaire de modification
 window.openEditForm = function(empId, username, department, role) {
     currentEditEmployeeId = empId;
     document.getElementById("edit_username").value = username;
@@ -67,7 +62,6 @@ window.openEditForm = function(empId, username, department, role) {
     document.getElementById("editForm").scrollIntoView({ behavior: "smooth" });
 };
 
-// Sauvegarder les modifications
 document.getElementById("saveEditBtn").addEventListener("click", async () => {
     const body = {};
     const newUsername = document.getElementById("edit_username").value;
@@ -108,13 +102,11 @@ document.getElementById("saveEditBtn").addEventListener("click", async () => {
     }
 });
 
-// Annuler la modification
 document.getElementById("cancelEditBtn").addEventListener("click", () => {
     document.getElementById("editForm").classList.remove("active");
     currentEditEmployeeId = null;
 });
 
-// Créer un utilisateur
 document.getElementById("createBtn").addEventListener("click", async () => {
     const body = {
         employee_id: document.getElementById("emp_id").value,
@@ -155,11 +147,4 @@ document.getElementById("createBtn").addEventListener("click", async () => {
     }
 });
 
-// Déconnexion
-document.getElementById("logoutBtn").addEventListener("click", () => {
-    localStorage.clear();
-    window.location.href = "index.html";
-});
-
-// Chargement initial
 loadUsers();
