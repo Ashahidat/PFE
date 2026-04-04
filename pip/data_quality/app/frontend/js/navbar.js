@@ -13,8 +13,9 @@ function loadNavbar() {
     
     if (role === "ADMIN") {
         navHtml += `<a href="admin.html" style="color: white; text-decoration: none;">👥 Gestion users</a>`;
+        navHtml += `<a href="glossary.html" style="color: white; text-decoration: none;">📖 Glossaire</a>`; 
     }
-    
+        
     navHtml += `
             </div>
             <div style="display: flex; gap: 20px; align-items: center;">
