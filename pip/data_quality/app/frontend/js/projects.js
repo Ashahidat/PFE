@@ -18,15 +18,23 @@ async function loadProjects() {
 
 function displayProjects(projects) {
     const container = document.getElementById("projectsList");
+    const role = localStorage.getItem("user_role");
+    
     if (projects.length === 0) {
         container.innerHTML = '<p>Aucun projet</p>';
         return;
     }
+    
     let html = '';
     projects.forEach(p => {
         const badge = p.visibility === 'PUBLIC' 
             ? '<span style="background: #28a745; padding: 2px 8px; border-radius: 12px; font-size: 12px; color: white;">PUBLIC</span>'
             : '<span style="background: #ffc107; padding: 2px 8px; border-radius: 12px; font-size: 12px;">DÉPARTEMENT</span>';
+        
+        const actionButton = role === "AUDIT"
+            ? '<span style="color: gray; font-style: italic;">Lecture seule</span>'
+            : `<button onclick="selectProject('${p.id}', '${p.name}')" style="background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Utiliser</button>`;
+        
         html += `
             <div style="border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
@@ -34,7 +42,9 @@ function displayProjects(projects) {
                     <p style="margin: 5px 0;">${p.description || ''}</p>
                     <small>Créé par: ${p.owner_employee_id}</small>
                 </div>
-                <button onclick="selectProject('${p.id}', '${p.name}')" style="background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px;">Utiliser</button>
+                <div>
+                    ${actionButton}
+                </div>
             </div>
         `;
     });
@@ -47,7 +57,7 @@ window.selectProject = function(projectId, projectName) {
     window.location.href = "upload.html";
 };
 
-document.getElementById("createProjectBtn").addEventListener("click", async () => {
+document.getElementById("createProjectBtn")?.addEventListener("click", async () => {
     const name = document.getElementById("projectName").value;
     const description = document.getElementById("projectDesc").value;
     const visibility = document.querySelector('input[name="visibility"]:checked').value;
