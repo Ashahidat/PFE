@@ -2,8 +2,7 @@
 
 from sqlalchemy.orm import Session
 from db.users import User
-from typing import Optional, Dict
-
+from typing import Optional, Dict, List
 
 def get_user_info(db: Session, employee_id: str) -> Optional[Dict]:
     """
@@ -56,4 +55,32 @@ def get_or_create_user(
         db.add(user)
         db.flush()
 
+    return user
+
+def get_active_users(db: Session) -> List[User]:
+    """Récupère tous les utilisateurs actifs"""
+    return db.query(User).filter(User.is_active == True).order_by(User.username.asc()).all()
+
+def get_inactive_users(db: Session) -> List[User]:
+    """Récupère tous les utilisateurs inactifs"""
+    return db.query(User).filter(User.is_active == False).order_by(User.username.asc()).all()
+
+def deactivate_user(db: Session, employee_id: str) -> Optional[User]:
+    """Désactive un utilisateur"""
+    user = db.query(User).filter(User.employee_id == employee_id).first()
+    if not user:
+        return None
+    user.is_active = False
+    db.commit()
+    db.refresh(user)
+    return user
+
+def activate_user(db: Session, employee_id: str) -> Optional[User]:
+    """Réactive un utilisateur"""
+    user = db.query(User).filter(User.employee_id == employee_id).first()
+    if not user:
+        return None
+    user.is_active = True
+    db.commit()
+    db.refresh(user)
     return user

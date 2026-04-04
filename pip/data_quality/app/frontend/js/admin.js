@@ -38,24 +38,40 @@ async function loadUsers() {
             else if (u.role === 'AUDIT') roleClass = 'audit';
             
             const isProtected = u.is_protected === true;
+            const isActive = u.is_active !== false; // par défaut true
+            
+            // Badge statut actif/inactif
+            const statusBadge = isActive
+                ? '<span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 12px; font-size: 10px; margin-left: 5px;">✓ Actif</span>'
+                : '<span style="background: #6c757d; color: white; padding: 2px 6px; border-radius: 12px; font-size: 10px; margin-left: 5px;">⛔ Inactif</span>';
             
             const protectedBadge = isProtected 
                 ? '<span style="background: #e74c3c; color: white; padding: 2px 6px; border-radius: 12px; font-size: 10px; margin-left: 5px;">🔒 Protégé</span>'
                 : '';
             
+            // Bouton Modifier (désactivé si protégé)
             const editButton = isProtected 
                 ? '<button disabled style="background: gray; cursor: not-allowed; padding: 5px 10px; border-radius: 3px; border: none;">🔒 Protégé</button>'
-                : `<button onclick="openEditForm('${u.employee_id}', '${u.username}', '${u.department}', '${u.role}')" style="background: #ffc107; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">✏️ Modifier</button>`;
+                : `<button onclick="openEditForm('${u.employee_id}', '${u.username}', '${u.department}', '${u.role}', ${isActive})" style="background: #ffc107; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">✏️ Modifier</button>`;
+            
+            // Bouton Activer/Désactiver (si non protégé)
+            const toggleButton = !isProtected
+                ? (isActive
+                    ? `<button onclick="toggleUserStatus('${u.employee_id}', false)" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-left: 5px;">🔴 Désactiver</button>`
+                    : `<button onclick="toggleUserStatus('${u.employee_id}', true)" style="background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-left: 5px;">🟢 Activer</button>`)
+                : '';
             
             div.innerHTML = `
                 <div>
                     <strong>${u.employee_id}</strong> - ${u.username} 
                     <span style="color: gray;">(${u.department})</span> 
                     <span class="role-badge ${roleClass}">${u.role}</span>
+                    ${statusBadge}
                     ${protectedBadge}
                 </div>
                 <div>
                     ${editButton}
+                    ${toggleButton}
                 </div>
             `;
             container.appendChild(div);
@@ -66,12 +82,40 @@ async function loadUsers() {
     }
 }
 
-window.openEditForm = function(empId, username, department, role) {
+// Fonction pour activer/désactiver un utilisateur
+window.toggleUserStatus = async function(employeeId, activate) {
+    const action = activate ? "activer" : "désactiver";
+    if (!confirm(`Voulez-vous vraiment ${action} cet utilisateur ?`)) return;
+    
+    try {
+        const res = await fetch(`${API_URL}/users/${employeeId}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({ is_active: activate })
+        });
+        
+        if (res.ok) {
+            alert(`✅ Utilisateur ${action} avec succès`);
+            loadUsers();
+        } else {
+            const err = await res.json();
+            alert("❌ Erreur: " + (err.detail || "Erreur inconnue"));
+        }
+    } catch (err) {
+        alert("❌ Erreur de connexion");
+    }
+};
+
+window.openEditForm = function(empId, username, department, role, isActive) {
     currentEditEmployeeId = empId;
     document.getElementById("edit_username").value = username;
     document.getElementById("edit_department").value = department;
     document.getElementById("edit_role").value = role;
     document.getElementById("edit_password").value = "";
+    document.getElementById("edit_is_active").value = isActive ? "true" : "false";
     document.getElementById("editForm").classList.add("active");
     document.getElementById("editForm").scrollIntoView({ behavior: "smooth" });
 };
@@ -82,13 +126,17 @@ document.getElementById("saveEditBtn").addEventListener("click", async () => {
     const newDepartment = document.getElementById("edit_department").value;
     const newRole = document.getElementById("edit_role").value;
     const newPassword = document.getElementById("edit_password").value;
+    const newIsActive = document.getElementById("edit_is_active").value === "true";
     
     if (newUsername) body.username = newUsername;
     if (newDepartment) body.department = newDepartment;
     if (newRole) body.role = newRole;
     if (newPassword && newPassword !== "") body.password = newPassword;
+    body.is_active = newIsActive;
     
-    if (Object.keys(body).length === 0) {
+    if (Object.keys(body).length === 1 && body.is_active !== undefined) {
+        // Seulement le statut actif/inactif change
+    } else if (Object.keys(body).length === 0) {
         alert("Aucune modification à enregistrer");
         return;
     }

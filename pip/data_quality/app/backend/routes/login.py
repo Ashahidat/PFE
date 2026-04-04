@@ -18,11 +18,9 @@ def login(data: dict, db: Session = Depends(get_db)):
     # CAS 1 : Premier lancement - aucun admin n'existe
     # =========================================================
     if not admin_exists:
-        # Chercher si l'utilisateur existe déjà
         user = db.query(User).filter(User.employee_id == data["employee_id"]).first()
         
         if not user:
-            # Créer le premier utilisateur comme ADMIN protégé
             hashed = pwd.hash(data["password"])
             user = User(
                 employee_id=data["employee_id"],
@@ -30,13 +28,13 @@ def login(data: dict, db: Session = Depends(get_db)):
                 password_hash=hashed,
                 department=data.get("department", "ADMIN"),
                 role="ADMIN",
-                is_protected=True  # ← PREMIER ADMIN PROTÉGÉ
+                is_protected=True,
+                is_active=True
             )
             db.add(user)
             db.commit()
             db.refresh(user)
         
-        # Générer le token
         token = create_access_token({
             "sub": user.employee_id,
             "username": user.username,
@@ -60,6 +58,10 @@ def login(data: dict, db: Session = Depends(get_db)):
     
     if not user:
         raise HTTPException(status_code=400, detail="Identifiants incorrects")
+    
+    # ✅ Vérifier si le compte est actif
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Ce compte est désactivé. Contactez votre administrateur.")
     
     if not pwd.verify(data["password"], user.password_hash):
         raise HTTPException(status_code=400, detail="Identifiants incorrects")

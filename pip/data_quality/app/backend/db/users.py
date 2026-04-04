@@ -10,4 +10,5 @@ class User(Base):
     password_hash = Column(Text, nullable=False)
     department = Column(String(100), nullable=False)
     role = Column(String(50), nullable=False, default="DATA_OWNER")
-    is_protected = Column(Boolean, default=False)  # ← NOUVEAU
+    is_protected = Column(Boolean, default=False) 
+    is_active = Column(Boolean, default=True)

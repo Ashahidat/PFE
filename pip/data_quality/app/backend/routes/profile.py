@@ -40,7 +40,8 @@ class UserSummaryResponse(BaseModel):
     username: str
     department: str
     role: str
-    is_protected: bool  # ← NOUVEAU
+    is_protected: bool
+    is_active: bool  # ← NOUVEAU
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -112,10 +113,10 @@ def create_user(
 ):
     existing = db.query(User).filter(User.employee_id == payload.employee_id).first()
     if existing:
-        raise HTTPException(status_code=怕, detail="employee_id déjà utilisé")
+        raise HTTPException(status_code=400, detail="employee_id déjà utilisé")
 
     if payload.role not in ["DATA_OWNER", "ADMIN", "AUDIT"]:
-        raise HTTPException(status_code=400, detail="Rôle invalide. Utilisez DATA_OWNER, ADMIN ou AUDIT")
+        raise HTTPException(status_code=400, detail="Rôle invalide")
 
     hashed_password = pwd.hash(payload.password)
 
@@ -125,7 +126,8 @@ def create_user(
         password_hash=hashed_password,
         department=payload.department,
         role=payload.role,
-        is_protected=False  # Les nouveaux utilisateurs ne sont pas protégés
+        is_protected=False,
+        is_active=True
     )
 
     db.add(new_user)
@@ -140,8 +142,7 @@ class UserUpdate(BaseModel):
     password: str | None = None
     department: str | None = None
     role: str | None = None
-
-    model_config = ConfigDict(extra="forbid")
+    is_active: bool | None = None  # ← NOUVEAU
 
 
 @router.put("/users/{employee_id}", response_model=UserSummaryResponse)
@@ -155,14 +156,13 @@ def update_user_by_admin(
     if not target_user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
 
-    # ✅ Vérifier si l'utilisateur est protégé
     if target_user.is_protected:
         raise HTTPException(
             status_code=403, 
             detail="Cet utilisateur est protégé et ne peut pas être modifié"
         )
 
-    if all(field is None for field in [payload.username, payload.password, payload.department, payload.role]):
+    if all(field is None for field in [payload.username, payload.password, payload.department, payload.role, payload.is_active]):
         raise HTTPException(status_code=400, detail="Aucun champ à mettre à jour")
 
     if payload.role is not None and payload.role not in ["DATA_OWNER", "ADMIN", "AUDIT"]:
@@ -176,6 +176,8 @@ def update_user_by_admin(
         target_user.department = payload.department
     if payload.role is not None:
         target_user.role = payload.role
+    if payload.is_active is not None:
+        target_user.is_active = payload.is_active
 
     db.commit()
     db.refresh(target_user)
