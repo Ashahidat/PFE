@@ -42,30 +42,27 @@ def trigger_dag(dag_id: str, config: dict):
         return None, response
 
 
-def get_dag_status(dag_run_id: str):
+def get_dag_status(dag_run_id: str, dag_id: str | None = None):
     """Récupère le statut d'un DAG run"""
-    # L'API Airflow peut chercher sans spécifier le DAG ID
-    # Mais il faut utiliser le bon endpoint
-    url = f"{AIRFLOW_API_BASE}/dagRuns/{urllib.parse.quote(dag_run_id)}"
-    
-    print(f"🔍 Appel Airflow API: {url}")
-    
-    resp = requests.get(url, auth=HTTPBasicAuth(AIRFLOW_USER, AIRFLOW_PASSWORD))
-    
-    try:
-        data = resp.json()
-        print("Airflow DAG status response:", data)
-    except Exception:
-        print("Erreur Airflow:", resp.text)
-        return None
+    if dag_id:
+        url = f"{AIRFLOW_API_BASE}/dags/{dag_id}/dagRuns/{urllib.parse.quote(dag_run_id)}"
+        print(f"🔍 Appel Airflow API (dag-specific): {url}")
+        resp = requests.get(url, auth=HTTPBasicAuth(AIRFLOW_USER, AIRFLOW_PASSWORD))
+        try:
+            data = resp.json()
+            print("Airflow DAG status response:", data)
+        except Exception:
+            print("Erreur Airflow:", resp.text)
+            data = {}
 
-    if resp.status_code == 200:
-        return data.get("state")
-    
+        if resp.status_code == 200:
+            return data.get("state")
+        print("ℹ️ Pas de run trouvé pour ce DAG spécifique, fallback generique.")
+
     # Fallback : chercher dans tous les DAGs (plus lent)
     dags_url = f"{AIRFLOW_API_BASE}/dags"
     dags_resp = requests.get(dags_url, auth=HTTPBasicAuth(AIRFLOW_USER, AIRFLOW_PASSWORD))
-    
+
     if dags_resp.status_code == 200:
         for dag in dags_resp.json().get("dags", []):
             dag_id = dag["dag_id"]
@@ -73,5 +70,5 @@ def get_dag_status(dag_run_id: str):
             resp2 = requests.get(dag_run_url, auth=HTTPBasicAuth(AIRFLOW_USER, AIRFLOW_PASSWORD))
             if resp2.status_code == 200:
                 return resp2.json().get("state")
-    
+
     return None

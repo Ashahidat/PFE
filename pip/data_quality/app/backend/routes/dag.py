@@ -28,8 +28,9 @@ async def run_dag(request: DAGRunRequest, db: Session = Depends(get_db), user=De
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset introuvable")
 
+    dag_id = "modular_validation_dag"
     config = {"file_path": dataset.file_path, "rules": request.rules}
-    dag_run_id, resp = trigger_dag("modular_validation_dag", config)
+    dag_run_id, resp = trigger_dag(dag_id, config)
     if not dag_run_id:
         raise HTTPException(status_code=500, detail="Erreur lancement DAG")
 
@@ -37,7 +38,7 @@ async def run_dag(request: DAGRunRequest, db: Session = Depends(get_db), user=De
         id=str(uuid.uuid4()),
         dataset_id=dataset.id,
         dag_run_id=dag_run_id,
-        rules=request.rules,
+        rules={"dag_id": dag_id, "payload": request.rules},
         status="running"
     )
     db.add(dag_run)
@@ -71,11 +72,12 @@ async def run_dag_v2(
     if not dag_run_id:
         raise HTTPException(status_code=500, detail="Erreur lancement DAG")
 
+    dag_id = "data_quality_pipeline_v2"
     dag_run = DAGRun(
         id=str(uuid.uuid4()),
         dataset_id=dataset.id,
         dag_run_id=dag_run_id,
-        rules=request.rules,
+        rules={"dag_id": dag_id, "payload": request.rules},
         status="running"
     )
     db.add(dag_run)
@@ -90,7 +92,9 @@ async def dag_status(dag_run_id: str, db: Session = Depends(get_db), user=Depend
     if not dag_run:
         raise HTTPException(status_code=404, detail="DAG Run introuvable")
 
-    state = get_dag_status(dag_run.dag_run_id)
+    dag_rules = dag_run.rules or {}
+    dag_id = dag_rules.get("dag_id") if isinstance(dag_rules, dict) else None
+    state = get_dag_status(dag_run.dag_run_id, dag_id=dag_id)
     dag_run.status = state
     db.commit()
     return {"state": state}

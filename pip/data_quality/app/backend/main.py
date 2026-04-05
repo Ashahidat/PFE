@@ -1,4 +1,6 @@
+import logging
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 # ============================================================================
@@ -17,6 +19,23 @@ sys.path.insert(0, str(BACKEND_DIR))
 print(f"BASE_DIR: {BASE_DIR}")
 print(f"BACKEND_DIR: {BACKEND_DIR}")
 print(f"sys.path: {sys.path[:3]}")
+
+# ============================================================================
+# LOGGING
+# ============================================================================
+LOGS_DIR = BASE_DIR / "logs"
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOGS_DIR / "backend.log"
+
+root_logger = logging.getLogger()
+if not root_logger.handlers:
+    handler = RotatingFileHandler(LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+    )
+    root_logger.addHandler(handler)
+root_logger.setLevel(logging.DEBUG)
 
 # ============================================================================
 # IMPORTS

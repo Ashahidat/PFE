@@ -11,6 +11,7 @@ from atlas.client import (
     atlas_post,
     ATLAS_GLOSSARY_URL,
     ATLAS_GLOSSARY_TERM_URL,
+    ATLAS_GLOSSARY_TERMS_URL,
     AUTH,
     HEADERS,
 )
@@ -242,7 +243,7 @@ def sync_glossary_terms(glossaries: List[Glossary], db: Session | None = None) -
 
 def _get_assigned_entities(term_guid: str) -> List[Dict]:
     try:
-        res = atlas_get(f"{ATLAS_GLOSSARY_TERM_URL}/{term_guid}/assignedEntities")
+        res = atlas_get(f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities")
         data = res.json() if res and res.ok else {}
     except Exception as exc:
         logger.warning(f"Impossible de récupérer assignedEntities pour {term_guid}: {exc}")
@@ -296,7 +297,9 @@ def assign_terms_to_entity(
             logger.debug(f"Terme {term_guid} déjà assigné à {entity_guid}, skip")
             continue
         try:
-            url = f"{ATLAS_GLOSSARY_TERM_URL}/{term_guid}/assignedEntities"
+            # L'endpoint Atlas attendu pour l'assignation est au pluriel `/terms/{guid}/assignedEntities`
+            # (voir application.log: NotFound sur /term/.../assignedEntities).
+            url = f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities"
             res = requests.post(url, json=payload, auth=AUTH, headers=HEADERS)
             if res.status_code not in (200, 204):
                 logger.warning(
