@@ -1,6 +1,10 @@
 const API_URL = "http://localhost:8000";
 const token = localStorage.getItem("access_token");
 const role = localStorage.getItem("user_role");
+const glossaryAccessRoles = ["SUPER_ADMIN", "ADMIN", "ADMIN_GLOSSAIRE"];
+if (!glossaryAccessRoles.includes(role)) {
+    window.location.href = "projects.html";
+}
 
 if (!token) {
     window.location.href = "index.html";

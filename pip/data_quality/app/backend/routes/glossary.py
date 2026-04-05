@@ -38,8 +38,11 @@ from db.dataset_glossary_crud import (
 )
 from jwt_dependencies import get_current_user
 from core.permissions import require_role
+from core.roles import ADMIN, ADMIN_GLOSSAIRE, DATA_OWNER
 
 router = APIRouter(tags=["glossary"])
+GLOSSARY_MANAGERS = [ADMIN, ADMIN_GLOSSAIRE]
+GLOSSARY_ASSIGNERS = [ADMIN, ADMIN_GLOSSAIRE, DATA_OWNER]
 
 
 from pydantic import BaseModel
@@ -185,7 +188,7 @@ def list_categories(
 def create_category_route(
     payload: CategoryCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN"]))
+    user=Depends(require_role(GLOSSARY_MANAGERS))
 ):
     glossary = get_glossary_by_id(db, payload.glossary_id)
     if not glossary:
@@ -222,7 +225,7 @@ def update_category_route(
     category_id: int,
     payload: CategoryUpdate,
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN"]))
+    user=Depends(require_role(GLOSSARY_MANAGERS))
 ):
     category = get_category_by_id(db, category_id)
     if not category:
@@ -254,7 +257,7 @@ def update_category_route(
 def delete_category_route(
     category_id: int,
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN"]))
+    user=Depends(require_role(GLOSSARY_MANAGERS))
 ):
     if not delete_category(db, category_id):
         raise HTTPException(status_code=404, detail="Catégorie non trouvée")
@@ -265,7 +268,7 @@ def delete_category_route(
 def create_glossary_route(
     payload: GlossaryCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN"]))
+    user=Depends(require_role(GLOSSARY_MANAGERS))
 ):
     existing = db.query(Glossary).filter(Glossary.qualified_name == payload.qualified_name).first()
     if existing:
@@ -295,7 +298,7 @@ def update_glossary_route(
     glossary_id: int,
     payload: GlossaryUpdate,
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN"]))
+    user=Depends(require_role(GLOSSARY_MANAGERS))
 ):
     glossary = get_glossary_by_id(db, glossary_id)
     if not glossary:
@@ -325,7 +328,7 @@ def update_glossary_route(
 def delete_glossary_route(
     glossary_id: int,
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN"]))
+    user=Depends(require_role(GLOSSARY_MANAGERS))
 ):
     glossary = get_glossary_by_id(db, glossary_id)
     if not glossary:
@@ -376,7 +379,7 @@ def assign_term_to_dataset_route(
     dataset_id: str,
     payload: DatasetAssignmentCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN", "DATA_OWNER"]))
+    user=Depends(require_role(GLOSSARY_ASSIGNERS))
 ):
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
@@ -421,7 +424,7 @@ def remove_dataset_term_assignment(
     term_id: int,
     column_name: str | None = Query(None),
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN", "DATA_OWNER"]))
+    user=Depends(require_role(GLOSSARY_ASSIGNERS))
 ):
     success = remove_assignment(db, dataset_id, term_id, column_name=column_name)
     if not success:
@@ -454,7 +457,7 @@ def get_terms(
 def create_term_route(
     payload: TermCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN"]))
+    user=Depends(require_role(GLOSSARY_MANAGERS))
 ):
     glossary = get_glossary_by_id(db, payload.glossary_id)
     if not glossary:
@@ -498,7 +501,7 @@ def update_term_route(
     term_id: int,
     payload: TermUpdate,
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN"]))
+    user=Depends(require_role(GLOSSARY_MANAGERS))
 ):
     term = get_term_by_id(db, term_id)
     if not term:
@@ -536,7 +539,7 @@ def update_term_route(
 def delete_term_route(
     term_id: int,
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN"]))
+    user=Depends(require_role(GLOSSARY_MANAGERS))
 ):
     term = get_term_by_id(db, term_id)
     if not term:

@@ -1,7 +1,9 @@
 const API_URL = "http://localhost:8000";
 const token = localStorage.getItem("access_token");
+const viewerRole = localStorage.getItem("user_role");
+const allowedRoles = ["SUPER_ADMIN", "ADMIN", "ADMIN_GLOSSAIRE"];
 
-if (!token || localStorage.getItem("user_role") !== "ADMIN") {
+if (!token || !allowedRoles.includes(viewerRole)) {
     window.location.href = "index.html";
 }
 
@@ -36,9 +38,13 @@ async function loadUsers() {
             let roleClass = 'data_owner';
             if (u.role === 'ADMIN') roleClass = 'admin';
             else if (u.role === 'AUDIT') roleClass = 'audit';
+            else if (u.role === 'SUPER_ADMIN') roleClass = 'super_admin';
+            else if (u.role === 'ADMIN_GLOSSAIRE') roleClass = 'admin_glossaire';
             
             const isProtected = u.is_protected === true;
             const isActive = u.is_active !== false; // par défaut true
+            const isSuperTarget = u.role === 'SUPER_ADMIN';
+            const canInteractWithTarget = (viewerRole === 'SUPER_ADMIN' || !isSuperTarget) && (!isProtected || viewerRole === 'SUPER_ADMIN');
             
             // Badge statut actif/inactif
             const statusBadge = isActive
@@ -50,12 +56,12 @@ async function loadUsers() {
                 : '';
             
             // Bouton Modifier (désactivé si protégé)
-            const editButton = isProtected 
-                ? '<button disabled style="background: gray; cursor: not-allowed; padding: 5px 10px; border-radius: 3px; border: none;">🔒 Protégé</button>'
-                : `<button onclick="openEditForm('${u.employee_id}', '${u.username}', '${u.department}', '${u.role}', ${isActive})" style="background: #ffc107; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">✏️ Modifier</button>`;
+            const editButton = canInteractWithTarget
+                ? `<button onclick="openEditForm('${u.employee_id}', '${u.username}', '${u.department}', '${u.role}', ${isActive})" style="background: #ffc107; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">✏️ Modifier</button>`
+                : '<button disabled style="background: gray; cursor: not-allowed; padding: 5px 10px; border-radius: 3px; border: none;">🔒 Protégé</button>';
             
             // Bouton Activer/Désactiver (si non protégé)
-            const toggleButton = !isProtected
+            const toggleButton = canInteractWithTarget
                 ? (isActive
                     ? `<button onclick="toggleUserStatus('${u.employee_id}', false)" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-left: 5px;">🔴 Désactiver</button>`
                     : `<button onclick="toggleUserStatus('${u.employee_id}', true)" style="background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-left: 5px;">🟢 Activer</button>`)
@@ -183,7 +189,7 @@ document.getElementById("createBtn").addEventListener("click", async () => {
         return;
     }
     
-    if (!["DATA_OWNER", "ADMIN", "AUDIT"].includes(body.role)) {
+    if (!["DATA_OWNER", "ADMIN", "SUPER_ADMIN", "AUDIT"].includes(body.role)) {
         alert("Rôle invalide");
         return;
     }

@@ -11,9 +11,10 @@ function loadNavbar() {
                 <a href="projects.html" style="color: white; text-decoration: none; font-weight: bold;">📁 Projets</a>
     `;
     
-    if (role === "ADMIN") {
-        navHtml += `<a href="admin.html" style="color: white; text-decoration: none;">👥 Gestion users</a>`;
+    const adminRoles = ["ADMIN", "ADMIN_GLOSSAIRE", "SUPER_ADMIN"];
+    if (adminRoles.includes(role)) {
         navHtml += `<a href="glossary.html" style="color: white; text-decoration: none;">📖 Glossaire</a>`;
+        navHtml += `<a href="admin.html" style="color: white; text-decoration: none;">👥 Gestion users</a>`;
     }
         
     navHtml += `

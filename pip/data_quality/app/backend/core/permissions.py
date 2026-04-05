@@ -5,6 +5,14 @@ from db.connexion_db import get_db
 from db.projects import Project
 from db.users import User
 from jwt_dependencies import get_current_user
+from core.roles import (
+    SUPER_ADMIN,
+    ADMINISTRATORS,
+    PROJECT_CREATORS,
+    USER_MANAGERS,
+    DATA_OWNER,
+    AUDIT,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,11 +22,11 @@ def can_view_project(user: dict, project: Project, db: Session) -> bool:
     Vérifie si un utilisateur peut voir un projet
     """
     # ADMIN et AUDIT voient tout
-    if user["role"] in ["ADMIN", "AUDIT"]:
+    if user.get("role") in ADMINISTRATORS or user.get("role") == AUDIT:
         return True
     
     # DATA_OWNER
-    if user["role"] == "DATA_OWNER":
+    if user.get("role") == DATA_OWNER:
         # PUBLIC : tout le monde voit
         if project.visibility == "PUBLIC":
             return True
@@ -44,11 +52,11 @@ def can_upload_to_project(user: dict, project: Project, db: Session) -> bool:
     Vérifie si un utilisateur peut uploader dans un projet
     """
     # ADMIN peut uploader partout
-    if user["role"] == "ADMIN":
+    if user.get("role") in ADMINISTRATORS:
         return True
     
     # DATA_OWNER
-    if user["role"] == "DATA_OWNER":
+    if user.get("role") == DATA_OWNER:
         # PUBLIC : tout DATA_OWNER peut uploader
         if project.visibility == "PUBLIC":
             return True
@@ -71,16 +79,16 @@ def can_upload_to_project(user: dict, project: Project, db: Session) -> bool:
 
 def can_manage_users(user: dict) -> bool:
     """
-    Seul ADMIN peut gérer les utilisateurs
+    Seul SUPER_ADMIN peut gérer les utilisateurs
     """
-    return user["role"] == "ADMIN"
+    return user.get("role") in USER_MANAGERS
 
 
 def can_create_project(user: dict) -> bool:
     """
     Qui peut créer des projets ?
     """
-    return user["role"] in ["ADMIN", "DATA_OWNER"]
+    return user.get("role") in PROJECT_CREATORS
 
 
 def require_project_access(project_id: str, access_type: str = "view"):
@@ -114,11 +122,25 @@ def require_role(roles: list):
     Dépendance FastAPI pour vérifier le rôle
     """
     def dependency(user: dict = Depends(get_current_user)):
-        if user["role"] not in roles:
+        user_role = user.get("role")
+        if user_role != SUPER_ADMIN and user_role not in roles:
             raise HTTPException(
                 status_code=403, 
                 detail=f"Rôle requis: {', '.join(roles)}"
             )
         return user
-    
+
+    return dependency
+
+
+def require_super_admin():
+    """Dépendance FastAPI pour restreindre les routes aux SUPER_ADMIN."""
+    def dependency(user: dict = Depends(get_current_user)):
+        if user.get("role") != SUPER_ADMIN:
+            raise HTTPException(
+                status_code=403,
+                detail="Super-admin requis"
+            )
+        return user
+
     return dependency

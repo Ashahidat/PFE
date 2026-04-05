@@ -8,7 +8,7 @@ async function checkAdminExists() {
         const infoMessage = document.getElementById("infoMessage");
         
         if (data.admin_exists === false) {
-            infoMessage.innerHTML = "🔒 Premier lancement ? Le premier compte créé sera automatiquement ADMIN.";
+            infoMessage.innerHTML = "🔒 Premier lancement ? Le premier compte créé sera automatiquement SUPER_ADMIN et pourra gérer les comptes.";
         } else {
             infoMessage.innerHTML = "🔒 Contactez votre administrateur pour obtenir un accès.";
         }
@@ -55,11 +55,13 @@ document.getElementById("loginBtn").addEventListener("click", async () => {
         status.className = "success";
 
         setTimeout(() => {
-            if (data.role === "ADMIN") {
-                window.location.href = "admin.html";
-            } else {
-                window.location.href = "projects.html";
+            let destination = "projects.html";
+            if (data.role === "SUPER_ADMIN" || data.role === "ADMIN") {
+                destination = "admin.html";
+            } else if (data.role === "ADMIN_GLOSSAIRE") {
+                destination = "glossary.html";
             }
+            window.location.href = destination;
         }, 1000);
 
     } catch (err) {

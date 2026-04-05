@@ -132,6 +132,14 @@
     background: #28a745;
 }
 
+.role-badge.super_admin {
+    background: #6f42c1;
+}
+
+.role-badge.admin_glossaire {
+    background: #fd7e14;
+}
+
 /* Déconnexion */
 .logout-btn {
     margin-top: 20px;

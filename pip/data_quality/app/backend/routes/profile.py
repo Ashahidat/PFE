@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from core.permissions import require_role
+from core.roles import ADMIN, ADMIN_GLOSSAIRE, SUPER_ADMIN, is_valid_role
 from db.connexion_db import get_db
 from db.users import User
 from jwt_dependencies import get_current_user
@@ -87,12 +88,20 @@ def update_me(
     return db_user
 
 
+def _build_user_query(db: Session, include_super_admin: bool):
+    query = db.query(User)
+    if not include_super_admin:
+        query = query.filter(User.role != SUPER_ADMIN)
+    return query.order_by(User.username.asc())
+
+
 @router.get("/users", response_model=list[UserSummaryResponse])
 def get_users(
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN"]))
+    user=Depends(require_role([ADMIN, ADMIN_GLOSSAIRE]))
 ):
-    return db.query(User).order_by(User.username.asc()).all()
+    include_super_admin = user.get("role") == SUPER_ADMIN
+    return _build_user_query(db, include_super_admin).all()
 
 
 class UserCreate(BaseModel):
@@ -109,14 +118,16 @@ class UserCreate(BaseModel):
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_role(["ADMIN"]))
+    user=Depends(require_role([ADMIN, ADMIN_GLOSSAIRE]))
 ):
     existing = db.query(User).filter(User.employee_id == payload.employee_id).first()
     if existing:
         raise HTTPException(status_code=400, detail="employee_id déjà utilisé")
 
-    if payload.role not in ["DATA_OWNER", "ADMIN", "AUDIT"]:
+    if not is_valid_role(payload.role):
         raise HTTPException(status_code=400, detail="Rôle invalide")
+    if payload.role == SUPER_ADMIN and user.get("role") != SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Seul un super-admin peut créer un super-admin")
 
     hashed_password = pwd.hash(payload.password)
 
@@ -126,7 +137,7 @@ def create_user(
         password_hash=hashed_password,
         department=payload.department,
         role=payload.role,
-        is_protected=False,
+        is_protected=(payload.role == SUPER_ADMIN),
         is_active=True
     )
 
@@ -150,23 +161,33 @@ def update_user_by_admin(
     employee_id: str,
     payload: UserUpdate,
     db: Session = Depends(get_db),
-    admin_user=Depends(require_role(["ADMIN"]))
+    admin_user=Depends(require_role([ADMIN, ADMIN_GLOSSAIRE]))
 ):
     target_user = db.query(User).filter(User.employee_id == employee_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
 
-    if target_user.is_protected:
+    if target_user.is_protected and target_user.employee_id != admin_user.get("employee_id") and admin_user.get("role") != SUPER_ADMIN:
         raise HTTPException(
-            status_code=403, 
+            status_code=403,
             detail="Cet utilisateur est protégé et ne peut pas être modifié"
+        )
+    if target_user.role == SUPER_ADMIN and admin_user.get("role") != SUPER_ADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="Seul un super-admin peut modifier un autre super-admin"
         )
 
     if all(field is None for field in [payload.username, payload.password, payload.department, payload.role, payload.is_active]):
         raise HTTPException(status_code=400, detail="Aucun champ à mettre à jour")
 
-    if payload.role is not None and payload.role not in ["DATA_OWNER", "ADMIN", "AUDIT"]:
+    if payload.role is not None and not is_valid_role(payload.role):
         raise HTTPException(status_code=400, detail="Rôle invalide")
+    if payload.role == SUPER_ADMIN and admin_user.get("role") != SUPER_ADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="Seul un super-admin peut assigner le rôle super-admin"
+        )
 
     if payload.username is not None:
         target_user.username = payload.username
