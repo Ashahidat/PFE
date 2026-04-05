@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from core.permissions import require_role
-from core.roles import ADMIN, ADMIN_GLOSSAIRE, SUPER_ADMIN, is_valid_role
+from core.roles import ADMIN, ADMIN_GLOSSAIRE, SUPER_ADMIN, CRITICAL_ROLES, is_valid_role, ROLE_LIMITS
 from db.connexion_db import get_db
 from db.users import User
 from jwt_dependencies import get_current_user
@@ -95,6 +95,45 @@ def _build_user_query(db: Session, include_super_admin: bool):
     return query.order_by(User.username.asc())
 
 
+def _ensure_role_quota(db: Session, role: str, exclude_employee_id: str | None = None):
+    limit = ROLE_LIMITS.get(role)
+    if not limit or limit <= 0:
+        return
+
+    query = db.query(User).filter(User.role == role, User.is_active == True)
+    if exclude_employee_id:
+        query = query.filter(User.employee_id != exclude_employee_id)
+
+    if query.count() >= limit:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Limite atteinte : il ne peut y avoir que {limit} {role.replace('_', ' ').lower()} en actif en même temps."
+        )
+
+
+def _get_role_counts(db: Session) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for role in ROLE_LIMITS:
+        counts[role] = db.query(User).filter(User.role == role, User.is_active == True).count()
+    return counts
+
+
+@router.get("/users/role-counts")
+def get_role_counts(
+    db: Session = Depends(get_db),
+    user=Depends(require_role([ADMIN, ADMIN_GLOSSAIRE]))
+):
+    counts = _get_role_counts(db)
+    return [
+        {
+            "role": role,
+            "count": counts.get(role, 0),
+            "limit": ROLE_LIMITS.get(role, 0)
+        }
+        for role in ROLE_LIMITS
+    ]
+
+
 @router.get("/users", response_model=list[UserSummaryResponse])
 def get_users(
     db: Session = Depends(get_db),
@@ -126,8 +165,9 @@ def create_user(
 
     if not is_valid_role(payload.role):
         raise HTTPException(status_code=400, detail="Rôle invalide")
-    if payload.role == SUPER_ADMIN and user.get("role") != SUPER_ADMIN:
-        raise HTTPException(status_code=403, detail="Seul un super-admin peut créer un super-admin")
+    if payload.role in CRITICAL_ROLES and user.get("role") != SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Seuls les super-admins peuvent assigner les rôles critiques")
+    _ensure_role_quota(db, payload.role)
 
     hashed_password = pwd.hash(payload.password)
 
@@ -137,7 +177,7 @@ def create_user(
         password_hash=hashed_password,
         department=payload.department,
         role=payload.role,
-        is_protected=(payload.role == SUPER_ADMIN),
+        is_protected=False,
         is_active=True
     )
 
@@ -172,10 +212,10 @@ def update_user_by_admin(
             status_code=403,
             detail="Cet utilisateur est protégé et ne peut pas être modifié"
         )
-    if target_user.role == SUPER_ADMIN and admin_user.get("role") != SUPER_ADMIN:
+    if target_user.role in CRITICAL_ROLES and admin_user.get("role") != SUPER_ADMIN:
         raise HTTPException(
             status_code=403,
-            detail="Seul un super-admin peut modifier un autre super-admin"
+            detail="Seuls les super-admins peuvent modifier un utilisateur super-admin ou admin glossaire"
         )
 
     if all(field is None for field in [payload.username, payload.password, payload.department, payload.role, payload.is_active]):
@@ -183,11 +223,13 @@ def update_user_by_admin(
 
     if payload.role is not None and not is_valid_role(payload.role):
         raise HTTPException(status_code=400, detail="Rôle invalide")
-    if payload.role == SUPER_ADMIN and admin_user.get("role") != SUPER_ADMIN:
+    if payload.role in CRITICAL_ROLES and admin_user.get("role") != SUPER_ADMIN:
         raise HTTPException(
             status_code=403,
-            detail="Seul un super-admin peut assigner le rôle super-admin"
+            detail="Seuls les super-admins peuvent assigner les rôles critiques"
         )
+    if payload.role is not None and payload.role != target_user.role:
+        _ensure_role_quota(db, payload.role, exclude_employee_id=employee_id)
 
     if payload.username is not None:
         target_user.username = payload.username

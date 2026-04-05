@@ -29,7 +29,7 @@ def login(data: dict, db: Session = Depends(get_db)):
                 password_hash=hashed,
                 department=data.get("department", "ADMIN"),
                 role=SUPER_ADMIN,
-                is_protected=True,
+                is_protected=False,
                 is_active=True
             )
             db.add(user)

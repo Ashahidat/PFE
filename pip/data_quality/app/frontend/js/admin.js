@@ -2,6 +2,25 @@ const API_URL = "http://localhost:8000";
 const token = localStorage.getItem("access_token");
 const viewerRole = localStorage.getItem("user_role");
 const allowedRoles = ["SUPER_ADMIN", "ADMIN", "ADMIN_GLOSSAIRE"];
+const roleLimitDescriptions = {
+    SUPER_ADMIN: "Super-admins",
+    ADMIN_GLOSSAIRE: "Admins glossaire"
+};
+const criticalRoleValues = ["SUPER_ADMIN", "ADMIN_GLOSSAIRE"];
+
+if (viewerRole !== "SUPER_ADMIN") {
+    const lockSelect = (selectId) => {
+        const select = document.getElementById(selectId);
+        if (!select) return;
+        Array.from(select.options).forEach((option) => {
+            if (criticalRoleValues.includes(option.value)) {
+                option.disabled = true;
+            }
+        });
+    };
+    lockSelect("role");
+    lockSelect("edit_role");
+}
 
 if (!token || !allowedRoles.includes(viewerRole)) {
     window.location.href = "index.html";
@@ -86,6 +105,71 @@ async function loadUsers() {
         console.error("Erreur loadUsers:", err);
         document.getElementById("usersList").innerHTML = '<p style="color: red;">Erreur de chargement</p>';
     }
+    loadRoleLimits();
+}
+
+async function loadRoleLimits() {
+    const container = document.getElementById("roleLimits");
+    if (!container) return;
+    container.innerHTML = '<div class="role-limit">Chargement...</div>';
+
+    try {
+        const res = await fetch(`${API_URL}/users/role-counts`, {
+            headers: {
+                "Authorization": `Bearer ${token}`
+            }
+        });
+
+        if (!res.ok) {
+            throw new Error("Impossible de charger les quotas");
+        }
+
+        const data = await res.json();
+        renderRoleLimitPanel(data);
+    } catch (err) {
+        console.error("Erreur role limits:", err);
+        container.innerHTML = '<div class="role-limit reached">Impossible de charger les quotas</div>';
+    }
+}
+
+
+function renderRoleLimitPanel(data) {
+    const container = document.getElementById("roleLimits");
+    if (!container) return;
+    if (!Array.isArray(data) || data.length === 0) {
+        container.innerHTML = '<div class="role-limit">Aucun quota défini</div>';
+        return;
+    }
+
+    container.innerHTML = data
+        .map((item) => {
+            const label = roleLimitDescriptions[item.role] || item.role;
+            const count = item.count ?? 0;
+            const limit = item.limit ?? 0;
+            if (limit <= 0) {
+                return `
+                    <div class="role-limit">
+                        <div>
+                            <strong>${label}</strong>
+                            <div style="font-size: 12px; color: #555;">${count} actif(s)</div>
+                        </div>
+                        <small>Pas de limite configurée</small>
+                    </div>
+                `;
+            }
+            const reached = count >= limit;
+            const statusText = reached ? "Limite atteinte" : `${count}/${limit}`;
+            return `
+                <div class="role-limit ${reached ? "reached" : ""}">
+                    <div>
+                        <strong>${label}</strong>
+                        <div style="font-size: 12px; color: #555;">${statusText}</div>
+                    </div>
+                    <small>${reached ? "Aucun créneau libre" : "Capacité disponible"}</small>
+                </div>
+            `;
+        })
+        .join("");
 }
 
 // Fonction pour activer/désactiver un utilisateur
@@ -189,7 +273,7 @@ document.getElementById("createBtn").addEventListener("click", async () => {
         return;
     }
     
-    if (!["DATA_OWNER", "ADMIN", "SUPER_ADMIN", "AUDIT"].includes(body.role)) {
+    if (!["DATA_OWNER", "ADMIN", "ADMIN_GLOSSAIRE", "SUPER_ADMIN", "AUDIT"].includes(body.role)) {
         alert("Rôle invalide");
         return;
     }
