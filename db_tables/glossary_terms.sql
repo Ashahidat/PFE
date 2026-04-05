@@ -3,9 +3,11 @@
 -- ======================================================
 CREATE TABLE IF NOT EXISTS glossary_terms (
     id SERIAL PRIMARY KEY,
-    term VARCHAR(100) UNIQUE NOT NULL,
+    glossary_id INTEGER REFERENCES glossaries(id) ON DELETE CASCADE NOT NULL,
+    category_id INTEGER REFERENCES glossary_categories(id) ON DELETE SET NULL,
+    term VARCHAR(100) NOT NULL,
     description TEXT,
-    category VARCHAR(50),
+    atlas_guid VARCHAR(100),
     created_by VARCHAR(50) REFERENCES users(employee_id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );

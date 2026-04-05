@@ -37,8 +37,6 @@ from atlas.processes import create_import_process
 from atlas.versioning import find_latest_version
 from jwt_dependencies import get_current_user
 from db.dataset_versions import DatasetVersion
-from atlas.data_quality import create_data_quality_checks_from_json
-from db.data_quality_to_db import save_data_quality_results_from_json
 # 👇 IMPORTS MIS À JOUR - Ajout des fonctions de sécurité
 from atlas.classifications import (
     add_quality_summary_classification, 
@@ -47,7 +45,71 @@ from atlas.classifications import (
     add_public_classification        # 👈 NOUVEAU
 )
 from atlas.client import get_typedef_by_name
+from atlas.glossary import sync_glossary_terms, assign_terms_to_entity
 from db.column_descriptions import ColumnDescription
+from db.dataset_glossary_crud import get_assignments_for_dataset
+from db.glossary_crud import get_glossaries_with_categories
+
+
+def _apply_saved_glossary_assignments(
+    db: Session,
+    dataset,
+    dataset_qualified_name: str,
+    column_info: Dict[str, Dict[str, str]],
+):
+    results = {"dataset": 0, "columns": 0}
+    if not dataset or not dataset.atlas_guid:
+        return results
+
+    assignments = get_assignments_for_dataset(db, dataset.id)
+    if not assignments:
+        return results
+
+    entity_display = dataset_qualified_name or dataset.name
+    for assignment in assignments:
+        term = assignment.term
+        if not term or not term.atlas_guid:
+            continue
+
+        if assign_terms_to_entity(
+            [term.atlas_guid],
+            dataset.atlas_guid,
+            "DataSet",
+            entity_display,
+        ):
+            results["dataset"] += 1
+
+        column_name = assignment.column_name
+        if column_name:
+            info = column_info.get(column_name)
+            if info and info.get("guid"):
+                display = info.get("qualified_name") or column_name
+                if assign_terms_to_entity(
+                    [term.atlas_guid],
+                    info["guid"],
+                    "Column",
+                    display,
+                ):
+                    results["columns"] += 1
+
+    return results
+
+
+def _deploy_typedef_with_retry(payload_key: str, entity_def: Dict, max_attempts: int = 4, backoff: float = 1.5):
+    attempt = 0
+    while attempt < max_attempts:
+        try:
+            atlas_post(ATLAS_TYPEDEF_URL, {payload_key: [entity_def]})
+            return
+        except Exception as exc:
+            error_text = str(exc)
+            if "Failed to get the lock" in error_text and attempt < max_attempts - 1:
+                wait = (attempt + 1) * backoff
+                logger.warning(f"ℹ️ Lock Atlas détecté (tentative {attempt + 1}), pause {wait:.1f}s")
+                time.sleep(wait)
+                attempt += 1
+                continue
+            raise
 
 router = APIRouter()
 logger = logging.getLogger("push-atlas")
@@ -79,6 +141,19 @@ def push_atlas(
     dq_db_ids = []
     processed_files = []
     security_success = False  # 👈 NOUVEAU
+    glossary_stats = {
+        "created_terms": 0,
+        "existing_terms": 0,
+        "total_terms": 0,
+        "created_categories": 0,
+        "existing_categories": 0,
+        "total_categories": 0,
+        "glossaries_synced": 0,
+        "glossary_guids": [],
+        "term_guids": [],
+        "dataset_assignments": 0,
+        "column_assignments": 0,
+    }
     
     try:
         # ----------------------
@@ -112,7 +187,7 @@ def push_atlas(
         for type_name in base_types:
             entityDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == type_name)
             try:
-                atlas_post(ATLAS_TYPEDEF_URL, {"entityDefs": [entityDef]})
+                _deploy_typedef_with_retry("entityDefs", entityDef)
                 logger.info(f"✅ EntityDef créé: {type_name}")
             except Exception as e:
                 if "409" not in str(e):
@@ -122,7 +197,7 @@ def push_atlas(
         # ⚡ 2️⃣ Déployer DataQualityCheck (dépend de Column)
         dataQualityDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == "DataQualityCheck")
         try:
-            atlas_post(ATLAS_TYPEDEF_URL, {"entityDefs": [dataQualityDef]})
+            _deploy_typedef_with_retry("entityDefs", dataQualityDef)
             logger.info("✅ EntityDef créé: DataQualityCheck")
         except Exception as e:
             if "409" not in str(e):
@@ -142,7 +217,7 @@ def push_atlas(
         # ⚡ 4️⃣ Déployer les relations
         for rel_def in typedefs_payload.get("relationshipDefs", []):
             try:
-                atlas_post(ATLAS_TYPEDEF_URL, {"relationshipDefs": [rel_def]})
+                _deploy_typedef_with_retry("relationshipDefs", rel_def)
                 logger.info(f"✅ RelationshipDef: {rel_def['name']}")
             except Exception as e:
                 if "409" not in str(e):
@@ -152,7 +227,7 @@ def push_atlas(
         # ⚡ 5️⃣ Déployer les classifications
         for class_def in typedefs_payload.get("classificationDefs", []):
             try:
-                atlas_post(ATLAS_TYPEDEF_URL, {"classificationDefs": [class_def]})
+                _deploy_typedef_with_retry("classificationDefs", class_def)
                 logger.info(f"✅ Classification: {class_def['name']}")
             except Exception as e:
                 if "409" not in str(e):
@@ -323,6 +398,40 @@ def push_atlas(
             dataset_qualified_name = f"{original_name}@{hash_value}"
             logger.warning(f"⚠️ Erreur récupération, fallback: {dataset_qualified_name}")
 
+        glossaries = get_glossaries_with_categories(db)
+        if glossaries:
+            try:
+                stats = sync_glossary_terms(glossaries, db)
+                glossary_stats["created_terms"] += stats.get("created_terms", 0)
+                glossary_stats["existing_terms"] += stats.get("existing_terms", 0)
+                glossary_stats["total_terms"] += stats.get("total_terms", 0)
+                glossary_stats["created_categories"] += stats.get("created_categories", 0)
+                glossary_stats["existing_categories"] += stats.get("existing_categories", 0)
+                glossary_stats["total_categories"] += stats.get("total_categories", 0)
+                glossary_stats["glossaries_synced"] += stats.get("glossaries_synced", 0)
+                glossary_stats["glossary_guids"].extend(stats.get("glossary_guids", []))
+                glossary_stats["term_guids"].extend(stats.get("term_guids", []))
+
+                logger.info(
+                    f"📚 {stats.get('glossaries_synced', 0)} glossaire(s) synchronisé(s) "
+                    f"· {stats.get('created_terms', 0)} termes créés "
+                    f"({stats.get('existing_terms', 0)} existants)"
+                )
+            except Exception as exc:
+                logger.warning(f"⚠️ Échec de la synchronisation des glossaires: {exc}")
+
+        if glossary_stats.get("term_guids") and dataset_qualified_name:
+            got_assigned = assign_terms_to_entity(
+                glossary_stats["term_guids"],
+                dataset_guid,
+                "DataSet",
+                dataset_qualified_name
+            )
+            if got_assigned:
+                logger.info(f"📌 Glossaire Atlas assigné au dataset {dataset_guid}")
+            else:
+                logger.warning(f"⚠️ Impossible d'assigner les termes au dataset {dataset_guid}")
+
         # Mettre à jour l'atlas_guid du dataset
         dataset.atlas_guid = dataset_guid
         dataset.last_modified_by = employee_id
@@ -396,6 +505,18 @@ def push_atlas(
         )
         logger.info(f"✅ {len(column_guids)} colonnes créées")
 
+        # Préparer infos colonnes pour les assignations
+        column_info = {}
+        for entity in column_entities:
+            attrs = entity.get("attributes", {}) or {}
+            name = attrs.get("name")
+            if not name:
+                continue
+            column_info[name] = {
+                "guid": entity.get("guid"),
+                "qualified_name": attrs.get("qualifiedName")
+            }
+
         # ENREGISTRER LA LIGNÉE DES COLONNES
         propagated = 0
         column_lineages = []
@@ -433,6 +554,20 @@ def push_atlas(
             bulk_create_column_lineage(db, column_lineages)
             logger.info(f"🏷️ {len(column_lineages)} entrées de lignée créées")
             logger.info(f"🏷️ {propagated}/{len(column_guids)} logicalColumnId propagés du parent")
+
+        assignment_results = _apply_saved_glossary_assignments(
+            db,
+            dataset,
+            dataset_qualified_name,
+            column_info
+        )
+        glossary_stats["dataset_assignments"] += assignment_results.get("dataset", 0)
+        glossary_stats["column_assignments"] += assignment_results.get("columns", 0)
+        if assignment_results.get("dataset") or assignment_results.get("columns"):
+            logger.info(
+                f"📌 {assignment_results['dataset']} assignations dataset et "
+                f"{assignment_results['columns']} assignations colonnes envoyées vers Atlas"
+            )
 
         # ----------------------
         # 🔟 ENVOYER LES RÉSULTATS DE QUALITÉ
@@ -556,7 +691,17 @@ def push_atlas(
             "data_quality_checks_count": len(dq_guids),
             "quality_summary_added": quality_success if all_checks_data else False,
             "security_classification": "PUBLIC" if is_public else "RESTRICTED",  # 👈 NOUVEAU
-            "security_classification_added": security_success  # 👈 NOUVEAU
+            "security_classification_added": security_success,  # 👈 NOUVEAU
+            "glossary_terms_total": glossary_stats.get("total_terms"),
+            "glossary_terms_created": glossary_stats.get("created_terms"),
+            "glossary_terms_existing": glossary_stats.get("existing_terms"),
+            "glossary_categories_total": glossary_stats.get("total_categories"),
+            "glossary_categories_created": glossary_stats.get("created_categories"),
+            "glossary_categories_existing": glossary_stats.get("existing_categories"),
+            "glossaries_synced": glossary_stats.get("glossaries_synced"),
+            "glossary_guids": glossary_stats.get("glossary_guids"),
+            "glossary_dataset_assignments": glossary_stats.get("dataset_assignments"),
+            "glossary_column_assignments": glossary_stats.get("column_assignments"),
         }
 
     except Exception as e:

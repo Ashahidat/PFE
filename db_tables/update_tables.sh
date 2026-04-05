@@ -17,7 +17,10 @@ FILES=(
     "push_history.sql"
     "data_quality_results.sql"
     "column_descriptions.sql"
+    "glossaries.sql"
+    "glossary_categories.sql"
     "glossary_terms.sql"
+    "dataset_glossary_assignments.sql"
 )
 
 # Copier les fichiers vers /tmp avec l'utilisateur actuel
@@ -50,7 +53,10 @@ FILES=(
     "push_history.sql"
     "data_quality_results.sql"
     "column_descriptions.sql"
+    "glossaries.sql"
+    "glossary_categories.sql"
     "glossary_terms.sql"
+    "dataset_glossary_assignments.sql"
 )
 
 # Exécution des fichiers SQL

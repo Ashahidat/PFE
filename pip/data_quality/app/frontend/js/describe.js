@@ -9,8 +9,56 @@ const describeForm = document.getElementById('describeForm');
 const saveBtn = document.getElementById('saveBtn');
 const skipBtn = document.getElementById('skipBtn');
 const statusMessage = document.getElementById('statusMessage');
+const assignmentTermSelect = document.getElementById('assignmentTermSelect');
+const assignmentColumnSelect = document.getElementById('assignmentColumnSelect');
+const assignmentStatus = document.getElementById('assignmentStatus');
+const assignedListEl = document.getElementById('assignedList');
+
+let assignmentTerms = [];
+let assignmentCategories = [];
 
 let currentDatasetId = null;
+
+async function loadAssignmentCategories() {
+    try {
+        const token = localStorage.getItem('access_token');
+        const response = await fetch(`${API_URL}/glossary/categories`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) return;
+        assignmentCategories = await response.json();
+        refreshAssignmentCategorySelect();
+    } catch (error) {
+        console.error("Erreur chargement catégories", error);
+    }
+}
+
+function refreshAssignmentCategorySelect() {
+    const select = document.getElementById('assignmentCategorySelect');
+    if (!select) return;
+    select.innerHTML = "<option value=''>Toutes catégories</option>" +
+        assignmentCategories.map((category) => `<option value="${category.id}">${escapeHtml(category.name)}</option>`).join("");
+}
+
+function refreshAssignmentTermSelect(categoryId = "") {
+    if (!assignmentTermSelect) return;
+    const filtered = categoryId
+        ? assignmentTerms.filter((t) => String(t.category_id) === String(categoryId))
+        : assignmentTerms;
+    if (!filtered.length) {
+        assignmentTermSelect.innerHTML = "<option value=''>Aucun terme disponible</option>";
+        return;
+    }
+    const hideCategory = Boolean(categoryId);
+    assignmentTermSelect.innerHTML = filtered
+        .map((t) => {
+            const label = hideCategory
+                ? escapeHtml(t.term)
+                : `${escapeHtml(t.term)} (${escapeHtml(t.category_name || '—')})`;
+            return `<option value="${t.id}">${label}</option>`;
+        })
+        .join("");
+}
 
 // ===================== INITIALISATION =====================
 document.addEventListener('DOMContentLoaded', async () => {
@@ -38,6 +86,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Écouteurs d'événements
     describeForm.addEventListener('submit', saveDescriptions);
     skipBtn.addEventListener('click', skipToTests);
+    document.getElementById('assignTermBtn').addEventListener('click', assignTermToDataset);
+    const assignmentCategorySelectEl = document.getElementById('assignmentCategorySelect');
+    if (assignmentCategorySelectEl) {
+        assignmentCategorySelectEl.addEventListener('change', (event) => {
+            refreshAssignmentTermSelect(event.target.value);
+        });
+    }
+    await loadAssignmentCategories();
+    await loadGlossaryTermsForAssignment();
+    await refreshAssignments();
 });
 
 // ===================== CHARGEMENT DES DONNÉES =====================
@@ -58,6 +116,7 @@ async function loadDatasetInfo() {
         
         // Générer le formulaire
         renderColumnsForm(dataset.columns_list);
+        populateAssignmentColumns(dataset.columns_list);
         
     } catch (error) {
         console.error('Erreur:', error);
@@ -127,6 +186,110 @@ async function loadParentSuggestions() {
         }
     } catch (error) {
         console.error('Erreur chargement suggestions parent:', error);
+    }
+}
+
+async function loadGlossaryTermsForAssignment() {
+    try {
+        const token = localStorage.getItem('access_token');
+        const response = await fetch(`${API_URL}/glossary/terms`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) return;
+        assignmentTerms = await response.json();
+        const selectedCat = document.getElementById('assignmentCategorySelect')?.value || "";
+        refreshAssignmentTermSelect(selectedCat);
+    } catch (error) {
+        console.error("Erreur chargement termes pour assignation :", error);
+    }
+}
+
+function populateAssignmentColumns(columns) {
+    assignmentColumnSelect.innerHTML = "<option value=''>Tout le dataset</option>" +
+        columns.map((col) => `<option value="${col}">${escapeHtml(col)}</option>`).join('');
+}
+
+async function assignTermToDataset() {
+    const termId = assignmentTermSelect.value;
+    const columnName = assignmentColumnSelect.value || null;
+    if (!currentDatasetId || !termId) {
+        assignmentStatus.textContent = "Sélectionne un terme";
+        assignmentStatus.style.color = "red";
+        return;
+    }
+
+    try {
+        const token = localStorage.getItem('access_token');
+        const response = await fetch(`${API_URL}/glossary/datasets/${currentDatasetId}/terms`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ term_id: termId, column_name: columnName })
+        });
+        if (!response.ok) {
+            const err = await response.json();
+            assignmentStatus.textContent = err.detail || "Erreur d'assignation";
+            assignmentStatus.style.color = "red";
+            return;
+        }
+        assignmentStatus.textContent = "✅ Terme assigné";
+        assignmentStatus.style.color = "green";
+        refreshAssignments();
+    } catch (error) {
+        assignmentStatus.textContent = "Erreur de connexion";
+        assignmentStatus.style.color = "red";
+    }
+}
+
+async function refreshAssignments() {
+    if (!currentDatasetId) return;
+    try {
+        const token = localStorage.getItem('access_token');
+        const response = await fetch(`${API_URL}/glossary/datasets/${currentDatasetId}/terms`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error('Impossible de charger les assignations');
+        const assignments = await response.json();
+        renderAssignmentList(assignments);
+    } catch (error) {
+        console.error("Erreur refreshAssignments:", error);
+        assignedListEl.innerHTML = '<p style="color:red;">Impossible de charger les assignations</p>';
+    }
+}
+
+function renderAssignmentList(assignments) {
+    if (!assignments.length) {
+        assignedListEl.innerHTML = "<p>Aucun terme assigné</p>";
+        return;
+    }
+    assignedListEl.innerHTML = assignments
+        .map((assignment) => `
+            <div class="term-item">
+                <div>
+                    <strong>${escapeHtml(assignment.term)}</strong>
+                    <p style="margin:4px 0;">Glossaire : ${escapeHtml(assignment.glossary_name || '')} · Catégorie : ${escapeHtml(assignment.category || '—')}</p>
+                    <p style="margin:4px 0; font-size:12px;">Colonne : ${escapeHtml(assignment.column_name || 'entier')}</p>
+                </div>
+                <button class="btn-delete" onclick="removeAssignment(${assignment.glossary_term_id}, '${assignment.column_name || ''}')">Retirer</button>
+            </div>`
+        )
+        .join('');
+}
+
+async function removeAssignment(termId, columnName) {
+    try {
+        const token = localStorage.getItem('access_token');
+        const url = new URL(`${API_URL}/glossary/datasets/${currentDatasetId}/terms/${termId}`);
+        if (columnName) url.searchParams.append('column_name', columnName);
+        await fetch(url.toString(), {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        refreshAssignments();
+    } catch (error) {
+        console.error("Erreur suppression assignation :", error);
     }
 }
 

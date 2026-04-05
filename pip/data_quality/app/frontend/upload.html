@@ -18,6 +18,30 @@
     <!-- 📁 Fichier CSV -->
     <input type="file" id="csvFile">
 
+    <!-- 🗂️ Assignation Glossaire (optionnel) -->
+    <div class="form-group">
+        <h2>Assignation Atlas (optionnel)</h2>
+        <label for="uploadGlossarySelect">Glossaire</label>
+        <select id="uploadGlossarySelect">
+            <option value="">Chargement des glossaires...</option>
+        </select>
+
+        <label for="uploadCategorySelect">Catégorie</label>
+        <select id="uploadCategorySelect" disabled>
+            <option value="">Choisissez un glossaire</option>
+        </select>
+
+        <label for="uploadTermSelect">Terme</label>
+        <select id="uploadTermSelect" disabled>
+            <option value="">Choisissez un glossaire</option>
+        </select>
+
+        <small class="form-text text-muted">
+            Ce terme sera lié au dataset entier (vous pourrez le modifier plus tard dans les assignations).
+        </small>
+        <div id="uploadGlossaryStatus" style="margin-top:8px; height:1.2em;"></div>
+    </div>
+
     <!-- ✅ NOUVEAU : Description -->
     <div class="form-group">
         <label for="description">Description (optionnelle)</label>

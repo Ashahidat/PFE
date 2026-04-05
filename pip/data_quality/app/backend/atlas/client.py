@@ -6,6 +6,8 @@ ATLAS_TYPEDEF_URL = "http://localhost:21000/api/atlas/v2/types/typedefs"
 ATLAS_RELATIONSHIP_URL = "http://localhost:21000/api/atlas/v2/relationship"
 ATLAS_SEARCH_URL = "http://localhost:21000/api/atlas/v2/search/basic"
 ATLAS_ENTITY_URL = "http://localhost:21000/api/atlas/v2/entity"
+ATLAS_GLOSSARY_URL = "http://localhost:21000/api/atlas/v2/glossary"
+ATLAS_GLOSSARY_TERM_URL = f"{ATLAS_GLOSSARY_URL}/term"
 
 AUTH = ("admin", "admin")
 HEADERS = {"Content-Type": "application/json"}

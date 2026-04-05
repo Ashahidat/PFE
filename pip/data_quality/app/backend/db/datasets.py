@@ -4,6 +4,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from db.connexion_db import Base
 import uuid
+from db.dataset_glossary_assignment import DatasetGlossaryAssignment
 
 
 class Dataset(Base):
@@ -22,3 +23,8 @@ class Dataset(Base):
     
     # Relations
     project = relationship("Project", back_populates="datasets")
+    glossary_assignments = relationship(
+        "DatasetGlossaryAssignment",
+        back_populates="dataset",
+        cascade="all, delete-orphan"
+    )

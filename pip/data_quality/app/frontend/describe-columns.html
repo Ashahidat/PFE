@@ -36,15 +36,31 @@
                 </p>
             </div>
 
-            <!-- Liste des colonnes -->
-            <div id="columnsList" class="columns-list">
-                <!-- Injecté par JavaScript -->
-            </div>
+        <!-- Liste des colonnes -->
+        <div id="columnsList" class="columns-list">
+            <!-- Injecté par JavaScript -->
+        </div>
 
-            <!-- Actions -->
-            <div class="form-actions">
-                <button type="button" id="skipBtn" class="btn-secondary">
-                    ⏭️ Passer aux tests
+        <!-- Assignations glossaire -->
+        <div class="assignment-panel form-section">
+            <h3>🧩 Assigner un terme</h3>
+            <p style="margin-bottom: 10px;">Associez un glossaire/terme/catégorie à ce dataset ou à une colonne.</p>
+            <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+                <select id="assignmentCategorySelect"></select>
+                <select id="assignmentTermSelect"></select>
+                <select id="assignmentColumnSelect">
+                    <option value="">Tout le dataset</option>
+                </select>
+                <button type="button" id="assignTermBtn" class="btn-primary">Assigner</button>
+            </div>
+            <div id="assignmentStatus" style="margin-top:10px;"></div>
+            <div id="assignedList" style="margin-top:15px;"></div>
+        </div>
+
+        <!-- Actions -->
+        <div class="form-actions">
+            <button type="button" id="skipBtn" class="btn-secondary">
+                ⏭️ Passer aux tests
                 </button>
                 <button type="submit" id="saveBtn" class="btn-primary">
                     💾 Enregistrer et continuer

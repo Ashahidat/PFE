@@ -39,7 +39,8 @@ def login(data: dict, db: Session = Depends(get_db)):
             "sub": user.employee_id,
             "username": user.username,
             "role": user.role,
-            "department": user.department
+            "department": user.department,
+            "employee_id": user.employee_id
         })
         
         return {
@@ -70,7 +71,8 @@ def login(data: dict, db: Session = Depends(get_db)):
         "sub": user.employee_id,
         "username": user.username,
         "role": user.role,
-        "department": user.department
+        "department": user.department,
+        "employee_id": user.employee_id
     })
     
     return {
