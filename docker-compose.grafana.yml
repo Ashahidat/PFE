@@ -1,0 +1,31 @@
+services:
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: pfe-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      # Grafana admin login (change for real deployments)
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+      # Provisioned Postgres datasource connection
+      - GF_POSTGRES_HOST=host.docker.internal
+      - GF_POSTGRES_PORT=5432
+      - GF_POSTGRES_DB=pfe_db
+      - GF_POSTGRES_USER=pfe_user
+      - GF_POSTGRES_PASSWORD=12345
+
+      # Optional: reduce noise during demos
+      - GF_LOG_LEVEL=warn
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    extra_hosts:
+      # Lets Linux containers reach services on the host with host.docker.internal
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  grafana-data:
+
