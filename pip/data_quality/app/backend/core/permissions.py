@@ -11,6 +11,7 @@ from core.roles import (
     PROJECT_CREATORS,
     USER_MANAGERS,
     DATA_OWNER,
+    ADMIN_GLOSSAIRE,
     AUDIT,
 )
 import logging
@@ -144,3 +145,53 @@ def require_super_admin():
         return user
 
     return dependency
+
+
+def _get_employee_identifier(user: dict) -> str | None:
+    return user.get("employee_id") or user.get("sub")
+
+
+def _dataset_visibility(dataset) -> str:
+    if getattr(dataset, "classification", None):
+        return dataset.classification
+    if getattr(dataset, "project", None) and getattr(dataset.project, "visibility", None):
+        return dataset.project.visibility
+    return "DEPARTMENT"
+
+
+def _is_same_department(user: dict, owner_employee_id: str, db: Session) -> bool:
+    if not owner_employee_id:
+        return False
+    owner = db.query(User).filter(User.employee_id == owner_employee_id).first()
+    if not owner:
+        return False
+    return owner.department == user.get("department")
+
+
+def can_view_dataset(user: dict, dataset, db: Session) -> bool:
+    role = user.get("role")
+    if role in ADMINISTRATORS:
+        return True
+    if role == AUDIT:
+        return True
+    if role == DATA_OWNER:
+        emp_id = _get_employee_identifier(user)
+        if not emp_id or dataset.owner_employee_id != emp_id:
+            return False
+        visibility = _dataset_visibility(dataset)
+        if visibility == "PUBLIC":
+            return True
+        if visibility == "DEPARTMENT":
+            return _is_same_department(user, emp_id, db)
+    return False
+
+
+def can_modify_dataset(user: dict, dataset, db: Session) -> bool:
+    role = user.get("role")
+    if role in ADMINISTRATORS:
+        return True
+    if role == DATA_OWNER:
+        emp_id = _get_employee_identifier(user)
+        if emp_id and dataset.owner_employee_id == emp_id:
+            return True
+    return False

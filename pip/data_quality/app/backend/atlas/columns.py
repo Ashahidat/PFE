@@ -39,7 +39,8 @@ def get_existing_columns(dataset_guid: str, dataset_qualified_name: str = None):
                             existing_columns[col_name] = {
                                 "guid": entity.get("guid"),
                                 "description": attrs.get("description", ""),
-                                "logicalColumnId": attrs.get("logicalColumnId")
+                                "logicalColumnId": attrs.get("logicalColumnId"),
+                                "qualified_name": attrs.get("qualifiedName")
                             }
                 if existing_columns:
                     logger.info(f"📋 {len(existing_columns)} colonnes trouvées par GUID")

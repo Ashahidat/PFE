@@ -108,7 +108,9 @@ async def upload_csv(
         owner_employee_id=user["sub"],
         atlas_guid=None,
         project_id=project_id,
-        description=description
+        description=description,
+        classification=project.visibility,
+        atlas_synced=False
     )
 
     db.add(db_dataset)

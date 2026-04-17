@@ -207,15 +207,15 @@ def update_user_by_admin(
     if not target_user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
 
+    if target_user.role == SUPER_ADMIN and admin_user.get("role") != SUPER_ADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="Seuls les super-admins peuvent modifier un super-admin"
+        )
     if target_user.is_protected and target_user.employee_id != admin_user.get("employee_id") and admin_user.get("role") != SUPER_ADMIN:
         raise HTTPException(
             status_code=403,
             detail="Cet utilisateur est protégé et ne peut pas être modifié"
-        )
-    if target_user.role in CRITICAL_ROLES and admin_user.get("role") != SUPER_ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Seuls les super-admins peuvent modifier un utilisateur super-admin ou admin glossaire"
         )
 
     if all(field is None for field in [payload.username, payload.password, payload.department, payload.role, payload.is_active]):

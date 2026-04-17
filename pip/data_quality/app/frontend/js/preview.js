@@ -4,7 +4,7 @@ const API_URL = "http://localhost:8000";
 document.addEventListener("DOMContentLoaded", () => {
     const id = localStorage.getItem("last_uploaded_dataset_id");
     if (!id) {
-        alert("Aucun dataset chargé. Faites d'abord un upload.");
+        alert("Aucun dataset chargé. Commencez par uploader un fichier.");
         window.location.href = "index.html";
     }
 });
@@ -14,13 +14,14 @@ document.getElementById("previewBtn").addEventListener("click", async () => {
 
     // 🔹 Dataset ID récupéré depuis localStorage
     const dataset_id = localStorage.getItem("last_uploaded_dataset_id");
-    if (!dataset_id) return alert("Dataset ID manquant. Faites d'abord un upload !");
-
-    console.log(`👀 Demande preview de ${n} lignes pour dataset ${dataset_id}`);
+    if (!dataset_id) return alert("Impossible de retrouver le dataset. Recommencez l'upload.");
 
     try {
         const token = localStorage.getItem("access_token");
-        console.log("🔑 Token preview:", token ? `${token.substring(0, 20)}...` : "Token manquant");
+        if (!token) {
+            window.location.href = "index.html";
+            return;
+        }
 
         // 🔹 Requête preview
         const res = await fetch(`${API_URL}/preview/${dataset_id}?n=${n}`, {
@@ -29,23 +30,17 @@ document.getElementById("previewBtn").addEventListener("click", async () => {
                 "Authorization": `Bearer ${token}`
             }
         });
-
-        console.log(`📊 Réponse preview: ${res.status} ${res.statusText}`);
         
         if (!res.ok) {
-            const errorData = await res.json();
-            console.error("❌ Erreur preview:", errorData);
+            const errorData = await res.json().catch(() => ({}));
             throw new Error(errorData.detail || "Erreur preview");
         }
 
         const data = await res.json();
-        console.log(`📊 Données preview reçues: ${data.length} lignes`);
-
         renderPreviewTable(data);
-        console.log("✅ Preview affiché avec succès");
     } catch (err) {
-        console.error("💥 Erreur complète preview:", err);
-        alert("Erreur preview CSV");
+        console.error(err);
+        alert("Impossible d'afficher l'aperçu. Réessayez.");
     }
 });
 
@@ -76,7 +71,7 @@ function renderPreviewTable(rows) {
     // Créer un message d'information
     const infoMsg = document.createElement('div');
     infoMsg.className = 'info-message';
-    infoMsg.textContent = '⏳ Preview chargé ! Redirection vers la description dans 2 secondes...';
+    infoMsg.textContent = 'Aperçu chargé. Redirection vers la description…';
     infoMsg.style.cssText = `
         background: #e3f2fd;
         color: #0d47a1;
@@ -101,20 +96,14 @@ function renderPreviewTable(rows) {
         }
     })
     .then(response => {
-        if (response.ok) {
-            console.log("✅ Signature calculée avec succès en arrière-plan");
-        } else {
-            console.log("⏳ Signature non disponible, sera calculée pendant le push");
-        }
+        // best-effort: pas bloquant
     })
     .catch(error => {
-        // Ne pas bloquer l'utilisateur, on log juste l'erreur
-        console.log("⚠️ Erreur calcul signature (non bloquant):", error);
+        // non bloquant
     });
 
     // Redirection automatique vers describe-columns.html
     setTimeout(() => {
-        console.log(`⏳ Redirection vers describe-columns.html?dataset_id=${datasetId}`);
         window.location.href = `describe-columns.html?dataset_id=${datasetId}`;
     }, 2000); // 2 secondes de délai pour voir le preview
 }

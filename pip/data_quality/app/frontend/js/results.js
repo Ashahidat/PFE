@@ -1,118 +1,139 @@
 const API_URL = "http://localhost:8000";
 
+const POLL_INTERVAL_MS = 4000;
+const MAX_ATTEMPTS = 80;
+
+function getAuthToken() {
+    return localStorage.getItem("access_token");
+}
+
+function getDagRunId() {
+    return localStorage.getItem("last_dag_run_id");
+}
+
+function humanizeRuleType(ruleType) {
+    if (!ruleType) return "Test";
+    const rt = String(ruleType).trim();
+    if (rt.startsWith("regex_")) {
+        const kind = rt.replace(/^regex_/, "");
+        const map = { email: "Email", phone: "Téléphone", postal: "Code postal", alphanumeric: "Alphanumérique" };
+        return `Format (${map[kind] || kind})`;
+    }
+    if (rt.toLowerCase().includes("doublon")) return "Doublons";
+    if (rt.toLowerCase().includes("deequ")) return "Qualité (Deequ)";
+    return rt.replace(/_/g, " ");
+}
+
+function normalizeStatus(status) {
+    const s = String(status || "").trim().toLowerCase();
+    if (["réussi", "pass", "success"].includes(s)) return "success";
+    if (["échoué", "fail", "failed"].includes(s)) return "failed";
+    if (["ignoré", "skipped"].includes(s)) return "skipped";
+    return "unknown";
+}
+
+function formatRatio(ratio) {
+    if (ratio === undefined || ratio === null) return null;
+    const r = String(ratio).trim();
+    return r.length ? r : null;
+}
+
+function escapeHtml(unsafe) {
+    return String(unsafe)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+async function fetchJson(url, token) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status} ${res.statusText}${text ? ` - ${text}` : ""}`);
+    }
+    return res.json();
+}
+
+function renderEmptyState(message) {
+    const statusDiv = document.getElementById("status");
+    const resultsSection = document.getElementById("resultsSection");
+    statusDiv.style.display = "block";
+    statusDiv.innerText = message;
+    resultsSection.innerHTML = "";
+}
+
 // ===================== Fonction principale =====================
 async function fetchResults() {
     const statusDiv = document.getElementById("status");
     const resultsSection = document.getElementById("resultsSection");
 
+    const dagRunId = getDagRunId();
+    if (!dagRunId) {
+        renderEmptyState("Aucun run trouvé. Lancez des validations puis revenez ici.");
+        return;
+    }
+
+    const token = getAuthToken();
+    if (!token) {
+        window.location.href = "index.html";
+        return;
+    }
+
     try {
-        const dag_run_id = localStorage.getItem("last_dag_run_id");
-        console.log("🔍 DAG Run ID récupéré:", dag_run_id);
-        
-        if (!dag_run_id) {
-            alert("Pas de DAG en cours");
-            return;
-        }
-
-        // Test direct : récupérer les résultats sans attendre
-        const token = localStorage.getItem("access_token");
-        console.log("🔍 Test direct de l'API results...");
-        const testRes = await fetch(`${API_URL}/results/${dag_run_id}`, {
-            headers: { "Authorization": `Bearer ${token}` }
-        });
-        const testData = await testRes.json();
-        console.log("🔍 Test direct - résultats:", testData);
-        
-        if (testData && testData.length > 0) {
-            console.log("✅ Les résultats existent déjà !");
-            renderSummary(testData);
-            renderResultsJSON(testData);
+        // Tentative immédiate (si le fichier de résultats existe déjà)
+        const existing = await fetchJson(`${API_URL}/results/${dagRunId}`, token).catch(() => []);
+        if (Array.isArray(existing) && existing.length > 0) {
+            renderSummary(existing);
+            renderResults(existing);
             statusDiv.style.display = "none";
             addPushAtlasButton();
             return;
         }
-        
-        // Sinon, attendre le DAG...
-        statusDiv.innerText = "DAG en cours d'exécution...";
-        
-        let state = null;
+
+        statusDiv.style.display = "block";
+        statusDiv.innerText = "Validation en cours…";
+
         let attempts = 0;
-        const maxAttempts = 80;
+        let state = null;
 
-        while (state !== "success" && state !== "failed" && attempts < maxAttempts) {
-            try {
-                console.log(`🔍 Tentative ${attempts + 1}: vérification statut...`);
-                const res = await fetch(`${API_URL}/dag-status/${dag_run_id}`, {
-                    method: "GET",
-                    headers: { "Authorization": `Bearer ${token}` }
-                });
+        while (!["success", "failed"].includes(state) && attempts < MAX_ATTEMPTS) {
+            const data = await fetchJson(`${API_URL}/dag-status/${dagRunId}`, token).catch(() => ({}));
+            state = data?.state || null;
 
-                console.log(`📡 Réponse dag-status: ${res.status}`);
-                
-                if (!res.ok) {
-                    console.error(`HTTP error! status: ${res.status}`);
-                    const errorText = await res.text();
-                    console.error("Corps erreur:", errorText);
-                    throw new Error(`HTTP error! status: ${res.status}`);
-                }
-
-                const data = await res.json();
-                state = data?.state || null;
-                console.log(`📊 État du DAG: ${state}`);
-
-                if (state === "running" || !state) {
-                    statusDiv.innerText = `DAG en cours d'exécution... (${attempts + 1}/${maxAttempts})`;
-                    await new Promise(r => setTimeout(r, 5000));
-                    attempts++;
-                } else {
-                    break;
-                }
-
-            } catch (error) {
-                console.error("Erreur dans la boucle:", error);
-                statusDiv.innerText = "Erreur de connexion au serveur";
-                await new Promise(r => setTimeout(r, 5000));
-                attempts++;
+            if (!state || state === "running") {
+                attempts += 1;
+                statusDiv.innerText = `Validation en cours… (${attempts}/${MAX_ATTEMPTS})`;
+                await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+                continue;
             }
+            break;
         }
 
-        if (state === "success") {
-            statusDiv.innerText = "DAG terminé, récupération des résultats...";
-
-            const res2 = await fetch(`${API_URL}/results/${dag_run_id}`, {
-                method: "GET",
-                headers: { "Authorization": `Bearer ${token}` }
-            });
-
-            console.log(`📡 Réponse results: ${res2.status}`);
-            
-            if (!res2.ok) throw new Error(`HTTP error! status: ${res2.status}`);
-
-            const results = await res2.json();
-            console.log("📊 Résultats finaux:", results);
-
-            if (!results || results.length === 0) {
-                statusDiv.innerText = "Aucun résultat disponible !";
-                return;
-            }
-
-            renderSummary(results);
-            renderResultsJSON(results);
-            statusDiv.style.display = "none";
-            addPushAtlasButton();
-
-        } else if (state === "failed") {
-            statusDiv.innerText = "Le DAG a échoué !";
-            resultsSection.style.display = "none";
-        } else {
-            statusDiv.innerText = "Temps d'attente dépassé.";
-            resultsSection.style.display = "none";
+        if (state !== "success") {
+            if (state === "failed") renderEmptyState("La validation a échoué.");
+            else renderEmptyState("Temps d'attente dépassé. Réessayez dans quelques instants.");
+            return;
         }
 
+        statusDiv.innerText = "Récupération des résultats…";
+        const results = await fetchJson(`${API_URL}/results/${dagRunId}`, token);
+
+        if (!Array.isArray(results) || results.length === 0) {
+            renderEmptyState("Aucun résultat disponible.");
+            return;
+        }
+
+        renderSummary(results);
+        renderResults(results);
+        statusDiv.style.display = "none";
+        addPushAtlasButton();
     } catch (err) {
-        console.error("Erreur globale:", err);
-        statusDiv.innerText = "Erreur lors de la récupération";
-        resultsSection.style.display = "none";
+        console.error(err);
+        statusDiv.style.display = "block";
+        statusDiv.innerText = "Erreur lors de la récupération des résultats.";
+        resultsSection.innerHTML = "";
     }
 }
 // ===================== RÉSUMÉ =====================
@@ -136,94 +157,100 @@ function renderSummary(data) {
 
     const summaryDiv = document.createElement('div');
     summaryDiv.id = 'summary';
-    summaryDiv.style.margin = '15px 0 25px 0';
-    summaryDiv.style.padding = '12px';
-    summaryDiv.style.borderRadius = '8px';
-    summaryDiv.style.textAlign = 'center';
-    summaryDiv.style.fontWeight = 'bold';
-    summaryDiv.style.color = '#fff';
-    summaryDiv.style.fontSize = '16px';
-    summaryDiv.style.backgroundColor = failed > 0 ? '#e74c3c' : '#27ae60';
-
+    summaryDiv.className = `dq-summary ${failed > 0 ? "dq-summary--failed" : "dq-summary--ok"}`;
+    const rate = total ? ((success / total) * 100).toFixed(1) + "%" : "N/A";
     summaryDiv.innerHTML = `
-        Total tests : ${total} | 
-        Réussis : ${success} | 
-        Échoués : ${failed} | 
-        Taux : ${total ? ((success/total)*100).toFixed(1)+'%' : 'N/A'}
+        <div class="dq-summary__title">${failed > 0 ? "Attention" : "Tout est bon"}</div>
+        <div class="dq-summary__stats">
+            <span>Total: <strong>${total}</strong></span>
+            <span>Réussis: <strong>${success}</strong></span>
+            <span>Échoués: <strong>${failed}</strong></span>
+            <span>Taux: <strong>${rate}</strong></span>
+        </div>
     `;
 
     container.insertBefore(summaryDiv, container.firstChild.nextSibling);
 }
 
-// ===================== CARTES =====================
-function renderResultsJSON(data) {
+// ===================== CARTES (UX: pas de dump technique par défaut) =====================
+function renderResults(data) {
     const resultsSection = document.getElementById("resultsSection");
     resultsSection.innerHTML = "";
 
-    function createCard(item) {
-        const statusValue = item.status?.toLowerCase();
+    const fragment = document.createDocumentFragment();
+
+    (Array.isArray(data) ? data : []).forEach((item) => {
+        const statusKey = normalizeStatus(item?.status);
+        const ruleTitle = humanizeRuleType(item?.rule_type);
+        const columnName = item?.column_name ? String(item.column_name) : null;
+        const errorCount = item?.error_count !== undefined && item?.error_count !== null ? String(item.error_count) : null;
+        const ratio = formatRatio(item?.ratio);
 
         const card = document.createElement("div");
-        card.className = "result-card";
-        if (statusValue === "réussi") card.classList.add("card-success");
-        else if (statusValue === "échoué") card.classList.add("card-failed");
+        card.className = `dq-card dq-card--${statusKey}`;
 
-        // Header
-        const header = document.createElement("div");
-        header.className = "header";
-        const title = document.createElement("div");
-        title.className = "card-title";
-        title.innerText = item.rule_type || "Test";
-        const status = document.createElement("div");
-        status.className = statusValue === "réussi" ? "status status-success" :
-                           statusValue === "échoué" ? "status status-failed" :
-                           "status status-running";
-        status.innerText = item.status || "N/A";
-        header.append(title, status);
-        card.appendChild(header);
+        card.innerHTML = `
+            <div class="dq-card__header">
+                <div class="dq-card__title">
+                    <div class="dq-card__rule">${escapeHtml(ruleTitle)}</div>
+                    <div class="dq-card__subtitle">${columnName ? `Colonne: <strong>${escapeHtml(columnName)}</strong>` : "<span class=\"muted\">Dataset</span>"}</div>
+                </div>
+                <div class="dq-pill dq-pill--${statusKey}">
+                    ${escapeHtml(item?.status || "Inconnu")}
+                </div>
+            </div>
+            <div class="dq-card__meta">
+                ${errorCount !== null ? `<div><span class="muted">Erreurs</span> <strong>${escapeHtml(errorCount)}</strong></div>` : ""}
+                ${ratio ? `<div><span class="muted">Ratio</span> <strong>${escapeHtml(ratio)}</strong></div>` : ""}
+            </div>
+        `;
 
-        // Info
-        const infoDiv = document.createElement("div");
-        infoDiv.className = "card-info";
-        Object.entries(item).forEach(([key, val]) => {
-            if (["rule_type","status","examples"].includes(key)) return;
-            if (val !== undefined && val !== null) {
-                const infoRow = document.createElement("div");
-                infoRow.className = "info-row";
-                const keySpan = document.createElement("span");
-                keySpan.className = "info-key";
-                keySpan.textContent = key + ":";
-                const valueSpan = document.createElement("span");
-                valueSpan.className = "info-value";
-                valueSpan.textContent = val;
-                infoRow.append(keySpan, valueSpan);
-                infoDiv.appendChild(infoRow);
-            }
-        });
-        card.appendChild(infoDiv);
+        const examples = Array.isArray(item?.examples) ? item.examples : [];
+        if (statusKey === "failed" && examples.length > 0) {
+            const exampleWrap = document.createElement("div");
+            exampleWrap.className = "dq-examples";
+            exampleWrap.innerHTML = `<div class="dq-examples__title">Exemples</div>`;
 
-        // Exemples d'erreurs en bas
-        if (statusValue === "échoué" && Array.isArray(item.examples) && item.examples.length > 0) {
-            const exampleDiv = document.createElement("div");
-            exampleDiv.className = "examples-section";
-            const title = document.createElement("h4");
-            title.innerText = "Exemples d'erreurs";
-            exampleDiv.appendChild(title);
-            item.examples.forEach(ex => {
-                const exItem = document.createElement("div");
-                exItem.className = "simple-example";
-                exItem.innerText = JSON.stringify(ex);
-                exampleDiv.appendChild(exItem);
+            const maxExamples = 3;
+            examples.slice(0, maxExamples).forEach((ex) => {
+                const box = document.createElement("div");
+                box.className = "dq-example";
+
+                if (ex && typeof ex === "object" && !Array.isArray(ex)) {
+                    const entries = Object.entries(ex).slice(0, 8);
+                    const rows = entries
+                        .map(([k, v]) => `<div class="dq-example__row"><span class="dq-example__k">${escapeHtml(k)}</span><span class="dq-example__v">${escapeHtml(v)}</span></div>`)
+                        .join("");
+                    box.innerHTML = rows || `<div class="muted">Aucun détail exploitable.</div>`;
+                } else {
+                    box.textContent = String(ex);
+                }
+                exampleWrap.appendChild(box);
             });
-            card.appendChild(exampleDiv); // ← maintenant après toutes les infos
+
+            if (examples.length > maxExamples) {
+                const more = document.createElement("div");
+                more.className = "muted";
+                more.textContent = `+${examples.length - maxExamples} autres exemple(s)`;
+                exampleWrap.appendChild(more);
+            }
+
+            card.appendChild(exampleWrap);
         }
 
-        resultsSection.appendChild(card);
-    }
+        // Détails techniques (optionnels)
+        const details = document.createElement("details");
+        details.className = "dq-details";
+        details.innerHTML = `
+            <summary>Voir les détails techniques</summary>
+            <pre class="dq-details__pre">${escapeHtml(JSON.stringify(item, null, 2))}</pre>
+        `;
+        card.appendChild(details);
 
-    if (Array.isArray(data)) {
-        data.forEach(item => createCard(item));
-    }
+        fragment.appendChild(card);
+    });
+
+    resultsSection.appendChild(fragment);
 }
 
 // ===================== BOUTON =====================
@@ -234,7 +261,7 @@ function addPushAtlasButton() {
     const pushButton = document.createElement('button');
     pushButton.id = 'pushAtlasBtn';
     pushButton.className = 'back-button';
-    pushButton.textContent = '📤 Passer à Atlas';
+    pushButton.textContent = 'Continuer vers Atlas';
 
     pushButton.onclick = () => window.location.href = "atlas.html";
 

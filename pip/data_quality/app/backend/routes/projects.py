@@ -1,6 +1,7 @@
 # routes/projects.py 
 
 from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
@@ -119,7 +120,7 @@ def list_my_projects(
     result = []
     for p in visible_projects:
         # Compter les datasets associés
-        datasets_count = db.query(Dataset).filter(Dataset.project_id == p.id).count()
+        datasets_count = db.query(func.count(Dataset.id)).filter(Dataset.project_id == p.id).scalar() or 0
         result.append({
             "id": str(p.id),
             "name": p.name,
@@ -150,7 +151,7 @@ def get_project_details(
         logger.warning(f"❌ Utilisateur {user['sub']} tente d'accéder au projet {project_id} sans droit")
         raise HTTPException(status_code=403, detail="Vous n'avez pas les droits pour voir ce projet")
     
-    datasets_count = db.query(Dataset).filter(Dataset.project_id == project_id).count()
+    datasets_count = db.query(func.count(Dataset.id)).filter(Dataset.project_id == project_id).scalar() or 0
     
     return {
         "id": str(project.id),
@@ -189,7 +190,7 @@ def delete_project_endpoint(
         raise HTTPException(status_code=403, detail="Vous n'avez pas les droits pour supprimer des projets")
     
     # Vérifier s'il y a des datasets
-    datasets_count = db.query(Dataset).filter(Dataset.project_id == project_id).count()
+    datasets_count = db.query(func.count(Dataset.id)).filter(Dataset.project_id == project_id).scalar() or 0
     if datasets_count > 0:
         raise HTTPException(
             status_code=400, 

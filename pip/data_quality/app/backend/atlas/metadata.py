@@ -1,0 +1,120 @@
+import logging
+from collections import defaultdict
+from typing import Dict, Iterable
+
+from sqlalchemy.orm import Session
+
+from atlas.client import atlas_put, atlas_get, ATLAS_ENTITY_URL
+from atlas.columns import get_existing_columns
+from atlas.glossary import assign_terms_to_entity
+from db.dataset_glossary_crud import get_assignments_for_dataset
+from db.datasets import Dataset
+
+logger = logging.getLogger("atlas.metadata")
+
+
+def _update_dataset_description(dataset: Dataset) -> None:
+    payload = {
+        "entities": [
+            {
+                "typeName": "DataSet",
+                "guid": dataset.atlas_guid,
+                "attributes": {
+                    "description": dataset.description or ""
+                }
+            }
+        ]
+    }
+    atlas_put(ATLAS_ENTITY_URL, payload)
+    logger.debug(f"🔁 Description dataset {dataset.atlas_guid[:8]} synchronisée")
+
+
+def _update_column_descriptions(dataset: Dataset, descriptions: Dict[str, str], column_info: Dict[str, Dict[str, str]]) -> None:
+    if not descriptions:
+        return
+    entities = []
+    for column_name, description in descriptions.items():
+        info = column_info.get(column_name)
+        if not info:
+            logger.debug(f"⚠️ Colonne {column_name} introuvable dans Atlas, skip description")
+            continue
+        guid = info.get("guid")
+        if not guid:
+            continue
+        entities.append({
+            "typeName": "Column",
+            "guid": guid,
+            "attributes": {
+                "description": description or (info.get("description") or "")
+            }
+        })
+    if not entities:
+        return
+    atlas_put(ATLAS_ENTITY_URL, {"entities": entities})
+    logger.debug(f"🔁 {len(entities)} descriptions de colonnes synchronisées pour {dataset.atlas_guid[:8]}")
+
+
+def _assign_glossary_terms(db: Session, dataset: Dataset, column_info: Dict[str, Dict[str, str]]) -> None:
+    assignments = get_assignments_for_dataset(db, dataset.id)
+    dataset_terms = []
+    column_terms = defaultdict(set)
+    for assignment in assignments:
+        term = getattr(assignment, "term", None)
+        if not term or not term.atlas_guid:
+            continue
+        if assignment.column_name:
+            column_terms[assignment.column_name].add(term.atlas_guid)
+        else:
+            dataset_terms.append(term.atlas_guid)
+
+    if dataset_terms:
+        assign_terms_to_entity(
+            dataset_terms,
+            dataset.atlas_guid,
+            "DataSet",
+            dataset.name or dataset.atlas_guid
+        )
+        logger.debug(f"📌 {len(dataset_terms)} termes alignés sur l'entité dataset")
+
+    if not column_terms:
+        return
+
+    for column_name, term_guids in column_terms.items():
+        info = column_info.get(column_name)
+        if not info or not info.get("guid"):
+            logger.debug(f"⚠️ Colonne {column_name} sans GUID Atlas, skip term assign")
+            continue
+        entity_display = info.get("qualified_name") or f"{dataset.name}.{column_name}"
+        assign_terms_to_entity(
+            list(term_guids),
+            info["guid"],
+            "Column",
+            entity_display
+        )
+        logger.debug(f"📌 Terme(s) assigné(s) à la colonne {column_name}")
+
+
+def _get_dataset_details(dataset: Dataset) -> Dict:
+    url = f"{ATLAS_ENTITY_URL}/guid/{dataset.atlas_guid}"
+    response = atlas_get(url)
+    entity = response.json().get("entity") or {}
+    return entity
+
+
+def sync_dataset_metadata_to_atlas(
+    db: Session,
+    dataset: Dataset,
+    column_descriptions: Dict[str, str] | None = None
+) -> None:
+    if not dataset.atlas_guid:
+        raise ValueError("Dataset sans atlas_guid")
+
+    column_info = get_existing_columns(dataset.atlas_guid, getattr(dataset, "atlas_qualified_name", None))
+    logger.debug("sync_metadata: dataset %s has %d columns_from_atlas", dataset.atlas_guid, len(column_info))
+    for col, info in column_info.items():
+        logger.debug("column_info[%s]=%s", col, {k: info.get(k) for k in ["guid", "qualified_name"]})
+    _update_dataset_description(dataset)
+    if column_descriptions:
+        _update_column_descriptions(dataset, column_descriptions, column_info)
+    _assign_glossary_terms(db, dataset, column_info)
+    logger.info(f"✅ Métadonnées Atlas synchronisées pour {dataset.atlas_guid[:8]}")

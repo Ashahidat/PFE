@@ -1,18 +1,35 @@
 body {
-    font-family: "Arial", sans-serif;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
     background-color: #f5f5f5;
-    color: #333;
-    text-align: center;
-    padding: 20px;
+    color: #111827;
+    margin: 0;
+    padding: 0;
+    line-height: 1.5;
+}
+
+:root {
+    --bg: #f5f5f5;
+    --surface: #ffffff;
+    --text: #111827;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --shadow: 0 8px 24px rgba(0,0,0,0.08);
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --danger: #dc2626;
+    --success: #16a34a;
+    --warning: #d97706;
+    --radius: 12px;
 }
 
 .container {
-    max-width: 900px;
-    margin: auto;
-    background: white;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    max-width: 980px;
+    margin: 20px auto;
+    background: var(--surface);
+    padding: 22px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
 }
 
 .hidden { display: none; }
@@ -27,7 +44,7 @@ table, th, td { border: 1px solid #ccc; }
 th, td { padding: 8px; text-align: left; }
 
 button {
-    background-color: #3498db;
+    background-color: var(--primary);
     color: white;
     border: none;
     padding: 8px 12px;
@@ -36,7 +53,7 @@ button {
     cursor: pointer;
 }
 
-button:hover { background-color: #74c6fc; }
+button:hover { background-color: var(--primary-hover); }
 
 input[type="file"], input[type="number"] {
     padding: 5px 8px;
@@ -49,4 +66,246 @@ h1 { font-size: 2em; margin-bottom: 20px; }
 h2 { margin-top: 30px; font-size: 1.5em; color: #333; }
 h3 { margin-top: 15px; font-size: 1.2em; color: #555; }
 
+.app-page {
+    padding: 0 14px 30px 14px;
+}
 
+/* Navbar (used by js/navbar.js) */
+.app-nav {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #0f172a;
+    color: #fff;
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+
+.app-nav__inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 12px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+}
+
+.app-nav__left, .app-nav__right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.app-nav a {
+    color: #fff;
+    text-decoration: none;
+    font-weight: 600;
+    opacity: 0.92;
+}
+
+.app-nav a:hover {
+    opacity: 1;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+.app-nav__brand {
+    font-weight: 800;
+    letter-spacing: 0.2px;
+}
+
+.app-nav__logout {
+    background: var(--danger);
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-weight: 700;
+    margin: 0;
+}
+
+.app-nav__logout:hover {
+    background: #b91c1c;
+}
+
+.muted {
+    color: var(--muted);
+}
+
+.uploads-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    margin-top: 20px;
+}
+
+.dataset-card {
+    border: 1px solid #e3e3e3;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: left;
+    background: #fafafa;
+}
+
+.dataset-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+}
+
+.dataset-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.project-group {
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 20px;
+    background: #fff;
+}
+
+.project-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.project-heading small {
+    color: #777;
+}
+
+.project-datasets {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.badge {
+    background: #f0f0f0;
+    color: #333;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.85em;
+}
+
+.assignment-badge {
+    background: #ffe4b5;
+}
+
+.badge-warning {
+    background: #ffe4b5;
+    color: #7a4b00;
+}
+
+.badge-success {
+    background: #d4f4d2;
+    color: #2b6c3b;
+}
+
+.dataset-description {
+    margin-top: 12px;
+    margin-bottom: 16px;
+    color: #555;
+}
+
+.btn-link {
+    background: none;
+    color: #1476d9;
+    border: none;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.dataset-details {
+    margin-top: 16px;
+    border-top: 1px solid #e3e3e3;
+    padding-top: 16px;
+}
+
+.dataset-details.hidden {
+    display: none;
+}
+
+.dataset-term-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+
+.columns-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.column-row {
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.column-row .column-meta {
+    font-size: 0.85em;
+    color: #666;
+}
+
+.column-description {
+    width: 100%;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 60px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    padding: 8px;
+}
+
+.column-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.column-status {
+    font-size: 0.85em;
+}
+
+.btn-small {
+    padding: 6px 10px;
+    border-radius: 6px;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 0.85em;
+    background: #f0f0f0;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.status-pill.success { background: #d4f4d2; color: #236a4c; }
+.status-pill.error { background: #fbdada; color: #8f1d20; }
+.status-pill.info { background: #e2edff; color: #1d4f96; }
+
+.dataset-status-message { margin-bottom: 12px; }
+
+.atlas-warning {
+    font-style: italic;
+    color: #7a4b00;
+    margin-bottom: 12px;
+}

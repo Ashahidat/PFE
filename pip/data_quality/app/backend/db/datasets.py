@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, ARRAY, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, ARRAY, Text, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -18,8 +18,11 @@ class Dataset(Base):
     created_at = Column(DateTime, server_default=func.now())
     owner_employee_id = Column(String, nullable=True)
     atlas_guid = Column(String, nullable=True)
+    atlas_qualified_name = Column(String, nullable=True)
+    classification = Column(String, nullable=False, default="DEPARTMENT", server_default="DEPARTMENT")
     project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=True)
     description = Column(Text, nullable=True)  # ✅ NOUVEAU champ description
+    atlas_synced = Column(Boolean, nullable=False, default=False, server_default="false")
     
     # Relations
     project = relationship("Project", back_populates="datasets")

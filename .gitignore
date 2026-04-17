@@ -82,6 +82,13 @@ pip/data_quality/orchestration/airflow/dags/__pycache__/
 /home/ashahi/PFE/deequ_test_all.csv
 /.codex
 
+# ============================================
+# LOCAL / GENERATED (NOT PART OF CODE)
+# ============================================
+graphify-out/
+.graphify_python
+spark-warehouse/
+AGENTS.md
 
 
 

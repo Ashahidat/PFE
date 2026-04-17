@@ -436,6 +436,8 @@ def push_atlas(
         dataset.atlas_guid = dataset_guid
         dataset.last_modified_by = employee_id
         dataset.last_modified_at = func.now()
+        dataset.atlas_qualified_name = dataset_qualified_name
+        dataset.atlas_synced = True
         db.commit()
         logger.info(f"✅ Dataset créé: {dataset_guid}")
 

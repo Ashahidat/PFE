@@ -7,8 +7,11 @@ CREATE TABLE datasets (
     created_at TIMESTAMP DEFAULT NOW(),
     owner_employee_id VARCHAR(50),
     atlas_guid TEXT,
+    atlas_qualified_name TEXT,
     project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
-    description TEXT
+    description TEXT,
+    classification TEXT NOT NULL DEFAULT 'DEPARTMENT',
+    atlas_synced BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- Index pour les recherches fréquentes
