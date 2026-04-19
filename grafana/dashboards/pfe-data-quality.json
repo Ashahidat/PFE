@@ -1,0 +1,38 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "postgres", "uid": "PFE Postgres" },
+      "description": "Nombre de checks par statut (daily).",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT date_trunc('day', dqr.created_at) AS time,\n       COALESCE(UPPER(dqr.status), 'UNKNOWN') AS metric,\n       COUNT(*)::float AS value\nFROM data_quality_results dqr\nGROUP BY 1, 2\nORDER BY 1"
+        }
+      ],
+      "title": "Data Quality Checks (Daily)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["pfe", "data-quality"],
+  "templating": { "list": [] },
+  "time": { "from": "now-7d", "to": "now" },
+  "timezone": "browser",
+  "title": "PFE - Data Quality",
+  "uid": "pfe-data-quality",
+  "version": 1
+}
+

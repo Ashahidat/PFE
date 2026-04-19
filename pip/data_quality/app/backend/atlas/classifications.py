@@ -1,6 +1,5 @@
-from atlas.client import atlas_post, atlas_get
+from atlas.client import atlas_post, atlas_get, atlas_delete
 import logging
-import requests 
 import time  
 from typing import List, Optional, Dict
 import json
@@ -17,22 +16,14 @@ def check_classification_exists(entity_guid: str, classification_name: str) -> b
     """
     try:
         url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{entity_guid}"
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
-        
-        response = requests.get(url, headers=headers, verify=False)
-        
-        if response.status_code == 200:
-            entity_data = response.json()
-            entity = entity_data.get("entity", {})
-            classifications = entity.get("classifications", [])
-            
-            # Vérifier si la classification existe déjà
-            for classification in classifications:
-                if classification.get("typeName") == classification_name:
-                    return True
+        response = atlas_get(url)
+        entity_data = response.json() if response is not None else {}
+        entity = (entity_data or {}).get("entity", {})
+        classifications = entity.get("classifications", [])
+
+        for classification in classifications:
+            if classification.get("typeName") == classification_name:
+                return True
         return False
         
     except Exception as e:
@@ -342,22 +333,12 @@ def get_entity_classifications(guid: str) -> List[Dict]:
     """
     try:
         url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}?minExtInfo=true"
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
-        
-        response = requests.get(url, headers=headers, verify=False)
-        
-        if response.status_code == 200:
-            entity_data = response.json()
-            entity = entity_data.get("entity", {})
-            classifications = entity.get("classifications", [])
-            logger.debug(f"📋 Classifications trouvées pour {guid}: {len(classifications)}")
-            return classifications
-        else:
-            logger.warning(f"⚠️ Impossible de récupérer les classifications: {response.status_code}")
-            return []
+        response = atlas_get(url)
+        entity_data = response.json() if response is not None else {}
+        entity = (entity_data or {}).get("entity", {})
+        classifications = entity.get("classifications", [])
+        logger.debug(f"📋 Classifications trouvées pour {guid}: {len(classifications)}")
+        return classifications
             
     except Exception as e:
         logger.error(f"❌ Erreur récupération classifications: {e}")
@@ -370,13 +351,8 @@ def remove_classification(guid: str, classification_name: str) -> bool:
     """
     try:
         url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}/classifications/{classification_name}"
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
-        
-        response = requests.delete(url, headers=headers, verify=False)
-        
+        response = atlas_delete(url)
+
         if response.status_code == 204:
             logger.info(f"✅ Classification {classification_name} supprimée de {guid}")
             return True
@@ -405,12 +381,12 @@ def force_replace_security_classification(guid: str, new_classification: str, at
     try:
         # Étape 1: Supprimer PUBLIC si existant
         delete_public_url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}/classifications/PUBLIC"
-        requests.delete(delete_public_url, auth=AUTH)
+        atlas_delete(delete_public_url)
         time.sleep(1)
         
         # Étape 2: Supprimer RESTRICTED si existant  
         delete_restricted_url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}/classifications/RESTRICTED"
-        requests.delete(delete_restricted_url, auth=AUTH)
+        atlas_delete(delete_restricted_url)
         time.sleep(1)
         
         # Étape 3: Ajouter la nouvelle
@@ -420,12 +396,7 @@ def force_replace_security_classification(guid: str, new_classification: str, at
         }]
         
         add_url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}/classifications"
-        add_response = requests.post(
-            add_url,
-            json=payload,
-            auth=AUTH,
-            headers={"Content-Type": "application/json"}
-        )
+        add_response = atlas_post(add_url, payload)
         
         return add_response.status_code in [200, 204]
         
@@ -454,17 +425,8 @@ def sync_security_classification_to_atlas(guid: str, new_classification: str, at
     try:
         # 1️⃣ Récupérer les classifications existantes
         get_url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}"
-        response = requests.get(
-            get_url, 
-            auth=AUTH,
-            headers={"Accept": "application/json"}
-        )
-        
-        if response.status_code != 200:
-            logger.error(f"❌ Impossible de récupérer les classifications: {response.status_code}")
-            return False
-            
-        entity_data = response.json()
+        response = atlas_get(get_url)
+        entity_data = response.json() if response is not None else {}
         entity = entity_data.get("entity", {})
         classifications = entity.get("classifications", [])
         
@@ -475,11 +437,7 @@ def sync_security_classification_to_atlas(guid: str, new_classification: str, at
                 logger.info(f"🗑️ Suppression de {type_name}...")
                 
                 delete_url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}/classifications/{type_name}"
-                delete_response = requests.delete(
-                    delete_url,
-                    auth=AUTH,
-                    headers={"Accept": "application/json"}
-                )
+                delete_response = atlas_delete(delete_url)
                 
                 if delete_response.status_code == 204:
                     logger.info(f"✅ {type_name} supprimée")
@@ -502,12 +460,7 @@ def sync_security_classification_to_atlas(guid: str, new_classification: str, at
         }]
         
         add_url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}/classifications"
-        add_response = requests.post(
-            add_url,
-            json=payload,
-            auth=AUTH,
-            headers={"Content-Type": "application/json"}
-        )
+        add_response = atlas_post(add_url, payload)
         
         if add_response.status_code in [200, 204]:
             logger.info(f"✅ {new_classification} ajoutée avec succès")
@@ -519,5 +472,4 @@ def sync_security_classification_to_atlas(guid: str, new_classification: str, at
     except Exception as e:
         logger.error(f"❌ Erreur lors de la synchronisation: {e}", exc_info=True)
         return False
-
 

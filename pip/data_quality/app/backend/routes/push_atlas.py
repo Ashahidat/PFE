@@ -180,62 +180,85 @@ def push_atlas(
         # ----------------------
         # 3️⃣ DÉPLOYER TYPEDEFS (robuste pour types personnalisés)
         # ----------------------
-        logger.info("📦 Déploiement des typedefs Atlas...")
+        deploy_typedefs = os.getenv("ATLAS_DEPLOY_TYPEDEFS", "1") != "0"
+        force_update_typedefs = os.getenv("ATLAS_FORCE_TYPEDEF_UPDATE", "0") == "1"
 
-        # ⚡ 1️⃣ Déployer d'abord Column (type de base)
-        base_types = ["Column"]
-        for type_name in base_types:
-            entityDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == type_name)
-            try:
-                _deploy_typedef_with_retry("entityDefs", entityDef)
-                logger.info(f"✅ EntityDef créé: {type_name}")
-            except Exception as e:
-                if "409" not in str(e):
-                    raise
-                logger.info(f"ℹ️ EntityDef existant: {type_name}")
+        if deploy_typedefs:
+            logger.info("📦 Déploiement des typedefs Atlas...")
 
-        # ⚡ 2️⃣ Déployer DataQualityCheck (dépend de Column)
-        dataQualityDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == "DataQualityCheck")
-        try:
-            _deploy_typedef_with_retry("entityDefs", dataQualityDef)
-            logger.info("✅ EntityDef créé: DataQualityCheck")
-        except Exception as e:
-            if "409" not in str(e):
-                raise
-            logger.info("ℹ️ EntityDef existant: DataQualityCheck")
+            # ⚡ 1️⃣ Déployer d'abord Column (type de base)
+            base_types = ["Column"]
+            for type_name in base_types:
+                if not force_update_typedefs and get_typedef_by_name(type_name, "entity"):
+                    logger.info(f"ℹ️ EntityDef existant (skip): {type_name}")
+                    continue
+                entityDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == type_name)
+                try:
+                    _deploy_typedef_with_retry("entityDefs", entityDef)
+                    logger.info(f"✅ EntityDef créé: {type_name}")
+                except Exception as e:
+                    if "409" not in str(e):
+                        raise
+                    logger.info(f"ℹ️ EntityDef existant: {type_name}")
 
-        # ⚡ 3️⃣ Déployer DataSet
-        dataSetDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == "DataSet")
-        try:
-            atlas_put(ATLAS_TYPEDEF_URL, {"entityDefs": [dataSetDef]})
-            logger.info("✅ DataSet déployé")
-        except Exception as e:
-            if "409" not in str(e):
-                raise
-            logger.info("ℹ️ DataSet existant")
+            # ⚡ 2️⃣ Déployer DataQualityCheck (dépend de Column)
+            if force_update_typedefs or not get_typedef_by_name("DataQualityCheck", "entity"):
+                dataQualityDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == "DataQualityCheck")
+                try:
+                    _deploy_typedef_with_retry("entityDefs", dataQualityDef)
+                    logger.info("✅ EntityDef créé: DataQualityCheck")
+                except Exception as e:
+                    if "409" not in str(e):
+                        raise
+                    logger.info("ℹ️ EntityDef existant: DataQualityCheck")
+            else:
+                logger.info("ℹ️ EntityDef existant (skip): DataQualityCheck")
 
-        # ⚡ 4️⃣ Déployer les relations
-        for rel_def in typedefs_payload.get("relationshipDefs", []):
-            try:
-                _deploy_typedef_with_retry("relationshipDefs", rel_def)
-                logger.info(f"✅ RelationshipDef: {rel_def['name']}")
-            except Exception as e:
-                if "409" not in str(e):
-                    raise
-                logger.info(f"ℹ️ RelationshipDef existant: {rel_def['name']}")
+            # ⚡ 3️⃣ Déployer DataSet (PUT = update possible)
+            if force_update_typedefs or not get_typedef_by_name("DataSet", "entity"):
+                dataSetDef = next(e for e in typedefs_payload["entityDefs"] if e["name"] == "DataSet")
+                try:
+                    atlas_put(ATLAS_TYPEDEF_URL, {"entityDefs": [dataSetDef]})
+                    logger.info("✅ DataSet déployé")
+                except Exception as e:
+                    if "409" not in str(e):
+                        raise
+                    logger.info("ℹ️ DataSet existant")
+            else:
+                logger.info("ℹ️ EntityDef existant (skip): DataSet")
 
-        # ⚡ 5️⃣ Déployer les classifications
-        for class_def in typedefs_payload.get("classificationDefs", []):
-            try:
-                _deploy_typedef_with_retry("classificationDefs", class_def)
-                logger.info(f"✅ Classification: {class_def['name']}")
-            except Exception as e:
-                if "409" not in str(e):
-                    raise
-                logger.info(f"ℹ️ Classification existante: {class_def['name']}")
+            # ⚡ 4️⃣ Déployer les relations
+            for rel_def in typedefs_payload.get("relationshipDefs", []):
+                rel_name = rel_def.get("name")
+                if rel_name and not force_update_typedefs and get_typedef_by_name(rel_name, "relationship"):
+                    logger.info(f"ℹ️ RelationshipDef existant (skip): {rel_name}")
+                    continue
+                try:
+                    _deploy_typedef_with_retry("relationshipDefs", rel_def)
+                    logger.info(f"✅ RelationshipDef: {rel_def['name']}")
+                except Exception as e:
+                    if "409" not in str(e):
+                        raise
+                    logger.info(f"ℹ️ RelationshipDef existant: {rel_def['name']}")
 
-        logger.info("⏳ Attente de la propagation des typedefs...")
-        time.sleep(3)
+            # ⚡ 5️⃣ Déployer les classifications
+            for class_def in typedefs_payload.get("classificationDefs", []):
+                class_name = class_def.get("name")
+                if class_name and not force_update_typedefs and get_typedef_by_name(class_name, "classification"):
+                    logger.info(f"ℹ️ Classification existante (skip): {class_name}")
+                    continue
+                try:
+                    _deploy_typedef_with_retry("classificationDefs", class_def)
+                    logger.info(f"✅ Classification: {class_def['name']}")
+                except Exception as e:
+                    if "409" not in str(e):
+                        raise
+                    logger.info(f"ℹ️ Classification existante: {class_def['name']}")
+
+            logger.info("⏳ Attente de la propagation des typedefs...")
+            time.sleep(3)
+        else:
+            logger.info("⏭️ Déploiement typedefs désactivé via ATLAS_DEPLOY_TYPEDEFS=0")
 
         # ----------------------
         # 4️⃣ Calcul signature

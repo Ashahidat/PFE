@@ -1,0 +1,55 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "postgres", "uid": "PFE Postgres" },
+      "description": "Runs Airflow/DAG par etat (daily).",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time,\n       COALESCE(status, 'unknown') AS metric,\n       COUNT(*)::float AS value\nFROM dag_runs\nGROUP BY 1, 2\nORDER BY 1"
+        }
+      ],
+      "title": "DAG Runs (Daily)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "PFE Postgres" },
+      "description": "Duree des runs (ms) si tu as un champ duration, sinon adapte la requete.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 9 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT created_at AS time,\n       EXTRACT(EPOCH FROM (COALESCE(updated_at, NOW()) - created_at)) * 1000.0 AS value\nFROM dag_runs\nWHERE created_at IS NOT NULL\nORDER BY created_at"
+        }
+      ],
+      "title": "DAG Run Duration (ms)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["pfe", "pipeline"],
+  "templating": { "list": [] },
+  "time": { "from": "now-7d", "to": "now" },
+  "timezone": "browser",
+  "title": "PFE - Pipeline Health",
+  "uid": "pfe-pipeline-health",
+  "version": 1
+}

@@ -24,6 +24,9 @@ venv/
 *.parquet
 *.jsonl
 *.json
+!grafana/
+!grafana/dashboards/
+!grafana/dashboards/*.json
 
 # Garder seulement les CSV TEMP ignorés
 tmp/*.csv
@@ -89,6 +92,5 @@ graphify-out/
 .graphify_python
 spark-warehouse/
 AGENTS.md
-
 
 

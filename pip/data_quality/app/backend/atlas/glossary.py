@@ -3,12 +3,12 @@ import re
 from typing import List, Dict, Optional
 from urllib.parse import quote
 
-import requests
 from sqlalchemy.orm import Session
 
 from atlas.client import (
     atlas_get,
     atlas_post,
+    atlas_request,
     ATLAS_GLOSSARY_URL,
     ATLAS_GLOSSARY_TERM_URL,
     ATLAS_GLOSSARY_TERMS_URL,
@@ -300,7 +300,7 @@ def assign_terms_to_entity(
             # L'endpoint Atlas attendu pour l'assignation est au pluriel `/terms/{guid}/assignedEntities`
             # (voir application.log: NotFound sur /term/.../assignedEntities).
             url = f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities"
-            res = requests.post(url, json=payload, auth=AUTH, headers=HEADERS)
+            res = atlas_request("POST", url, json=payload, auth=AUTH, headers=HEADERS)
             if res.status_code not in (200, 204):
                 logger.warning(
                     f"Échec assignation terme {term_guid} à {entity_guid}: {res.status_code} {res.text}"
