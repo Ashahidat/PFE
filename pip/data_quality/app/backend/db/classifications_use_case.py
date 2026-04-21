@@ -1,6 +1,6 @@
 # db/classification_use_case.py
 
-from atlas.classifications import add_classification
+from atlas.classifications import add_classification, remove_classification, sync_security_classification_to_atlas
 from db.classifications_crud import (
     disable_active_classifications,
     create_entity_classification
@@ -89,11 +89,26 @@ def apply_classification_use_case(
         db.flush()
 
         # 8️⃣ Ajouter à ATLAS
-        atlas_response = add_classification(
-            atlas_guid,
-            classification_name,
-            attributes
-        )
+        # Column classifications: ensure we don't accumulate multiple tags in Atlas.
+        if entity_type == "COLUMN":
+            for other in ["PII", "SENSITIVE"]:
+                if other != classification_name:
+                    remove_classification(atlas_guid, other)
+            atlas_response = add_classification(atlas_guid, classification_name, attributes)
+
+        # Dataset security classification: replace semantics (remove old + add new).
+        elif entity_type == "DATASET" and classification_name in ["PUBLIC", "RESTRICTED"]:
+            ok = sync_security_classification_to_atlas(
+                guid=atlas_guid,
+                new_classification=classification_name,
+                attributes=attributes
+            )
+            if not ok:
+                raise RuntimeError("Echec synchronisation Atlas (security classification)")
+            atlas_response = {"status": "synced", "message": "Security classification replaced"}
+
+        else:
+            atlas_response = add_classification(atlas_guid, classification_name, attributes)
 
         logger.info(f"Atlas response: {atlas_response}")
 

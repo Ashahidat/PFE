@@ -2,7 +2,9 @@ import requests
 import logging
 import os
 import time
+import re
 from typing import Any, Dict, Optional, Tuple
+from functools import lru_cache
 
 ATLAS_ENTITY_BULK_URL = "http://localhost:21000/api/atlas/v2/entity/bulk"
 ATLAS_TYPEDEF_URL = "http://localhost:21000/api/atlas/v2/types/typedefs"
@@ -23,9 +25,52 @@ _DEFAULT_READ_TIMEOUT = float(os.getenv("ATLAS_READ_TIMEOUT", "120"))
 _DEFAULT_MAX_RETRIES = int(os.getenv("ATLAS_HTTP_MAX_RETRIES", "3"))
 _DEFAULT_BACKOFF_SECONDS = float(os.getenv("ATLAS_HTTP_BACKOFF_SECONDS", "0.8"))
 
+_DEFAULT_APPLICATION_LOG = os.getenv(
+    "ATLAS_APPLICATION_LOG",
+    "/home/ashahi/PFE/pip/data_governance/apache-atlas-2.4.0/logs/application.log",
+)
+
 
 def _default_timeout() -> Tuple[float, float]:
     return (_DEFAULT_CONNECT_TIMEOUT, _DEFAULT_READ_TIMEOUT)
+
+
+def _extract_logged_error_id(text: str) -> Optional[str]:
+    """
+    Atlas sometimes responds with a generic message:
+      'There was an error processing your request. It has been logged (ID <hex>).'
+    We can use this ID to check the server-side exception in application.log.
+    """
+    if not text:
+        return None
+    match = re.search(r"\(ID ([0-9a-f]+)\)", text)
+    return match.group(1) if match else None
+
+
+@lru_cache(maxsize=2048)
+def _atlas_logged_id_is_not_found(error_id: str) -> bool:
+    """
+    Detect Atlas's pathological behavior where a NotFoundException is returned as HTTP 500.
+    We inspect the Atlas application log around the logged error id.
+    """
+    if not error_id:
+        return False
+    path = _DEFAULT_APPLICATION_LOG
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            lookahead = 0
+            for line in f:
+                if lookahead > 0:
+                    if "NotFoundException" in line:
+                        return True
+                    lookahead -= 1
+                    continue
+                if error_id in line and "Error handling a request" in line:
+                    lookahead = 5
+            return False
+    except Exception:
+        # If we can't read logs, don't guess.
+        return False
 
 
 def atlas_request(
@@ -130,6 +175,16 @@ def atlas_put(url, payload):
 def atlas_delete(url: str):
     res = atlas_request("DELETE", url)
     if not res.ok and res.status_code != 404:
+        # Atlas sometimes maps NotFoundException to HTTP 500. Treat it as idempotent success.
+        if res.status_code == 500:
+            error_id = _extract_logged_error_id(res.text or "")
+            if error_id and _atlas_logged_id_is_not_found(error_id):
+                logger.warning(
+                    f"[atlas_delete] treating 500(NotFoundException) as success "
+                    f"url={url} logged_id={error_id}"
+                )
+                return res
+
         logger.error(
             f"[atlas_delete] FAILED {url} "
             f"status={res.status_code} "

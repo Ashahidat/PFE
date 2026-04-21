@@ -19,6 +19,45 @@ from jwt_dependencies import get_current_user
 router = APIRouter()
 logger = logging.getLogger("descriptions")
 
+def _get_latest_published_version(db: Session, dataset_id: str) -> Optional[DatasetVersion]:
+    return db.query(DatasetVersion).filter(
+        DatasetVersion.dataset_id == dataset_id,
+        DatasetVersion.atlas_guid.isnot(None)
+    ).order_by(DatasetVersion.version_number.desc()).first()
+
+
+def _get_latest_descriptions_by_column(db: Session, dataset_id: str) -> Dict[str, Dict]:
+    """
+    Returns the freshest description per column for a dataset across all versions.
+    Newer versions win; inside the same version, the latest update wins.
+    """
+    rows = db.query(
+        ColumnDescription.column_name,
+        ColumnDescription.description,
+        DatasetVersion.version_number,
+        DatasetVersion.created_at,
+        func.coalesce(ColumnDescription.updated_at, ColumnDescription.created_at).label("last_update")
+    ).join(
+        DatasetVersion,
+        DatasetVersion.id == ColumnDescription.dataset_version_id
+    ).filter(
+        DatasetVersion.dataset_id == dataset_id
+    ).order_by(
+        DatasetVersion.version_number.desc(),
+        func.coalesce(ColumnDescription.updated_at, ColumnDescription.created_at).desc()
+    ).all()
+
+    latest_by_column: Dict[str, Dict] = {}
+    for row in rows:
+        if row.column_name not in latest_by_column:
+            latest_by_column[row.column_name] = {
+                "description": row.description,
+                "source_version": row.version_number,
+                "source_created_at": row.created_at.isoformat() if row.created_at else None,
+                "last_update": row.last_update.isoformat() if row.last_update else None
+            }
+    return latest_by_column
+
 # ===================== MODÈLES PYDANTIC =====================
 
 class ColumnDescriptionInput(BaseModel):
@@ -102,10 +141,35 @@ async def save_descriptions(
     logger.info(f"✅ Dataset trouvé: {dataset.name}")
 
     # 2️⃣ Gestion de la version
-    dataset_version = db.query(DatasetVersion).filter(
-        DatasetVersion.dataset_id == dataset_id,
-        DatasetVersion.atlas_guid.is_(None)
-    ).first()
+    # If the dataset was already pushed, metadata edits must attach to the latest published version.
+    dataset_version = _get_latest_published_version(db, dataset_id)
+
+    # Backfill: dataset has an Atlas GUID but no published version row exists (partial push / legacy state).
+    if not dataset_version and dataset.atlas_guid:
+        draft = db.query(DatasetVersion).filter(
+            DatasetVersion.dataset_id == dataset_id,
+            DatasetVersion.atlas_guid.is_(None)
+        ).order_by(DatasetVersion.version_number.desc()).first()
+
+        if draft:
+            draft.atlas_guid = dataset.atlas_guid
+            if not draft.change_comment:
+                draft.change_comment = "Backfill: published version (from datasets.atlas_guid)"
+            else:
+                draft.change_comment = f"{draft.change_comment} | Backfill: published version"
+            db.commit()
+            db.refresh(draft)
+            dataset_version = draft
+            logger.warning(
+                f"🛠️ Backfill version publiée: v{dataset_version.version_number} "
+                f"(ID: {dataset_version.id}) guid={dataset_version.atlas_guid}"
+            )
+
+    if not dataset_version:
+        dataset_version = db.query(DatasetVersion).filter(
+            DatasetVersion.dataset_id == dataset_id,
+            DatasetVersion.atlas_guid.is_(None)
+        ).first()
 
     if not dataset_version:
         last_version = db.query(DatasetVersion).filter(
@@ -123,9 +187,9 @@ async def save_descriptions(
         db.add(dataset_version)
         db.commit()
         db.refresh(dataset_version)
-        logger.info(f"🆕 Nouvelle version temporaire créée: v{dataset_version.version_number} (ID: {dataset_version.id})")
+        logger.info(f"🆕 Nouvelle version brouillon créée (pre-push): v{dataset_version.version_number} (ID: {dataset_version.id})")
     else:
-        logger.info(f"✅ Version temporaire existante: v{dataset_version.version_number} (ID: {dataset_version.id})")
+        logger.info(f"✅ Version cible pour metadata: v{dataset_version.version_number} (ID: {dataset_version.id}) guid={dataset_version.atlas_guid or 'NULL'}")
 
     # 3️⃣ Convertir et filtrer
     descriptions_dict = {
@@ -181,7 +245,7 @@ async def get_descriptions(
         raise HTTPException(status_code=404, detail="Dataset introuvable")
 
     # Récupérer la dernière version
-    latest_version = db.query(DatasetVersion).filter(
+    latest_version = _get_latest_published_version(db, dataset_id) or db.query(DatasetVersion).filter(
         DatasetVersion.dataset_id == dataset_id
     ).order_by(DatasetVersion.version_number.desc()).first()
 
@@ -304,10 +368,9 @@ async def get_inherited_descriptions(
     logger.info(f"   - project_id: {dataset.project_id}")
     logger.info(f"   - id: {dataset.id}")
     
-    # 2️⃣ Récupérer TOUTES les versions (sans filtre pour voir)
+    # 2️⃣ Récupérer TOUTES les versions (y compris temporaires atlas_guid=None)
     all_versions = db.query(DatasetVersion).filter(
-        DatasetVersion.dataset_id == dataset_id,
-        DatasetVersion.atlas_guid.isnot(None)
+        DatasetVersion.dataset_id == dataset_id
     ).order_by(DatasetVersion.version_number.desc()).all()
     
     logger.info(f"📦 TOTAL des versions dans DB pour ce dataset_id: {len(all_versions)}")
@@ -319,8 +382,7 @@ async def get_inherited_descriptions(
         Dataset, Dataset.id == DatasetVersion.dataset_id
     ).filter(
         Dataset.id == dataset_id,
-        Dataset.project_id == dataset.project_id,
-        DatasetVersion.atlas_guid.isnot(None)
+        Dataset.project_id == dataset.project_id
     ).order_by(DatasetVersion.version_number.desc()).limit(5).all()
     
     logger.info(f"📦 Versions filtrées par project_id={dataset.project_id}: {len(previous_versions)}")
@@ -432,15 +494,14 @@ async def get_parent_suggestions(
         
         logger.info(f"   📊 {ds.name}: score={score:.3f}")
         
-        # Récupérer la dernière version avec atlas_guid
-        version = db.query(DatasetVersion).filter(
-            DatasetVersion.dataset_id == ds.id,
-            DatasetVersion.atlas_guid.isnot(None)
-        ).order_by(DatasetVersion.version_number.desc()).first()
-        
-        if not version:
-            logger.debug(f"   ⚠️ Dataset {ds.name}: pas de version avec atlas_guid")
+        # Récupérer la version la plus récente qui porte des descriptions
+        latest_by_column = _get_latest_descriptions_by_column(db, str(ds.id))
+        if not latest_by_column:
+            logger.debug(f"   ⚠️ Dataset {ds.name}: aucune description disponible")
             continue
+
+        # Garder une version de référence pour l'affichage (max des versions utilisées)
+        latest_source_version = max(v["source_version"] for v in latest_by_column.values())
         
         # Seuil adaptatif basé sur la similarité des colonnes
         cols_current = set(current_sig.signature.get("columns", {}).keys())
@@ -460,9 +521,10 @@ async def get_parent_suggestions(
         if score >= threshold:
             candidates.append({
                 "dataset": ds,
-                "version": version,
+                "source_version": latest_source_version,
                 "score": score,
-                "signature": sig
+                "signature": sig,
+                "latest_by_column": latest_by_column
             })
             logger.info(f"   ✅ Accepté (score={score:.3f} >= {threshold})")
         else:
@@ -477,22 +539,23 @@ async def get_parent_suggestions(
     seen_columns = set()
     
     for candidate in candidates[:5]:  # Top 5
-        descriptions = db.query(ColumnDescription).filter(
-            ColumnDescription.dataset_version_id == candidate["version"].id
-        ).all()
-        
-        logger.info(f"   📝 {candidate['dataset'].name} (v{candidate['version'].version_number}, score={candidate['score']:.3f}): {len(descriptions)} descriptions")
-        
-        for desc in descriptions:
-            if desc.column_name not in seen_columns:
+        latest_by_column = candidate["latest_by_column"]
+        logger.info(
+            f"   📝 {candidate['dataset'].name} "
+            f"(latest v{candidate['source_version']}, score={candidate['score']:.3f}): "
+            f"{len(latest_by_column)} descriptions fusionnées"
+        )
+
+        for column_name, meta in latest_by_column.items():
+            if column_name not in seen_columns:
                 suggestions.append({
-                    "column_name": desc.column_name,
-                    "description": desc.description,
+                    "column_name": column_name,
+                    "description": meta["description"],
                     "source_dataset": candidate["dataset"].name,
-                    "source_version": candidate["version"].version_number,
+                    "source_version": meta["source_version"],
                     "similarity_score": round(candidate["score"], 3)
                 })
-                seen_columns.add(desc.column_name)
+                seen_columns.add(column_name)
     
     logger.info(f"📊 Suggestions finales: {len(suggestions)} colonnes uniques")
     logger.info("=" * 80)

@@ -10,7 +10,9 @@ class DatasetVersion(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     dataset_id = Column(UUID(as_uuid=True), ForeignKey("datasets.id"), nullable=False)
     version_number = Column(Integer, nullable=False)
-    atlas_guid = Column(Text, nullable=False)
+    # NOTE: atlas_guid is NULL for "draft" metadata-only versions created from our UI.
+    # It becomes non-NULL when the version is materialized in Atlas during push-atlas.
+    atlas_guid = Column(Text, nullable=True)
     parent_version_id = Column(UUID(as_uuid=True), ForeignKey("dataset_versions.id"))
     created_at = Column(TIMESTAMP, server_default=func.now())
     created_by = Column(String(50), ForeignKey("users.employee_id"))

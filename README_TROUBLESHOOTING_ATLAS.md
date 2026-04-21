@@ -63,6 +63,21 @@ Correctif appliqué :
   - `save_data_quality_results_from_json` (insert en DB)
 - et la sauvegarde DB est rendue **indépendante** de l’envoi Atlas (si Atlas plante, la DB peut quand même être remplie, et inversement).
 
+## 7) Atlas UI en lecture seule (important)
+
+Règle recommandée en prod:
+- Atlas est une cible "write" uniquement via notre backend (avec validations et whitelists).
+- Les utilisateurs ne doivent pas éditer via l'UI Atlas (sinon ils peuvent créer des classifications/termes hors contrôle applicatif).
+
+Important:
+- Si quelqu'un modifie directement dans l'UI Atlas, notre DB ne sera pas mise à jour automatiquement (pas de synchronisation Atlas -> DB dans ce projet actuellement).
+
+## 8) `dataset_versions.atlas_guid = NULL` est-il "OK" ?
+
+Oui: dans notre app, une version peut exister en mode "brouillon metadata":
+- `atlas_guid = NULL` = version brouillon (descriptions / termes modifiés depuis l'UI de notre app)
+- `atlas_guid != NULL` = version matérialisée dans Atlas (après `push-atlas`)
+
 ## 5) Pourquoi `data_quality_results` n’est pas rempli avec `/run-dag-v2` ?
 
 `/run-dag-v2` :

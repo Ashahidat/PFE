@@ -256,6 +256,34 @@ function createDatasetCard(dataset) {
     detail.className = "dataset-details hidden";
     detail.dataset.loaded = "false";
 
+    const descriptionEditor = document.createElement("div");
+    descriptionEditor.className = "dataset-meta-editor";
+    const descLabel = document.createElement("div");
+    descLabel.className = "dataset-meta-label";
+    descLabel.textContent = "Description du dataset:";
+    const descTextarea = document.createElement("textarea");
+    descTextarea.className = "dataset-meta-textarea";
+    descTextarea.rows = 3;
+    descTextarea.value = dataset.description || "";
+    descTextarea.disabled = !dataset.can_edit;
+    const descActions = document.createElement("div");
+    descActions.className = "dataset-meta-actions";
+    const descSaveBtn = document.createElement("button");
+    descSaveBtn.type = "button";
+    descSaveBtn.className = "btn-small secondary";
+    descSaveBtn.textContent = "Sauvegarder";
+    descSaveBtn.disabled = !dataset.can_edit;
+    const descStatus = document.createElement("span");
+    descStatus.className = "status-pill info dataset-meta-status";
+    descStatus.textContent = "";
+    descStatus.style.display = "none";
+    descSaveBtn.addEventListener("click", async () => {
+        await saveDatasetDescription(dataset, descTextarea, descStatus, descSaveBtn, card);
+    });
+    descActions.append(descSaveBtn, descStatus);
+    descriptionEditor.append(descLabel, descTextarea, descActions);
+    detail.appendChild(descriptionEditor);
+
     let warning;
     if (!dataset.atlas_synced) {
         warning = document.createElement("p");
@@ -269,6 +297,24 @@ function createDatasetCard(dataset) {
     statusMessage.id = `dataset-status-${dataset.id}`;
     statusMessage.className = "dataset-status-message";
     detail.appendChild(statusMessage);
+
+    const securitySection = document.createElement("div");
+    securitySection.className = "dataset-security-section";
+    securitySection.innerHTML = `
+        <div class="dataset-meta-label">Sécurité (Atlas)</div>
+        <div class="dataset-security-row">
+            <select class="dataset-security-select" data-security-select="${dataset.id}">
+                <option value="RESTRICTED">RESTRICTED (département)</option>
+                <option value="PUBLIC">PUBLIC (entreprise)</option>
+            </select>
+            <button type="button" class="btn-small" data-security-apply="${dataset.id}">Appliquer</button>
+            <span class="status-pill info dataset-security-status" data-security-status="${dataset.id}" style="display:none;"></span>
+        </div>
+        <div class="dataset-security-columns muted" data-security-columns="${dataset.id}"></div>
+    `;
+    // hidden until we load details (need Atlas guid / mappings)
+    securitySection.style.display = dataset.atlas_synced ? "block" : "none";
+    detail.appendChild(securitySection);
 
     const termSection = document.createElement("div");
     termSection.className = "dataset-term-section";
@@ -314,18 +360,30 @@ async function loadDatasetMetadata(dataset, detailEl, canEdit, card) {
     if (!columnsSection) return;
     columnsSection.innerHTML = "<p>Chargement des colonnes...</p>";
     try {
-        const res = await fetchWithAuth(`/api/datasets/${datasetId}/metadata`);
+        const [res, atlasColsRes, allowedRes, colClassRes] = await Promise.all([
+            fetchWithAuth(`/api/datasets/${datasetId}/metadata`),
+            dataset.atlas_synced ? fetchWithAuth(`/api/datasets/${datasetId}/atlas-columns`) : Promise.resolve(null),
+            dataset.atlas_synced ? fetchWithAuth(`/dataset/${datasetId}/allowed-classifications`) : Promise.resolve(null),
+            dataset.atlas_synced ? fetchWithAuth(`/dataset/${datasetId}/column-classifications`) : Promise.resolve(null),
+        ]);
         if (!res.ok) {
             throw new Error("Impossible de charger les métadonnées");
         }
         const metadata = await res.json();
+
+        const atlasColumns = atlasColsRes && atlasColsRes.ok ? (await atlasColsRes.json()).columns : {};
+        const allowed = allowedRes && allowedRes.ok ? await allowedRes.json() : { dataset_classification: null };
+        const existingColClasses = colClassRes && colClassRes.ok ? (await colClassRes.json()).columns : {};
+
+        initSecurityControls(dataset, detailEl, canEdit, card, allowed, atlasColumns, existingColClasses);
+
         if (!metadata.columns.length) {
             columnsSection.innerHTML = "<p>Aucune colonne détectée.</p>";
             return;
         }
         columnsSection.innerHTML = "";
-    for (const column of metadata.columns) {
-            columnsSection.append(createColumnRow(dataset, column, canEdit, card));
+        for (const column of metadata.columns) {
+            columnsSection.append(createColumnRow(dataset, column, canEdit, card, atlasColumns, existingColClasses));
         }
     } catch (error) {
         console.error(error);
@@ -333,7 +391,7 @@ async function loadDatasetMetadata(dataset, detailEl, canEdit, card) {
     }
 }
 
-function createColumnRow(dataset, column, canEdit, card) {
+function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, existingColClasses = {}) {
     const row = document.createElement("div");
     row.className = "column-row";
 
@@ -358,11 +416,36 @@ function createColumnRow(dataset, column, canEdit, card) {
     termSelect.className = "column-term-select";
     termSelect.innerHTML = renderTermOptions(column.classification?.term_id);
     termSelect.disabled = !canEdit;
+
+    const securitySelect = document.createElement("select");
+    securitySelect.className = "column-security-select";
+    securitySelect.innerHTML = `
+        <option value="">Aucune</option>
+        <option value="PII">PII</option>
+        <option value="SENSITIVE">SENSITIVE</option>
+    `;
+    const existing = existingColClasses[column.name] ? existingColClasses[column.name].classification : "";
+    securitySelect.value = existing || "";
+    securitySelect.disabled = !canEdit || !dataset.atlas_synced;
+
     const saveBtn = document.createElement("button");
     saveBtn.type = "button";
     saveBtn.textContent = "Sauvegarder";
     saveBtn.disabled = !canEdit;
     saveBtn.className = "btn-small";
+
+    const applySecBtn = document.createElement("button");
+    applySecBtn.type = "button";
+    applySecBtn.textContent = "Classer";
+    applySecBtn.disabled = !canEdit || !dataset.atlas_synced;
+    applySecBtn.className = "btn-small secondary";
+
+    const clearSecBtn = document.createElement("button");
+    clearSecBtn.type = "button";
+    clearSecBtn.textContent = "Retirer";
+    clearSecBtn.disabled = !canEdit || !dataset.atlas_synced;
+    clearSecBtn.className = "btn-small secondary";
+
     const columnStatus = document.createElement("span");
     columnStatus.className = "column-status status-pill";
 
@@ -371,7 +454,15 @@ function createColumnRow(dataset, column, canEdit, card) {
         await saveColumnMetadata(datasetId, column.name, description, termSelect.value, columnStatus, saveBtn);
     });
 
-    actions.append(termSelect, saveBtn, columnStatus);
+    applySecBtn.addEventListener("click", async () => {
+        await applyColumnSecurityClassification(dataset, column.name, securitySelect.value, atlasColumns, columnStatus);
+    });
+    clearSecBtn.addEventListener("click", async () => {
+        await removeColumnSecurityClassification(dataset, column.name, atlasColumns, columnStatus);
+        securitySelect.value = "";
+    });
+
+    actions.append(termSelect, securitySelect, saveBtn, applySecBtn, clearSecBtn, columnStatus);
     row.append(label, description, actions);
     return row;
 }
@@ -438,6 +529,179 @@ async function updateDatasetTerm(dataset, selectEl, card) {
     } catch (error) {
         console.error(error);
         showDetailMessage(statusEl, "Erreur réseau", "error");
+    }
+}
+
+async function saveDatasetDescription(dataset, textareaEl, statusEl, button, card) {
+    if (button) button.disabled = true;
+    statusEl.style.display = "inline-flex";
+    statusEl.textContent = "Enregistrement...";
+    statusEl.className = "status-pill info dataset-meta-status";
+
+    const payload = {
+        description: (textareaEl?.value || "").trim()
+    };
+
+    try {
+        const res = await fetchWithAuth(`/api/datasets/${dataset.id}/description`, {
+            method: "PUT",
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+            const err = await res.text();
+            throw new Error(err);
+        }
+        const data = await res.json();
+        statusEl.textContent = data.synced_to_atlas ? "Sauvé + Atlas" : "Sauvé (DB)";
+        statusEl.className = "status-pill success dataset-meta-status";
+        // Update card summary
+        const summary = card.querySelector(".dataset-description");
+        if (summary) {
+            summary.textContent = payload.description || "Aucune description fournie.";
+        }
+    } catch (error) {
+        console.error(error);
+        statusEl.textContent = "Erreur";
+        statusEl.className = "status-pill error dataset-meta-status";
+    } finally {
+        if (button) button.disabled = false;
+        setTimeout(() => { statusEl.style.display = "none"; }, 2500);
+    }
+}
+
+function initSecurityControls(dataset, detailEl, canEdit, card, allowed, atlasColumns, existingColClasses) {
+    const select = detailEl.querySelector(`[data-security-select="${dataset.id}"]`);
+    const applyBtn = detailEl.querySelector(`[data-security-apply="${dataset.id}"]`);
+    const statusEl = detailEl.querySelector(`[data-security-status="${dataset.id}"]`);
+    const colsInfo = detailEl.querySelector(`[data-security-columns="${dataset.id}"]`);
+    if (!select || !applyBtn || !statusEl || !colsInfo) return;
+
+    const current = allowed && allowed.dataset_classification ? allowed.dataset_classification : (dataset.classification || "RESTRICTED");
+    select.value = current;
+    select.disabled = !canEdit;
+    applyBtn.disabled = !canEdit;
+
+    const atlasColCount = atlasColumns ? Object.keys(atlasColumns).length : 0;
+    const classifiedCount = existingColClasses ? Object.keys(existingColClasses).length : 0;
+    colsInfo.textContent = `Colonnes Atlas: ${atlasColCount} | Colonnes classifiées: ${classifiedCount}`;
+
+    applyBtn.addEventListener("click", async () => {
+        statusEl.style.display = "inline-flex";
+        statusEl.textContent = "Application...";
+        statusEl.className = "status-pill info dataset-security-status";
+        try {
+            await applyDatasetSecurityClassification(dataset, select.value);
+            statusEl.textContent = "OK";
+            statusEl.className = "status-pill success dataset-security-status";
+        } catch (e) {
+            console.error(e);
+            statusEl.textContent = "Erreur";
+            statusEl.className = "status-pill error dataset-security-status";
+        } finally {
+            setTimeout(() => { statusEl.style.display = "none"; }, 2500);
+        }
+    });
+}
+
+async function applyDatasetSecurityClassification(dataset, classification) {
+    const payload = {
+        entity_type: "DATASET",
+        entity_id: dataset.id,
+        atlas_guid: dataset.atlas_guid,
+        classification_name: classification,
+        attributes: classification === "PUBLIC"
+            ? { visibility_scope: "ENTERPRISE" }
+            : { visibility_scope: "DEPARTMENT" }
+    };
+
+    const res = await fetchWithAuth(`/apply-classification`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err);
+    }
+}
+
+async function applyColumnSecurityClassification(dataset, columnName, classification, atlasColumns, statusEl) {
+    statusEl.textContent = "Classification...";
+    statusEl.className = "column-status status-pill info";
+
+    if (!classification) {
+        statusEl.textContent = "Choisir PII/SENSITIVE";
+        statusEl.className = "column-status status-pill error";
+        return;
+    }
+
+    const columnGuid = atlasColumns && atlasColumns[columnName] ? atlasColumns[columnName].guid : null;
+    if (!columnGuid) {
+        statusEl.textContent = "GUID colonne manquant";
+        statusEl.className = "column-status status-pill error";
+        return;
+    }
+
+    const payload = {
+        entity_type: "COLUMN",
+        entity_id: dataset.id,
+        atlas_guid: columnGuid,
+        classification_name: classification,
+        column_name: columnName,
+        attributes: {}
+    };
+
+    try {
+        const res = await fetchWithAuth(`/apply-classification`, {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+            const err = await res.text();
+            throw new Error(err);
+        }
+        statusEl.textContent = "OK";
+        statusEl.className = "column-status status-pill success";
+    } catch (e) {
+        console.error(e);
+        statusEl.textContent = "Erreur";
+        statusEl.className = "column-status status-pill error";
+    }
+}
+
+async function removeColumnSecurityClassification(dataset, columnName, atlasColumns, statusEl) {
+    statusEl.textContent = "Suppression...";
+    statusEl.className = "column-status status-pill info";
+
+    const columnGuid = atlasColumns && atlasColumns[columnName] ? atlasColumns[columnName].guid : null;
+    if (!columnGuid) {
+        statusEl.textContent = "GUID colonne manquant";
+        statusEl.className = "column-status status-pill error";
+        return;
+    }
+
+    const payload = {
+        entity_type: "COLUMN",
+        entity_id: dataset.id,
+        atlas_guid: columnGuid,
+        column_name: columnName,
+        classification_names: ["PII", "SENSITIVE"]
+    };
+
+    try {
+        const res = await fetchWithAuth(`/remove-classification`, {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+            const err = await res.text();
+            throw new Error(err);
+        }
+        statusEl.textContent = "Supprimé";
+        statusEl.className = "column-status status-pill success";
+    } catch (e) {
+        console.error(e);
+        statusEl.textContent = "Erreur";
+        statusEl.className = "column-status status-pill error";
     }
 }
 

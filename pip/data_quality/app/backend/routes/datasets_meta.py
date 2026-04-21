@@ -86,6 +86,9 @@ class ColumnUpdatePayload(BaseModel):
 class DatasetClassificationPayload(BaseModel):
     glossary_term_id: int | None = None
 
+class DatasetDescriptionPayload(BaseModel):
+    description: str | None = None
+
 
 def _assignment_data(assignment) -> Optional[AssignmentInfo]:
     if not assignment or not assignment.term:
@@ -119,8 +122,41 @@ def _get_latest_version(db: Session, dataset_id: str) -> Optional[DatasetVersion
         DatasetVersion.dataset_id == dataset_id
     ).order_by(DatasetVersion.version_number.desc()).first()
 
+def _get_latest_published_version(db: Session, dataset_id: str) -> Optional[DatasetVersion]:
+    return db.query(DatasetVersion).filter(
+        DatasetVersion.dataset_id == dataset_id,
+        DatasetVersion.atlas_guid.isnot(None)
+    ).order_by(DatasetVersion.version_number.desc()).first()
 
-def _get_or_create_temp_version(db: Session, dataset_id: str, user_id: str) -> DatasetVersion:
+
+def _get_or_create_metadata_version(db: Session, dataset: Dataset, user_id: str) -> DatasetVersion:
+    """
+    Metadata edits (descriptions / assignments) should attach to the latest published version
+    when the dataset has already been pushed to Atlas.
+
+    Only before the first push, we create a draft version (atlas_guid=NULL).
+    """
+    dataset_id = str(dataset.id)
+    published = _get_latest_published_version(db, dataset_id)
+    if published:
+        return published
+
+    # Backfill: dataset has an Atlas GUID but no published version exists (partial push / legacy state).
+    if dataset.atlas_guid:
+        draft = db.query(DatasetVersion).filter(
+            DatasetVersion.dataset_id == dataset_id,
+            DatasetVersion.atlas_guid.is_(None)
+        ).order_by(DatasetVersion.version_number.desc()).first()
+        if draft:
+            draft.atlas_guid = dataset.atlas_guid
+            if not draft.change_comment:
+                draft.change_comment = "Backfill: published version (from datasets.atlas_guid)"
+            else:
+                draft.change_comment = f"{draft.change_comment} | Backfill: published version"
+            db.commit()
+            db.refresh(draft)
+            return draft
+
     version = db.query(DatasetVersion).filter(
         DatasetVersion.dataset_id == dataset_id,
         DatasetVersion.atlas_guid.is_(None)
@@ -282,7 +318,7 @@ async def update_column_metadata(
         raise HTTPException(status_code=404, detail="Colonne introuvable")
 
     user_id = _get_employee_identifier(user) or ""
-    version = _get_or_create_temp_version(db, dataset_id, user_id)
+    version = _get_or_create_metadata_version(db, dataset, user_id)
 
     if payload.description is not None and payload.description.strip():
         create_or_update_description(
@@ -381,3 +417,38 @@ async def update_dataset_classification(
     db.commit()
 
     return _assignment_data(assignment)
+
+
+@router.put("/api/datasets/{dataset_id}/description")
+async def update_dataset_description(
+    dataset_id: str,
+    payload: DatasetDescriptionPayload,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset introuvable")
+    if not can_modify_dataset(user, dataset, db):
+        raise HTTPException(status_code=403, detail="Droits insuffisants")
+
+    _ensure_atlas_synced(dataset)
+
+    previous_synced = bool(getattr(dataset, "atlas_synced", False))
+    dataset.atlas_synced = False
+    db.commit()
+
+    dataset.description = (payload.description or "").strip() or None
+
+    try:
+        # This sync updates dataset description in Atlas and realigns glossary term assignments too.
+        sync_dataset_metadata_to_atlas(db, dataset)
+    except Exception as exc:
+        dataset.atlas_synced = previous_synced
+        db.commit()
+        raise HTTPException(status_code=500, detail=f"Erreur synchronisation Atlas: {exc}")
+
+    dataset.atlas_synced = True
+    db.commit()
+
+    return {"description": dataset.description}
