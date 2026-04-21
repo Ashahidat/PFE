@@ -12,13 +12,12 @@ function loadNavbar() {
         : '';
 
     let navHtml = `
-        <nav class="app-nav">
-            <div class="app-nav__inner">
-            <div class="app-nav__left">
-                <a class="app-nav__brand" href="projects.html">Data Quality</a>
-                <a href="projects.html">Projets</a>
-                ${uploadLink}
-    `;
+            <nav class="app-nav">
+                <div class="app-nav__inner">
+                <div class="app-nav__left">
+                    <a class="app-nav__brand" href="projects.html">Projets</a>
+                    ${uploadLink}
+        `;
 
     if (adminRoles.includes(role)) {
         navHtml += `<a href="glossary.html">Glossaire</a>`;
