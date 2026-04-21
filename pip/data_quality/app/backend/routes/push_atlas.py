@@ -49,6 +49,8 @@ from atlas.glossary import sync_glossary_terms, assign_terms_to_entity
 from db.column_descriptions import ColumnDescription
 from db.dataset_glossary_crud import get_assignments_for_dataset
 from db.glossary_crud import get_glossaries_with_categories
+from atlas.data_quality import create_data_quality_checks_from_json
+from db.data_quality_to_db import save_data_quality_results_from_json
 
 
 def _apply_saved_glossary_assignments(
@@ -631,22 +633,31 @@ def push_atlas(
                 checks = data.get("checks", [])
                 all_checks_data.extend(checks)
 
-                # Envoyer vers Atlas
-                guids = create_data_quality_checks_from_json(
-                    dataset_version_guid=new_version.atlas_guid,
-                    column_mapping=column_guids,
-                    json_path=json_path
-                )
-                dq_guids.extend(guids)
+                guids: List[str] = []
+                db_ids: List[str] = []
 
-                # Sauvegarder en PostgreSQL
-                db_ids = save_data_quality_results_from_json(
-                    db=db,
-                    dataset_version_id=new_version.id,
-                    dag_run_uuid=dag_run_uuid,
-                    json_path=json_path
-                )
-                dq_db_ids.extend(db_ids)
+                # Sauvegarder en PostgreSQL (indépendant d'Atlas)
+                try:
+                    db_ids = save_data_quality_results_from_json(
+                        db=db,
+                        dataset_version_id=new_version.id,
+                        dag_run_uuid=dag_run_uuid,
+                        json_path=str(json_path)
+                    )
+                    dq_db_ids.extend(db_ids)
+                except Exception as db_exc:
+                    logger.error(f"❌ Erreur sauvegarde PostgreSQL pour {jf}: {db_exc}", exc_info=True)
+
+                # Envoyer vers Atlas (indépendant de PostgreSQL)
+                try:
+                    guids = create_data_quality_checks_from_json(
+                        dataset_version_guid=new_version.atlas_guid,
+                        column_mapping=column_guids,
+                        json_path=str(json_path)
+                    )
+                    dq_guids.extend(guids)
+                except Exception as atlas_exc:
+                    logger.error(f"❌ Erreur envoi Atlas pour {jf}: {atlas_exc}", exc_info=True)
 
                 processed_files.append(jf)
 
