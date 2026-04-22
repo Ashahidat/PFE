@@ -44,6 +44,8 @@ from atlas.classifications import (
     add_restricted_classification,  # 👈 NOUVEAU
     add_public_classification        # 👈 NOUVEAU
 )
+from db.classifications_use_case import apply_classification_use_case
+from db.users_crud import get_user_department
 from atlas.client import get_typedef_by_name
 from atlas.glossary import sync_glossary_terms, assign_terms_to_entity
 from db.column_descriptions import ColumnDescription
@@ -472,6 +474,34 @@ def push_atlas(
         new_version.source_file = file_path
         db.commit()
         db.refresh(new_version)
+
+        # ----------------------
+        # 6.5️⃣ Classification sécurité (replace semantics)
+        # ----------------------
+        try:
+            security_classification = "PUBLIC" if is_public else "RESTRICTED"
+            security_attributes = {}
+            if security_classification == "PUBLIC":
+                security_attributes = {"visibility_scope": "ENTERPRISE"}
+            else:
+                employee = employee_id or owner_employee_id or ""
+                dept = get_user_department(db, employee) or user.get("department") or "UNKNOWN"
+                security_attributes = {"visibility_scope": "DEPARTMENT", "department": dept}
+
+            apply_classification_use_case(
+                db,
+                entity_type="DATASET",
+                entity_id=str(dataset.id),
+                atlas_guid=dataset_guid,
+                classification_name=security_classification,
+                attributes=security_attributes,
+                user=user,
+            )
+            security_success = True
+            logger.info(f"🔒 Classification sécurité appliquée: {security_classification}")
+        except Exception as sec_exc:
+            security_success = False
+            logger.warning(f"⚠️ Impossible d'appliquer la classification sécurité: {sec_exc}")
 
         # 7️⃣ Lien versioning datasets
         process_guid = None

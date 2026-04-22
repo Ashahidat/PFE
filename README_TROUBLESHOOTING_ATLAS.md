@@ -95,3 +95,33 @@ Donc, avec le modèle actuel :
 1. Récupérer l’ID exact depuis l’erreur (ex: `3d2871b5b1de824e`)
 2. Rechercher dans :
    - `pip/data_governance/apache-atlas-2.4.0/logs/application.log` avec `rg "3d2871b5b1de824e"`
+
+## 9) “PUBLIC + RESTRICTED” en même temps (remplacement classification sécurité)
+
+Symptôme (dans Atlas) :
+- le dataset a **deux** classifications sécurité en même temps (`PUBLIC` et `RESTRICTED`)
+- et côté app, changer la classification depuis `my-uploads.html` finit par échouer avec :
+  - `Echec synchronisation Atlas (security classification)`
+
+Cause typique :
+- notre backend “ajoutait” la nouvelle classification sans réussir à **supprimer l’ancienne** (endpoint Atlas de suppression incorrect).
+
+Correctif :
+- suppression via Atlas = endpoint **singulier** :
+  - `DELETE /api/atlas/v2/entity/guid/{guid}/classification/{classificationName}`
+- l’UI doit passer par le backend (route `POST /apply-classification`) qui fait un vrai “replace” (suppression `PUBLIC` + `RESTRICTED`, puis ajout de la nouvelle).
+
+Vérif rapide :
+- lister les classifications d’un dataset (remplacer `{GUID}`) :
+  - `curl -u admin:admin "http://localhost:21000/api/atlas/v2/entity/guid/{GUID}?minExtInfo=true" | rg -n \"PUBLIC|RESTRICTED\"`
+
+## 10) `GET /api/datasets/{id}/atlas-columns` en 404 (UI “My uploads”)
+
+Symptôme :
+- dans la console navigateur :
+  - `GET http://localhost:8000/api/datasets/<id>/atlas-columns 404`
+- conséquence : l’UI ne peut pas mapper `column_name -> guid` (et les boutons de classification colonne peuvent casser).
+
+Correctif :
+- endpoint backend ajouté dans :
+  - `pip/data_quality/app/backend/routes/datasets_meta.py`

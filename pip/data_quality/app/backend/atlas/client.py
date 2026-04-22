@@ -155,6 +155,13 @@ def atlas_get(url: str):
             f"status={res.status_code} "
             f"text={res.text}"
         )
+        # Atlas sometimes maps NotFoundException to HTTP 500. Treat it as a logical 404 for callers.
+        if res.status_code == 500:
+            error_id = _extract_logged_error_id(res.text or "")
+            if error_id and _atlas_logged_id_is_not_found(error_id):
+                raise requests.exceptions.HTTPError(
+                    f"404 Not Found (Atlas NotFoundException logged_id={error_id})", response=res
+                )
     res.raise_for_status()
     return res
 
@@ -183,6 +190,8 @@ def atlas_delete(url: str):
                     f"[atlas_delete] treating 500(NotFoundException) as success "
                     f"url={url} logged_id={error_id}"
                 )
+                # Normalize to 404 so callers relying on status codes can treat it as "already absent".
+                res.status_code = 404
                 return res
 
         logger.error(

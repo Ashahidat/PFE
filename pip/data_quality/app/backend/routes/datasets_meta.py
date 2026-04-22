@@ -22,6 +22,7 @@ from core.permissions import (
     _get_employee_identifier
 )
 from atlas.metadata import sync_dataset_metadata_to_atlas
+from atlas.columns import get_existing_columns
 router = APIRouter()
 
 
@@ -292,6 +293,27 @@ async def list_my_datasets(
         if can_view_dataset(user, dataset, db):
             visible.append(_build_my_dataset_item(dataset, user, db))
     return visible
+
+
+@router.get("/api/datasets/{dataset_id}/atlas-columns")
+async def get_dataset_atlas_columns(
+    dataset_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset introuvable")
+    if not can_view_dataset(user, dataset, db):
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
+    # Some datasets (not yet pushed) won't have Atlas info; return empty mapping for the UI.
+    if not dataset.atlas_guid:
+        return {"columns": {}}
+
+    qualified = (getattr(dataset, "atlas_qualified_name", None) or "").strip() or None
+    columns = get_existing_columns(dataset.atlas_guid, qualified)
+    return {"columns": columns}
 
 @router.put("/api/datasets/{dataset_id}/columns/{column_name}")
 async def update_column_metadata(

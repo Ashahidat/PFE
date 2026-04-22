@@ -10,6 +10,11 @@ ATLAS_ENTITY_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/gu
 
 logger = logging.getLogger(__name__)
 
+def _classification_delete_url(entity_guid: str, classification_name: str) -> str:
+    # Atlas uses a singular segment for deletion:
+    #   DELETE /api/atlas/v2/entity/guid/{guid}/classification/{classificationName}
+    return f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{entity_guid}/classification/{classification_name}"
+
 def check_classification_exists(entity_guid: str, classification_name: str) -> bool:
     """
     Vérifie si une classification existe déjà sur une entité
@@ -350,7 +355,7 @@ def remove_classification(guid: str, classification_name: str) -> bool:
     Supprime une classification d'une entité
     """
     try:
-        url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}/classifications/{classification_name}"
+        url = _classification_delete_url(guid, classification_name)
         response = atlas_delete(url)
 
         if response.status_code == 204:
@@ -374,18 +379,17 @@ def force_replace_security_classification(guid: str, new_classification: str, at
     Version FORCE - Supprime TOUTES les classifications et ajoute la nouvelle
     """
     SECURITY_TYPES = ["PUBLIC", "RESTRICTED"]
-    AUTH = ("admin", "admin")
     
     logger.info(f"🔨 Remplacement forcé pour {guid}: -> {new_classification}")
     
     try:
         # Étape 1: Supprimer PUBLIC si existant
-        delete_public_url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}/classifications/PUBLIC"
+        delete_public_url = _classification_delete_url(guid, "PUBLIC")
         atlas_delete(delete_public_url)
         time.sleep(1)
         
         # Étape 2: Supprimer RESTRICTED si existant  
-        delete_restricted_url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}/classifications/RESTRICTED"
+        delete_restricted_url = _classification_delete_url(guid, "RESTRICTED")
         atlas_delete(delete_restricted_url)
         time.sleep(1)
         
@@ -418,39 +422,30 @@ def sync_security_classification_to_atlas(guid: str, new_classification: str, at
     AVEC AUTHENTIFICATION CORRECTE
     """
     SECURITY_TYPES = ["PUBLIC", "RESTRICTED"]
-    AUTH = ("admin", "admin")  # À importer ou définir
     
     logger.info(f"🔄 Synchronisation sécurité pour {guid}: -> {new_classification}")
     
     try:
-        # 1️⃣ Récupérer les classifications existantes
-        get_url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}"
-        response = atlas_get(get_url)
-        entity_data = response.json() if response is not None else {}
-        entity = entity_data.get("entity", {})
-        classifications = entity.get("classifications", [])
-        
-        # 2️⃣ Supprimer TOUTES les classifications de sécurité existantes
-        for classification in classifications:
-            type_name = classification.get("typeName")
-            if type_name in SECURITY_TYPES:
-                logger.info(f"🗑️ Suppression de {type_name}...")
-                
-                delete_url = f"{ATLAS_ENTITY_CLASSIFICATION_URL}/{guid}/classifications/{type_name}"
-                delete_response = atlas_delete(delete_url)
-                
-                if delete_response.status_code == 204:
-                    logger.info(f"✅ {type_name} supprimée")
-                elif delete_response.status_code == 404:
-                    logger.info(f"ℹ️ {type_name} déjà absente")
-                else:
-                    logger.warning(f"⚠️ Échec suppression {type_name}: {delete_response.status_code}")
-                    # On continue quand même
-                
-                # Petit délai pour laisser Atlas respirer
-                time.sleep(3)
-        
-        # 3️⃣ Ajouter la nouvelle classification
+        # 1️⃣ Supprimer PUBLIC/RESTRICTED de façon déterministe.
+        # (Plus robuste que de faire un GET + boucle: en cas d'erreur de listing, on veut quand même remplacer.)
+        for type_name in SECURITY_TYPES:
+            logger.info(f"🗑️ Suppression de {type_name} (si présent)...")
+            delete_url = _classification_delete_url(guid, type_name)
+            delete_response = atlas_delete(delete_url)
+            if delete_response.status_code == 204:
+                logger.info(f"✅ {type_name} supprimée")
+            elif delete_response.status_code == 404:
+                logger.info(f"ℹ️ {type_name} déjà absente")
+            else:
+                # atlas_delete() only returns non-raising responses for: 204, 404, or Atlas 500-mapped NotFoundException.
+                # Anything else should not happen; treat it as a hard failure to avoid Atlas having BOTH classifications.
+                logger.error(f"❌ Échec suppression {type_name}: {delete_response.status_code}")
+                return False
+
+            # Small delay to let Atlas settle (avoid eventual consistency glitches)
+            time.sleep(0.2)
+
+        # 2️⃣ Ajouter la nouvelle classification
         logger.info(f"➕ Ajout de {new_classification}...")
         
         # Format pour l'ajout (tableau !)
@@ -472,4 +467,3 @@ def sync_security_classification_to_atlas(guid: str, new_classification: str, at
     except Exception as e:
         logger.error(f"❌ Erreur lors de la synchronisation: {e}", exc_info=True)
         return False
-
