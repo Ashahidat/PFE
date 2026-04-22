@@ -106,6 +106,16 @@ async function refreshCategoryList(glossaryId) {
                             <p style="margin:4px 0 0; font-size:12px;">
                                 ${escapeHtml(category.description || "Pas de description")}
                             </p>
+                            <div style="margin-top:6px;">
+                                <button class="btn-edit" onclick="openCategoryEdit(${category.id})">✏️ Renommer</button>
+                            </div>
+                            <div class="edit-form" id="edit-category-form-${category.id}">
+                                <h4>Modifier la catégorie</h4>
+                                <input type="text" id="edit-category-name-${category.id}" value="${escapeHtml(category.name)}" placeholder="Nom *">
+                                <textarea id="edit-category-desc-${category.id}" placeholder="Description">${escapeHtml(category.description || "")}</textarea>
+                                <button onclick="saveCategoryEdit(${category.id}, ${category.glossary_id})" class="btn-save" style="margin-right:5px;">💾 Enregistrer</button>
+                                <button onclick="closeCategoryEdit(${category.id})" style="background:#6c757d; color:white; border:none; padding:5px 10px; border-radius:3px;">Annuler</button>
+                            </div>
                         </li>
                     `
                 )
@@ -113,6 +123,67 @@ async function refreshCategoryList(glossaryId) {
         </ul>
     `;
 }
+
+window.openCategoryEdit = function (categoryId) {
+    const form = document.getElementById(`edit-category-form-${categoryId}`);
+    if (form) form.classList.add("active");
+};
+
+window.closeCategoryEdit = function (categoryId) {
+    const form = document.getElementById(`edit-category-form-${categoryId}`);
+    if (form) form.classList.remove("active");
+};
+
+window.saveCategoryEdit = async function (categoryId, glossaryId) {
+    const name = (document.getElementById(`edit-category-name-${categoryId}`)?.value || "").trim();
+    const description = (document.getElementById(`edit-category-desc-${categoryId}`)?.value || "").trim();
+
+    if (!name) {
+        alert("Le nom de la catégorie est obligatoire");
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/glossary/categories/${categoryId}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                name,
+                description: description || null,
+            }),
+        });
+
+        if (!res.ok) {
+            let detail = "Erreur";
+            try {
+                const err = await res.json();
+                detail = err.detail || err.message || err.error || detail;
+            } catch {
+                try {
+                    detail = await res.text();
+                } catch {
+                    detail = "Erreur";
+                }
+            }
+            throw new Error(detail);
+        }
+
+        alert("✅ Catégorie modifiée");
+        closeCategoryEdit(categoryId);
+        delete categoryCache[String(glossaryId)];
+        await refreshCategoryList(glossaryId);
+        const selectedGlossaryId = document.getElementById("glossarySelect")?.value;
+        if (selectedGlossaryId && String(selectedGlossaryId) === String(glossaryId)) {
+            await refreshCategorySelect(glossaryId);
+        }
+        await loadTerms();
+    } catch (err) {
+        alert("❌ " + (err?.message || "Erreur de connexion"));
+    }
+};
 
 function sortGlossaries(glossaries) {
     return glossaries.sort((a, b) => a.name.localeCompare(b.name));
@@ -233,6 +304,17 @@ function renderGlossaryList(glossaries) {
                             <strong>${escapeHtml(g.name)}</strong>
                             ${g.department ? `(<em>${escapeHtml(g.department)}</em>)` : ""}
                             <br><small>${escapeHtml(g.description || "Pas de description")}</small>
+                            <div style="margin-top:6px;">
+                                <button class="btn-edit" onclick="openGlossaryEdit(${g.id})">✏️ Renommer</button>
+                            </div>
+                            <div class="edit-form" id="edit-glossary-form-${g.id}">
+                                <h4>Modifier le glossaire</h4>
+                                <input type="text" id="edit-glossary-name-${g.id}" value="${escapeHtml(g.name)}" placeholder="Nom affiché *">
+                                <input type="text" id="edit-glossary-dept-${g.id}" value="${escapeHtml(g.department || "")}" placeholder="Département (optionnel)">
+                                <textarea id="edit-glossary-desc-${g.id}" placeholder="Description">${escapeHtml(g.description || "")}</textarea>
+                                <button onclick="saveGlossaryEdit(${g.id})" class="btn-save" style="margin-right:5px;">💾 Enregistrer</button>
+                                <button onclick="closeGlossaryEdit(${g.id})" style="background:#6c757d; color:white; border:none; padding:5px 10px; border-radius:3px;">Annuler</button>
+                            </div>
                         </li>
                     `
                 )
@@ -240,6 +322,64 @@ function renderGlossaryList(glossaries) {
         </ul>
     `;
 }
+
+window.openGlossaryEdit = function (id) {
+    const form = document.getElementById(`edit-glossary-form-${id}`);
+    if (form) form.classList.add("active");
+};
+
+window.closeGlossaryEdit = function (id) {
+    const form = document.getElementById(`edit-glossary-form-${id}`);
+    if (form) form.classList.remove("active");
+};
+
+window.saveGlossaryEdit = async function (id) {
+    const name = (document.getElementById(`edit-glossary-name-${id}`)?.value || "").trim();
+    const department = (document.getElementById(`edit-glossary-dept-${id}`)?.value || "").trim();
+    const description = (document.getElementById(`edit-glossary-desc-${id}`)?.value || "").trim();
+
+    if (!name) {
+        alert("Le nom du glossaire est obligatoire");
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/glossary/glossaries/${id}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                name,
+                department: department || null,
+                description: description || null,
+            }),
+        });
+
+        if (!res.ok) {
+            let detail = "Erreur";
+            try {
+                const err = await res.json();
+                detail = err.detail || err.message || err.error || detail;
+            } catch {
+                try {
+                    detail = await res.text();
+                } catch {
+                    detail = "Erreur";
+                }
+            }
+            throw new Error(detail);
+        }
+
+        alert("✅ Glossaire modifié");
+        closeGlossaryEdit(id);
+        await loadGlossaries();
+        await loadTerms();
+    } catch (err) {
+        alert("❌ " + (err?.message || "Erreur de connexion"));
+    }
+};
 
 function openEditForm(id, term, description, category, glossaryId) {
     currentEditId = id;

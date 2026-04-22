@@ -231,16 +231,14 @@ def update_category_route(
     if not category:
         raise HTTPException(status_code=404, detail="Catégorie non trouvée")
 
-    qualified_name = None
-    if payload.name:
-        qualified_name = f"{_slugify(payload.name, 'category')}@{category.glossary.qualified_name}"
-
     updated = update_category(
         db=db,
         category_id=category_id,
         name=payload.name,
         description=payload.description,
-        qualified_name=qualified_name
+        # Keep qualified_name stable on rename: changing it would create duplicates in Atlas sync
+        # and break stable references. Only creation sets qualified_name.
+        qualified_name=None
     )
 
     return {
