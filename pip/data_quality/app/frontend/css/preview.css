@@ -16,3 +16,27 @@ button {
     padding: 8px;
 }
 
+
+/* Nouveau conteneur pour gérer le dépassement */
+.table-responsive {
+    width: 100%;
+    overflow-x: auto; /* Crée une barre de défilement horizontale si ça dépasse */
+    margin-top: 20px;
+    /* Optionnel : fluidifie le scroll sur les écrans tactiles */
+    -webkit-overflow-scrolling: touch; 
+}
+
+/* Ton tableau mis à jour */
+#previewTable {
+    width: 100%;
+    border-collapse: collapse; /* Bonne pratique pour un tableau plus propre */
+    /* margin-top: 20px; -> J'ai déplacé la marge sur .table-responsive */
+}
+
+/* (Optionnel mais recommandé) Empêche le texte des cellules de s'écraser sur plusieurs petites lignes */
+#previewTable th, 
+#previewTable td {
+    white-space: nowrap; 
+    padding: 8px 12px; /* Un peu d'espace pour que ce soit joli */
+    border: 1px solid #e5e7eb; /* Ajoute de légères bordures si tu n'en as pas déjà */
+}

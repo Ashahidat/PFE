@@ -67,43 +67,46 @@ function renderPreviewTable(rows) {
         table.appendChild(tr);
     });
 
-    // ========== NOUVELLE PARTIE : Message + Redirection + Versionning ==========
-    // Créer un message d'information
-    const infoMsg = document.createElement('div');
-    infoMsg.className = 'info-message';
-    infoMsg.textContent = 'Aperçu chargé. Redirection vers la description…';
-    infoMsg.style.cssText = `
-        background: #e3f2fd;
-        color: #0d47a1;
-        padding: 1rem;
-        border-radius: 6px;
-        margin-top: 1rem;
-        text-align: center;
-        font-weight: 500;
-    `;
-    document.querySelector('.container').appendChild(infoMsg);
-
-    // 🔥 NOUVEAU : Lancer le calcul de signature en arrière-plan
     const datasetId = localStorage.getItem("last_uploaded_dataset_id");
     const token = localStorage.getItem("access_token");
-    
-    // Lancer la requête sans attendre (fire and forget)
+
+    // 🔥 Lancer le calcul de signature en arrière-plan (non bloquant)
     fetch(`${API_URL}/api/datasets/${datasetId}/compute-signature`, {
         method: 'POST',
         headers: { 
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
         }
-    })
-    .then(response => {
-        // best-effort: pas bloquant
-    })
-    .catch(error => {
-        // non bloquant
-    });
+    }).catch(() => { /* best-effort */ });
 
-    // Redirection automatique vers describe-columns.html
-    setTimeout(() => {
+    // ========== NOUVELLE PARTIE : Bouton de passage à l'étape suivante ==========
+    
+    // Éviter de dupliquer le bouton si l'utilisateur clique plusieurs fois sur "Voir"
+    let actionContainer = document.getElementById('next-step-container');
+    if (!actionContainer) {
+        actionContainer = document.createElement('div');
+        actionContainer.id = 'next-step-container';
+        actionContainer.style.cssText = `
+            margin-top: 25px;
+            text-align: right;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 15px;
+        `;
+        document.querySelector('.container').appendChild(actionContainer);
+    }
+
+    // Mettre à jour le contenu du conteneur avec le bouton
+    actionContainer.innerHTML = `
+        <button id="goToDescriptionBtn" style="
+            background-color: var(--success); 
+            font-size: 1.1em; 
+            padding: 10px 20px;">
+            Valider et passer à la description ➔
+        </button>
+    `;
+
+    // Ajouter l'événement de redirection au clic
+    document.getElementById('goToDescriptionBtn').addEventListener('click', () => {
         window.location.href = `describe-columns.html?dataset_id=${datasetId}`;
-    }, 2000); // 2 secondes de délai pour voir le preview
+    });
 }

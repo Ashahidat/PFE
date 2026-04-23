@@ -123,6 +123,19 @@ def _slugify(text: str, default: str = "item") -> str:
     return candidate or default
 
 
+def _sync_one_glossary(db: Session, glossary: Glossary) -> None:
+    """
+    Ensures the glossary/categories/terms exist in Atlas and backfills atlas_guid on terms/categories.
+
+    Note: this does not try to "rename" existing Atlas objects. We keep stable qualified_names and
+    treat Atlas as the controlled target.
+    """
+    try:
+        sync_glossary_terms([glossary], db)
+    except Exception as exc:
+        logger.warning(f"Synchronisation Atlas glossaire échouée (non bloquant): {exc}")
+
+
 class DatasetAssignmentCreate(BaseModel):
     term_id: int
     column_name: str | None = None
@@ -210,6 +223,11 @@ def create_category_route(
         created_by=user.get("employee_id")
     )
 
+    # Keep Atlas in-sync as soon as taxonomy changes.
+    glossary = get_glossary_by_id(db, payload.glossary_id)
+    if glossary:
+        _sync_one_glossary(db, glossary)
+
     return {
         "id": category.id,
         "glossary_id": category.glossary_id,
@@ -240,6 +258,10 @@ def update_category_route(
         # and break stable references. Only creation sets qualified_name.
         qualified_name=None
     )
+
+    glossary = get_glossary_by_id(db, updated.glossary_id)
+    if glossary:
+        _sync_one_glossary(db, glossary)
 
     return {
         "id": updated.id,
@@ -280,6 +302,9 @@ def create_glossary_route(
         department=payload.department,
         created_by=user.get("employee_id")
     )
+
+    _sync_one_glossary(db, glossary)
+
     return {
         "id": glossary.id,
         "name": glossary.name,
@@ -310,6 +335,9 @@ def update_glossary_route(
         description=payload.description,
         department=payload.department
     )
+
+    if updated:
+        _sync_one_glossary(db, updated)
 
     return {
         "id": updated.id,
@@ -481,6 +509,10 @@ def create_term_route(
         description=payload.description,
         created_by=user.get("employee_id")
     )
+
+    glossary = get_glossary_by_id(db, payload.glossary_id)
+    if glossary:
+        _sync_one_glossary(db, glossary)
     
     return {
         "glossary_id": new_term.glossary_id,
@@ -505,6 +537,13 @@ def update_term_route(
     if not term:
         raise HTTPException(status_code=404, detail="Terme non trouvé")
 
+    # Renaming a term after it has been synced to Atlas would create a new qualifiedName in sync_glossary_terms,
+    # resulting in duplicates in Atlas and breaking stable references. Disallow it.
+    if payload.term is not None and payload.term != term.term and term.atlas_guid:
+        raise HTTPException(status_code=400, detail="Renommage du terme interdit après synchronisation Atlas")
+    if payload.glossary_id is not None and payload.glossary_id != term.glossary_id and term.atlas_guid:
+        raise HTTPException(status_code=400, detail="Déplacement du terme vers un autre glossaire interdit après synchronisation Atlas")
+
     if payload.category_id:
         category = get_category_by_id(db, payload.category_id)
         if not category:
@@ -520,6 +559,10 @@ def update_term_route(
         description=payload.description,
         category_id=payload.category_id
     )
+
+    glossary = get_glossary_by_id(db, updated.glossary_id)
+    if glossary:
+        _sync_one_glossary(db, glossary)
     
     return {
         "glossary_id": updated.glossary_id,
@@ -545,3 +588,23 @@ def delete_term_route(
     
     delete_term(db, term_id)
     return {"message": "Terme supprimé avec succès"}
+
+
+@router.post("/glossary/sync")
+def sync_glossary_to_atlas(
+    glossary_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user=Depends(require_role(GLOSSARY_MANAGERS))
+):
+    """
+    Force a taxonomy sync (glossaries/categories/terms) to Atlas.
+    Useful when you want Atlas up-to-date without waiting for a dataset push.
+    """
+    if glossary_id is not None:
+        glossary = get_glossary_by_id(db, glossary_id)
+        if not glossary:
+            raise HTTPException(status_code=404, detail="Glossaire non trouvé")
+        return sync_glossary_terms([glossary], db)
+
+    glossaries = get_all_glossaries(db)
+    return sync_glossary_terms(glossaries, db)

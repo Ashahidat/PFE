@@ -21,8 +21,8 @@ const CLASSIFICATION_ATTRIBUTES = {
 
 // Classifications pour colonnes - SIMPLIFIÉES
 const COLUMN_CLASSIFICATIONS = {
-  PII: { label: "PII (email, téléphone, nom, etc.)", attributes: [] },
-  SENSITIVE: { label: "Sensible (médicale, financière)", attributes: [] }
+  PII: { label: "PII (email, téléphone, nom, etc.)", attributes:[] },
+  SENSITIVE: { label: "Sensible (médicale, financière)", attributes:[] }
 };
 
 /* ----------------------------
@@ -83,10 +83,10 @@ async function getAllowedClassifications(datasetId) {
     if (res.ok) {
       return await res.json();
     }
-    return { allowed: [], dataset_classification: null };
+    return { allowed:[], dataset_classification: null };
   } catch (error) {
     console.error("Erreur récupération classifications:", error);
-    return { allowed: [], dataset_classification: null };
+    return { allowed:[], dataset_classification: null };
   }
 }
 
@@ -183,13 +183,39 @@ function initDatasetUI() {
       try {
         const data = JSON.parse(text);
         console.log("✅ Classification appliquée:", data);
-        alert(`✅ Classification ${classification} du dataset appliquée avec succès!`);
+        
+        // =======================================================
+        // 🚀 NOUVEAU CODE : LOGIQUE DU STEPPER (Remplacement du alert)
+        // =======================================================
+        
+        // 1. Marquer l'étape 2 comme terminée (Coche verte)
+        document.getElementById("step2-indicator").classList.remove("active");
+        document.getElementById("step2-indicator").classList.add("completed");
+        document.getElementById("step2-indicator").querySelector(".step-counter").innerHTML = "✓";
+        
+        // 2. Cacher la section Dataset (Étape 2) et afficher la section Colonnes (Étape 3)
+        document.getElementById("classificationSection").style.display = "none";
+        document.getElementById("columnClassificationSection").style.display = "block";
+        
+        // 3. Activer visuellement l'étape 3
+        document.getElementById("step3-indicator").classList.add("active");
+
+        // 4. Activer le bouton de Fin (redirection vers accueil par ex.)
+        const finishBtn = document.getElementById("finishProcessBtn");
+        if (finishBtn) {
+            finishBtn.style.display = "block";
+            finishBtn.onclick = () => {
+                window.location.href = "index.html"; // Redirige où tu veux à la fin
+            };
+        }
+
+        // =======================================================
         
         // APRÈS classification dataset, afficher les colonnes
         console.log("🔄 Appel de initColumnUI pour dataset:", datasetId);
         await initColumnUI(datasetId);
       } catch (e) {
-        alert("✅ Opération terminée");
+        alert("✅ Opération terminée, mais erreur d'affichage de la suite.");
       }
 
     } catch (err) {
@@ -227,7 +253,7 @@ async function initColumnUI(datasetId) {
     }
     
     const columnsData = await columnsRes.json();
-    const columnNames = columnsData.columns || [];
+    const columnNames = columnsData.columns ||[];
     console.log("📊 Colonnes récupérées:", columnNames);
     
     // 2. Récupérer GUIDs depuis localStorage

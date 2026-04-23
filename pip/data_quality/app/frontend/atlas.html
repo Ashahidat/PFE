@@ -10,15 +10,36 @@
   <div id="navbar-placeholder"></div>
   <div class="app-page">
   <div class="container">
-    <h1>📤 Push vers Atlas</h1>
+    <h1>📤 Synchronisation Atlas</h1>
 
-    <!-- Bouton push vers Atlas -->
-    <button id="pushAtlasBtn">Envoyer vers Atlas</button>
-    <p id="status" class="status">En attente...</p>
+    <!-- Indicateur visuel du Stepper -->
+    <div class="stepper-wrapper">
+      <div class="stepper-item active" id="step1-indicator">
+        <div class="step-counter">1</div>
+        <div class="step-name">Création</div>
+      </div>
+      <div class="stepper-item" id="step2-indicator">
+        <div class="step-counter">2</div>
+        <div class="step-name">Sécurité Dataset</div>
+      </div>
+      <div class="stepper-item" id="step3-indicator">
+        <div class="step-counter">3</div>
+        <div class="step-name">Sensibilité Colonnes</div>
+      </div>
+    </div>
 
-    <!-- Section classification (cachée au début) -->
-    <div id="classificationSection" style="display:none; margin-top:20px;">
-      <h3>Classification du dataset</h3>
+    <!-- CONTENU ETAPE 1 -->
+    <div id="step1-content" class="step-content">
+      <h3>Étape 1 : Créer le dataset dans Apache Atlas</h3>
+      <p style="color: #666; font-size: 14px; margin-bottom: 15px;">Cette action va synchroniser la structure de votre fichier avec le catalogue de données.</p>
+      
+      <button id="pushAtlasBtn">Envoyer vers Atlas</button>
+      <p id="status" class="status">En attente...</p>
+    </div>
+
+    <!-- CONTENU ETAPE 2 (Caché au début) -->
+    <div id="classificationSection" class="step-content" style="display:none;">
+      <h3>Étape 2 : Classification du dataset</h3>
       <p style="color: #666; font-size: 14px;">
         <strong>RESTRICTED</strong> (par défaut) - Accès limité au département<br>
         <strong>PUBLIC</strong> (exception) - Accès public sans restriction
@@ -35,19 +56,24 @@
       <!-- No attributes container - no mandatory fields -->
       <div id="attributesContainer" style="margin-top:10px"></div>
       
-      <button id="applyClassificationBtn" style="margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
-        Appliquer classification
+      <button id="applyClassificationBtn" style="margin-top: 15px; padding: 10px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem;">
+        Valider et passer aux colonnes ➔
       </button>
     </div>
 
-    <!-- Section classification par colonne -->
-    <div id="columnClassificationSection" style="display:none; margin-top:30px;">
-      <h3>Classification par colonne</h3>
+    <!-- CONTENU ETAPE 3 (Caché au début) -->
+    <div id="columnClassificationSection" class="step-content" style="display:none;">
+      <h3>Étape 3 : Classification par colonne</h3>
       <p style="color: #666; font-size: 14px;">
         <strong>PII</strong> - Données personnelles identifiables (email, téléphone, nom, etc.)<br>
         <strong>SENSITIVE</strong> - Données sensibles (médicales, financières)
       </p>
       <div id="columnsList"></div>
+
+      <!-- Bouton de fin -->
+      <button id="finishProcessBtn" style="margin-top: 20px; background: #28a745; width: 100%; padding: 12px; font-size: 1.1em; color: white; border: none; border-radius: 8px; cursor: pointer; display: none;">
+        Terminer le processus 🎉
+      </button>
     </div>
   </div>
   </div>

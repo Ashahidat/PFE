@@ -185,7 +185,8 @@ def push_atlas(
         # 3️⃣ DÉPLOYER TYPEDEFS (robuste pour types personnalisés)
         # ----------------------
         deploy_typedefs = os.getenv("ATLAS_DEPLOY_TYPEDEFS", "1") != "0"
-        force_update_typedefs = os.getenv("ATLAS_FORCE_TYPEDEF_UPDATE", "0") == "1"
+        # force_update_typedefs = os.getenv("ATLAS_FORCE_TYPEDEF_UPDATE", "0") == "1"
+        force_update_typedefs = True
 
         if deploy_typedefs:
             logger.info("📦 Déploiement des typedefs Atlas...")
@@ -340,6 +341,8 @@ def push_atlas(
         # 5.5️⃣ CRÉER LA VERSION EN BASE AVANT LE DATASET ATLAS
         # ============================================================
 
+
+
         # Déterminer le numéro de version cible
         if parent_guid and parent_version_number > 0:
             target_version_number = parent_version_number + 1
@@ -398,6 +401,9 @@ def push_atlas(
         # ----------------------
         # 6️⃣ Créer le DataSet dans Atlas (AVEC le numéro de version)
         # ----------------------
+        # on récupère le nom du projet grâce à la relation SQLAlchemy
+        project_name = dataset.project.name if dataset.project else None
+
         dataset_guid, dataset_existed = create_dataset(
             hash_value,
             original_name,
@@ -405,7 +411,7 @@ def push_atlas(
             parent_qn,
             df,
             owner_employee_id=dataset.owner_employee_id,
-            project_id=str(dataset.project_id),
+            project_id=project_name,
             description=description,
             version_number=new_version.version_number  # ← MAINTENANT new_version existe
         )

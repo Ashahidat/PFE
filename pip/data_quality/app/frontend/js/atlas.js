@@ -69,16 +69,29 @@ document.addEventListener("DOMContentLoaded", () => {
         console.log("📊 GUIDs colonnes stockés:", data.column_guids);
       } else {
         console.warn("⚠️ Pas de column_guids dans la réponse:", data);
-        // Initialiser un objet vide pour éviter les erreurs
         localStorage.setItem("last_column_guids", JSON.stringify({}));
       }
 
-      // Révéler l'UI de classification
-      const section = document.getElementById("classificationSection");
-      if (section) {
-        section.style.display = "block";
-        console.log("✅ Section classification affichée");
-      }
+      /* ==================================================
+         🚀 LOGIQUE STEPPER : PASSAGE À L'ÉTAPE 2
+         ================================================== */
+      setTimeout(() => {
+        // 1. Marquer l'étape 1 comme terminée
+        document.getElementById("step1-indicator").classList.remove("active");
+        document.getElementById("step1-indicator").classList.add("completed");
+        document.getElementById("step1-indicator").querySelector(".step-counter").innerHTML = "✓";
+        
+        // 2. Cacher l'étape 1, afficher l'étape 2
+        document.getElementById("step1-content").style.display = "none";
+        const section = document.getElementById("classificationSection");
+        if (section) {
+          section.style.display = "block";
+          console.log("✅ Section classification affichée");
+        }
+        
+        // 3. Activer visuellement l'étape 2
+        document.getElementById("step2-indicator").classList.add("active");
+      }, 800); // Petit délai pour laisser le temps de lire "✅ Succès"
 
     } catch (err) {
       console.error("Erreur JS:", err);
