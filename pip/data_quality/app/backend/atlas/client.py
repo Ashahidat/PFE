@@ -182,6 +182,13 @@ def atlas_put(url, payload):
 def atlas_delete(url: str):
     res = atlas_request("DELETE", url)
     if not res.ok and res.status_code != 404:
+        # Patch : Atlas renvoie 400 si on essaie de supprimer une classification qui n'est pas sur l'entité.
+        # On intercepte cette erreur spécifique et on la traite comme un succès (404).
+        if res.status_code == 400 and res.text and "is not associated with entity" in res.text:
+            logger.info(f"ℹ️ [atlas_delete] Entité non associée (400), traitement comme déjà absente (404)")
+            res.status_code = 404
+            return res
+
         # Atlas sometimes maps NotFoundException to HTTP 500. Treat it as idempotent success.
         if res.status_code == 500:
             error_id = _extract_logged_error_id(res.text or "")
