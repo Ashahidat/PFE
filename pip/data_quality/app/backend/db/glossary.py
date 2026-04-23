@@ -49,6 +49,8 @@ class GlossaryTerm(Base):
     glossary_id = Column(Integer, ForeignKey("glossaries.id", ondelete="CASCADE"), nullable=False)
     category_id = Column(Integer, ForeignKey("glossary_categories.id", ondelete="SET NULL"), nullable=True)
     term = Column(String(100), nullable=False)
+    # Stable identifier used for Atlas qualifiedName. Must not change on rename.
+    qualified_name = Column(String(200), unique=True, nullable=True)
     description = Column(Text, nullable=True)
     atlas_guid = Column(String(100), nullable=True)
     created_by = Column(String(50), ForeignKey("users.employee_id", ondelete="SET NULL"), nullable=True)

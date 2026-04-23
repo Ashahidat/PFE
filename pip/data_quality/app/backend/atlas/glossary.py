@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from atlas.client import (
     atlas_get,
     atlas_post,
+    atlas_put,
     atlas_request,
     ATLAS_GLOSSARY_URL,
     ATLAS_GLOSSARY_TERM_URL,
@@ -50,7 +51,7 @@ def _build_category_payload(category: GlossaryCategory, glossary: Dict[str, str]
 
 
 def _build_term_payload(term: GlossaryTerm, glossary: Dict[str, str], category_guid: Optional[str]) -> Dict:
-    qualified_name = f"{_slugify(term.term)}@{glossary['qualifiedName']}"
+    qualified_name = term.qualified_name or f"{_slugify(term.term)}@{glossary['qualifiedName']}"
     payload = {
         "name": term.term,
         "qualifiedName": qualified_name,
@@ -118,6 +119,24 @@ def get_or_create_glossary(
         glossaries = res.json() or []
         if glossaries:
             glossary = glossaries[0]
+            # Best-effort: keep Atlas display name aligned with DB renames.
+            # Even if this fails (API differences), term/category sync should still work.
+            try:
+                glossary_guid = glossary.get("guid")
+                current_name = glossary.get("name")
+                if glossary_guid and display_name and current_name and current_name != display_name:
+                    update_payload = {
+                        "guid": glossary_guid,
+                        "qualifiedName": glossary.get("qualifiedName") or qualified_name,
+                        "name": display_name,
+                        "shortDescription": glossary.get("shortDescription") or DEFAULT_GLOSSARY_SHORT_DESCRIPTION,
+                        "longDescription": glossary.get("longDescription") or DEFAULT_GLOSSARY_LONG_DESCRIPTION,
+                        "language": glossary.get("language") or DEFAULT_GLOSSARY_LANGUAGE,
+                    }
+                    updated = atlas_put(f"{ATLAS_GLOSSARY_URL}/{glossary_guid}", update_payload).json() or {}
+                    glossary = updated or glossary
+            except Exception as exc:
+                logger.debug(f"Mise à jour du nom du glossaire Atlas ignorée: {exc}")
             logger.debug(f"Glossaire trouvé dans Atlas: {glossary['name']} ({glossary['guid']})")
             return glossary
     except Exception as exc:
@@ -161,6 +180,7 @@ def sync_glossary_terms(glossaries: List[Glossary], db: Session | None = None) -
             qualified_name=glossary.qualified_name,
             display_name=glossary.name
         )
+        atlas_glossary_qn = atlas_glossary.get("qualifiedName") or glossary.qualified_name
         glossary_guid = atlas_glossary.get("guid")
         if not glossary_guid:
             continue
@@ -204,6 +224,15 @@ def sync_glossary_terms(glossaries: List[Glossary], db: Session | None = None) -
         terms = glossary.terms or []
         stats["total_terms"] += len(terms)
         for term in terms:
+            if db and term and not term.qualified_name:
+                # If the term already exists in Atlas (atlas_guid set), keep the historical qualifiedName
+                # pattern so we can look it up reliably.
+                base = _slugify(term.term, "term")
+                if term.atlas_guid:
+                    term.qualified_name = f"{base}@{atlas_glossary_qn}"
+                else:
+                    # For unsynced terms, include the DB id to prevent slug collisions.
+                    term.qualified_name = f"{base}_{term.id}@{atlas_glossary_qn}"
             payload = _build_term_payload(term, atlas_glossary, category_guid_map.get(term.category_id))
             qn = payload["qualifiedName"]
             if qn in existing_terms:
@@ -213,6 +242,20 @@ def sync_glossary_terms(glossaries: List[Glossary], db: Session | None = None) -
                     stats["term_guids"].append(guid)
                 if db and term and term.atlas_guid != guid:
                     term.atlas_guid = guid
+                # Best-effort: align display fields on rename/description change.
+                if guid:
+                    try:
+                        existing = existing_terms.get(qn) or {}
+                        if (
+                            existing.get("name") != payload.get("name")
+                            or existing.get("shortDescription") != payload.get("shortDescription")
+                            or existing.get("longDescription") != payload.get("longDescription")
+                        ):
+                            update_payload = dict(payload)
+                            update_payload["guid"] = guid
+                            atlas_put(f"{ATLAS_GLOSSARY_TERM_URL}/{guid}", update_payload)
+                    except Exception as exc:
+                        logger.debug(f"Mise à jour du terme Atlas ignorée ({qn}): {exc}")
                 continue
             try:
                 response = atlas_post(ATLAS_GLOSSARY_TERM_URL, payload)

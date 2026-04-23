@@ -537,10 +537,22 @@ def update_term_route(
     if not term:
         raise HTTPException(status_code=404, detail="Terme non trouvé")
 
-    # Renaming a term after it has been synced to Atlas would create a new qualifiedName in sync_glossary_terms,
-    # resulting in duplicates in Atlas and breaking stable references. Disallow it.
-    if payload.term is not None and payload.term != term.term and term.atlas_guid:
-        raise HTTPException(status_code=400, detail="Renommage du terme interdit après synchronisation Atlas")
+    # Ensure a synced term has a stable qualified_name before allowing rename.
+    # Without this, the Atlas sync would derive a new qualifiedName from the new label and create duplicates.
+    if (
+        term.atlas_guid
+        and payload.term is not None
+        and payload.term != term.term
+        and not getattr(term, "qualified_name", None)
+    ):
+        glossary = get_glossary_by_id(db, term.glossary_id)
+        if not glossary or not glossary.qualified_name:
+            raise HTTPException(status_code=500, detail="Glossaire introuvable pour ce terme")
+        term.qualified_name = f"{_slugify(term.term, 'term')}@{glossary.qualified_name}"
+        db.commit()
+
+    # Moving a term to another glossary after it has been synced to Atlas would change its anchor and
+    # qualifiedName namespace. Keep it stable.
     if payload.glossary_id is not None and payload.glossary_id != term.glossary_id and term.atlas_guid:
         raise HTTPException(status_code=400, detail="Déplacement du terme vers un autre glossaire interdit après synchronisation Atlas")
 

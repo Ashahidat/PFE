@@ -21,6 +21,7 @@ from core.permissions import (
     can_modify_dataset,
     _get_employee_identifier
 )
+from atlas.glossary import sync_glossary_terms
 from atlas.metadata import sync_dataset_metadata_to_atlas
 from atlas.columns import get_existing_columns
 router = APIRouter()
@@ -201,6 +202,26 @@ def _ensure_atlas_synced(dataset: Dataset):
         raise HTTPException(status_code=403, detail="Ce dataset est en cours de synchronisation Atlas")
 
 
+def _ensure_term_synced_to_atlas(db: Session, term: GlossaryTerm) -> None:
+    """
+    Ensures a glossary term has an Atlas GUID before attempting to assign it to entities.
+    This is required because dataset/column metadata sync only assigns terms that already
+    exist in Atlas.
+    """
+    if not term or term.atlas_guid:
+        return
+    glossary = getattr(term, "glossary", None)
+    if not glossary:
+        raise HTTPException(status_code=500, detail="Terme sans glossaire (données invalides)")
+    try:
+        sync_glossary_terms([glossary], db)
+        db.refresh(term)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur synchronisation Atlas (glossaire/terme): {exc}")
+    if not term.atlas_guid:
+        raise HTTPException(status_code=500, detail="Terme non synchronisé dans Atlas (atlas_guid manquant)")
+
+
 def _build_my_dataset_item(dataset: Dataset, user: dict, db: Session) -> MyDatasetListItem:
     assignments = get_assignments_for_dataset(db, str(dataset.id))
     assignment_map = _get_assignments_map(assignments)
@@ -332,67 +353,70 @@ async def update_column_metadata(
     _ensure_atlas_synced(dataset)
 
     previous_synced = bool(getattr(dataset, "atlas_synced", False))
-    previous_synced = bool(getattr(dataset, "atlas_synced", False))
     dataset.atlas_synced = False
     db.commit()
 
-    if column_name not in (dataset.columns_list or []):
-        raise HTTPException(status_code=404, detail="Colonne introuvable")
-
-    user_id = _get_employee_identifier(user) or ""
-    version = _get_or_create_metadata_version(db, dataset, user_id)
-
-    if payload.description is not None and payload.description.strip():
-        create_or_update_description(
-            db,
-            dataset_version_id=str(version.id),
-            column_name=column_name,
-            description=payload.description.strip(),
-            user_id=user_id
-        )
-
-    assignments = get_assignments_for_dataset(db, dataset_id)
-    current_assignment = next(
-        (a for a in assignments if a.column_name == column_name),
-        None
-    )
-
-    if payload.glossary_term_id is not None and payload.glossary_term_id != (current_assignment.glossary_term_id if current_assignment else None):
-        term = db.query(GlossaryTerm).filter(GlossaryTerm.id == payload.glossary_term_id).first()
-        if not term:
-            raise HTTPException(status_code=404, detail="Terme introuvable")
-        set_assignment_for_column(
-            db,
-            dataset_id,
-            column_name,
-            payload.glossary_term_id,
-            user_id
-        )
-    elif payload.glossary_term_id is None and current_assignment:
-        set_assignment_for_column(
-            db,
-            dataset_id,
-            column_name,
-            None,
-            user_id
-        )
-
-    assignments = get_assignments_for_dataset(db, dataset_id)
-    assignment_map = _get_assignments_map(assignments)
-    descriptions = get_description_dict_by_version(db, str(version.id))
-
-    column_to_sync = {column_name: descriptions.get(column_name)}
     try:
+        if column_name not in (dataset.columns_list or []):
+            raise HTTPException(status_code=404, detail="Colonne introuvable")
+
+        user_id = _get_employee_identifier(user) or ""
+        version = _get_or_create_metadata_version(db, dataset, user_id)
+
+        if payload.description is not None and payload.description.strip():
+            create_or_update_description(
+                db,
+                dataset_version_id=str(version.id),
+                column_name=column_name,
+                description=payload.description.strip(),
+                user_id=user_id
+            )
+
+        assignments = get_assignments_for_dataset(db, dataset_id)
+        current_assignment = next(
+            (a for a in assignments if a.column_name == column_name),
+            None
+        )
+
+        if payload.glossary_term_id is not None and payload.glossary_term_id != (current_assignment.glossary_term_id if current_assignment else None):
+            term = db.query(GlossaryTerm).filter(GlossaryTerm.id == payload.glossary_term_id).first()
+            if not term:
+                raise HTTPException(status_code=404, detail="Terme introuvable")
+            _ensure_term_synced_to_atlas(db, term)
+            set_assignment_for_column(
+                db,
+                dataset_id,
+                column_name,
+                payload.glossary_term_id,
+                user_id
+            )
+        elif payload.glossary_term_id is None and current_assignment:
+            set_assignment_for_column(
+                db,
+                dataset_id,
+                column_name,
+                None,
+                user_id
+            )
+
+        assignments = get_assignments_for_dataset(db, dataset_id)
+        assignment_map = _get_assignments_map(assignments)
+        descriptions = get_description_dict_by_version(db, str(version.id))
+
+        column_to_sync = {column_name: descriptions.get(column_name)}
         sync_dataset_metadata_to_atlas(db, dataset, column_descriptions=column_to_sync)
+
+        dataset.atlas_synced = True
+        db.commit()
+        return _build_column_payload(column_name, descriptions, assignment_map)
+    except HTTPException:
+        dataset.atlas_synced = previous_synced
+        db.commit()
+        raise
     except Exception as exc:
         dataset.atlas_synced = previous_synced
         db.commit()
         raise HTTPException(status_code=500, detail=f"Erreur synchronisation Atlas: {exc}")
-
-    dataset.atlas_synced = True
-    db.commit()
-
-    return _build_column_payload(column_name, descriptions, assignment_map)
 
 
 @router.put("/api/datasets/{dataset_id}/classification")
@@ -415,30 +439,33 @@ async def update_dataset_classification(
     db.commit()
 
     user_id = _get_employee_identifier(user) or ""
-    if payload.glossary_term_id is not None:
-        term = db.query(GlossaryTerm).filter(GlossaryTerm.id == payload.glossary_term_id).first()
-        if not term:
-            raise HTTPException(status_code=404, detail="Terme introuvable")
-
-    assignment = set_assignment_for_column(
-        db,
-        dataset_id,
-        None,
-        payload.glossary_term_id,
-        user_id
-    )
-
     try:
+        if payload.glossary_term_id is not None:
+            term = db.query(GlossaryTerm).filter(GlossaryTerm.id == payload.glossary_term_id).first()
+            if not term:
+                raise HTTPException(status_code=404, detail="Terme introuvable")
+            _ensure_term_synced_to_atlas(db, term)
+
+        assignment = set_assignment_for_column(
+            db,
+            dataset_id,
+            None,
+            payload.glossary_term_id,
+            user_id
+        )
+
         sync_dataset_metadata_to_atlas(db, dataset)
+        dataset.atlas_synced = True
+        db.commit()
+        return _assignment_data(assignment)
+    except HTTPException:
+        dataset.atlas_synced = previous_synced
+        db.commit()
+        raise
     except Exception as exc:
         dataset.atlas_synced = previous_synced
         db.commit()
         raise HTTPException(status_code=500, detail=f"Erreur synchronisation Atlas: {exc}")
-
-    dataset.atlas_synced = True
-    db.commit()
-
-    return _assignment_data(assignment)
 
 
 @router.put("/api/datasets/{dataset_id}/description")
