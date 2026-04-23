@@ -20,6 +20,7 @@ def create_dataset(
     force_unique=False,
     owner_employee_id=None,
     project_id=None,
+    project_name=None,
     description=None,
     version_number=None  # ← NOUVEAU
 ):
@@ -51,6 +52,7 @@ def create_dataset(
 
     if force_unique:
         qn = f"{qn}_{int(time.time())}"
+
 
     # ---------------------------------------------------------------------
     # 0) Vérifier si le dataset existe déjà
@@ -96,7 +98,7 @@ def create_dataset(
                 "columnsCount": len(df.columns),
                 "columnsList": list(df.columns),
                 "owner": owner_employee_id,
-                "project": project_id
+                "project": project_name
             },
             "guid": "-100"
         }]

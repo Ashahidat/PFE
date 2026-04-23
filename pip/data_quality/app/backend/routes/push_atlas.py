@@ -401,8 +401,9 @@ def push_atlas(
         # ----------------------
         # 6️⃣ Créer le DataSet dans Atlas (AVEC le numéro de version)
         # ----------------------
-        # on récupère le nom du projet grâce à la relation SQLAlchemy
+        # on récupère le nom du projet grâce à la relation SQLAlchemy et id du produit
         project_name = dataset.project.name if dataset.project else None
+        project_id_str = str(dataset.project_id) if dataset.project_id else None
 
         dataset_guid, dataset_existed = create_dataset(
             hash_value,
@@ -411,7 +412,8 @@ def push_atlas(
             parent_qn,
             df,
             owner_employee_id=dataset.owner_employee_id,
-            project_id=project_name,
+            project_id=project_id_str,
+            project_name=project_name,
             description=description,
             version_number=new_version.version_number  # ← MAINTENANT new_version existe
         )
