@@ -29,12 +29,28 @@ router = APIRouter()
 # --- Cache simple pour les DataFrame Spark ---
 spark_cache = {}  # clé = dataset_id, valeur = df Spark
 
+def _normalize_dataset_visibility(value: str | None) -> str | None:
+    if value is None:
+        return None
+    v = value.strip().upper()
+    return v or None
+
+def _validate_dataset_visibility(value: str) -> str:
+    allowed = {"PUBLIC", "DEPARTMENT"}
+    if value not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"dataset_visibility invalide (attendu: {', '.join(sorted(allowed))})"
+        )
+    return value
+
 
 @router.post("/upload")
 async def upload_csv(
     file: UploadFile = File(...),
     project_id: str = Form(...),  
     description: str = Form(None),
+    dataset_visibility: str = Form(None),
     user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -65,6 +81,12 @@ async def upload_csv(
     logger.info(
         f"✅ Utilisateur {user['sub']} autorisé à uploader dans {project.name}"
     )
+
+    # 2.5️⃣ Déterminer la visibilité du dataset (override possible vs projet)
+    normalized_visibility = _normalize_dataset_visibility(dataset_visibility)
+    if normalized_visibility is None:
+        normalized_visibility = (project.visibility or "DEPARTMENT").strip().upper()
+    normalized_visibility = _validate_dataset_visibility(normalized_visibility)
 
     # 3️⃣ Sauvegarde temporaire CSV
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -109,7 +131,7 @@ async def upload_csv(
         atlas_guid=None,
         project_id=project_id,
         description=description,
-        classification=project.visibility,
+        classification=normalized_visibility,
         atlas_synced=False
     )
 
@@ -125,7 +147,8 @@ async def upload_csv(
         "hash": hash_value,
         "dataset_id": dataset_id,
         "project_id": project_id,
-        "description": description
+        "description": description,
+        "dataset_visibility": normalized_visibility
     }
 
 

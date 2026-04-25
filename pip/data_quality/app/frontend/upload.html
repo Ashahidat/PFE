@@ -58,6 +58,19 @@
         </small>
     </div>
 
+    <!-- 🔒 Visibilité du dataset -->
+    <div class="form-group">
+        <label for="datasetVisibility">Visibilité du dataset</label>
+        <select id="datasetVisibility" class="form-control">
+            <option value="">Par défaut (visibilité du projet)</option>
+            <option value="PUBLIC">Public (Entreprise)</option>
+            <option value="DEPARTMENT">Département</option>
+        </select>
+        <small class="form-text text-muted">
+            Si vous choisissez “Département”, le dataset sera visible uniquement par votre département.
+        </small>
+    </div>
+
     <button id="uploadBtn">Uploader</button>
     <div id="uploadStatus" class="hidden">En cours d'exécution...</div>
 </div>

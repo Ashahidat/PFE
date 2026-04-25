@@ -208,12 +208,15 @@ document.getElementById("uploadBtn").addEventListener("click", async () => {
     const file = document.getElementById("csvFile").files[0];
     const projectId = localStorage.getItem("current_project_id");
     const description = document.getElementById("description").value; // ✅ Récupérer description
+    const datasetVisibilityEl = document.getElementById("datasetVisibility");
+    const datasetVisibility = datasetVisibilityEl ? datasetVisibilityEl.value : "";
     const statusDiv = document.getElementById("uploadStatus");
 
     console.log("🟡 Début processus upload...");
     console.log("📄 Fichier sélectionné:", file ? file.name : "Aucun");
     console.log("📁 Projet sélectionné:", projectId);
     console.log("📝 Description:", description);
+    console.log("🔒 Visibilité dataset:", datasetVisibility || "(défaut projet)");
 
     // 🔴 Vérifications
     if (!file) {
@@ -234,6 +237,9 @@ document.getElementById("uploadBtn").addEventListener("click", async () => {
     formData.append("file", file);
     formData.append("project_id", projectId);
     formData.append("description", description); // ✅ Ajouter description
+    if (datasetVisibility) {
+        formData.append("dataset_visibility", datasetVisibility);
+    }
 
     try {
         const token = localStorage.getItem("access_token");

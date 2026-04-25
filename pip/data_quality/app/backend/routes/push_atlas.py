@@ -487,13 +487,23 @@ def push_atlas(
         # 6.5️⃣ Classification sécurité (replace semantics)
         # ----------------------
         try:
-            security_classification = "PUBLIC" if is_public else "RESTRICTED"
-            security_attributes = {}
-            if security_classification == "PUBLIC":
+            # Source de vérité: visibilité stockée sur le Dataset (choisie à l'upload).
+            # NOTE: on garde `is_public` pour compatibilité API, mais il ne pilote plus la décision.
+            dataset_visibility = (getattr(dataset, "classification", None) or "").strip().upper()
+            if not dataset_visibility:
+                # Fallback ultime (ancien comportement) si la base ne contient rien.
+                dataset_visibility = "PUBLIC" if is_public else "DEPARTMENT"
+
+            if dataset_visibility == "PUBLIC":
+                security_classification = "PUBLIC"
                 security_attributes = {"visibility_scope": "ENTERPRISE"}
             else:
-                employee = employee_id or owner_employee_id or ""
-                dept = get_user_department(db, employee) or user.get("department") or "UNKNOWN"
+                security_classification = "RESTRICTED"
+                # IMPORTANT: le département doit dépendre du owner (dataset/projet), pas du pusher.
+                owner_emp = getattr(dataset, "owner_employee_id", None) or ""
+                if not owner_emp and getattr(dataset, "project", None):
+                    owner_emp = getattr(dataset.project, "owner_employee_id", None) or ""
+                dept = get_user_department(db, owner_emp) or "UNKNOWN"
                 security_attributes = {"visibility_scope": "DEPARTMENT", "department": dept}
 
             apply_classification_use_case(
@@ -506,7 +516,10 @@ def push_atlas(
                 user=user,
             )
             security_success = True
-            logger.info(f"🔒 Classification sécurité appliquée: {security_classification}")
+            logger.info(
+                f"🔒 Classification sécurité appliquée: {security_classification} "
+                f"(dataset_visibility={dataset_visibility})"
+            )
         except Exception as sec_exc:
             security_success = False
             logger.warning(f"⚠️ Impossible d'appliquer la classification sécurité: {sec_exc}")
