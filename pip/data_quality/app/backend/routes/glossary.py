@@ -11,6 +11,8 @@ from atlas.glossary import sync_glossary_terms
 logger = logging.getLogger("routes.glossary")
 
 from db.connexion_db import get_db
+from db.departments import Department
+from db.user_department_scopes import UserDepartmentScope
 from db.datasets import Dataset
 from db.glossary import GlossaryCategory
 from db.glossary import Glossary, GlossaryTerm
@@ -62,7 +64,7 @@ class GlossaryCreate(BaseModel):
     name: str
     qualified_name: str
     description: str | None = None
-    department: str | None = None
+    department: str
 
 
 class GlossaryUpdate(BaseModel):
@@ -121,6 +123,33 @@ def _slugify(text: str, default: str = "item") -> str:
     candidate = re.sub(r"[^\w]+", "_", (text or "").lower())
     candidate = re.sub(r"_+", "_", candidate).strip("_")
     return candidate or default
+
+
+def _normalize_department(value: str) -> str:
+    return re.sub(r"\s+", "_", (value or "").strip()).upper()
+
+
+def _assert_glossary_department_allowed(db: Session, dept_code: str, user: dict) -> str:
+    dept_code = _normalize_department(dept_code)
+    if not dept_code:
+        raise HTTPException(status_code=400, detail="Département obligatoire")
+
+    dept = db.query(Department).filter(Department.code == dept_code, Department.is_active == True).first()
+    if not dept:
+        raise HTTPException(status_code=400, detail="Département inconnu ou inactif")
+
+    role = user.get("role")
+    if role == ADMIN_GLOSSAIRE:
+        emp_id = user.get("employee_id") or user.get("sub")
+        allowed = (
+            db.query(UserDepartmentScope)
+            .filter(UserDepartmentScope.employee_id == emp_id, UserDepartmentScope.department_code == dept_code)
+            .first()
+        )
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Vous n'êtes pas autorisé à gérer ce département")
+
+    return dept_code
 
 
 def _sync_one_glossary(db: Session, glossary: Glossary) -> None:
@@ -290,6 +319,7 @@ def create_glossary_route(
     db: Session = Depends(get_db),
     user=Depends(require_role(GLOSSARY_MANAGERS))
 ):
+    dept_code = _assert_glossary_department_allowed(db, payload.department, user)
     existing = db.query(Glossary).filter(Glossary.qualified_name == payload.qualified_name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Ce glossaire existe déjà")
@@ -299,7 +329,7 @@ def create_glossary_route(
         name=payload.name,
         qualified_name=payload.qualified_name,
         description=payload.description,
-        department=payload.department,
+        department=dept_code,
         created_by=user.get("employee_id")
     )
 
@@ -327,13 +357,18 @@ def update_glossary_route(
     if not glossary:
         raise HTTPException(status_code=404, detail="Glossaire non trouvé")
 
+    dept_value = payload.department if payload.department is not None else glossary.department
+    if dept_value is None:
+        raise HTTPException(status_code=400, detail="Département obligatoire")
+    dept_code = _assert_glossary_department_allowed(db, dept_value, user)
+
     updated = update_glossary(
         db=db,
         glossary_id=glossary_id,
         name=payload.name,
         qualified_name=payload.qualified_name,
         description=payload.description,
-        department=payload.department
+        department=dept_code
     )
 
     if updated:

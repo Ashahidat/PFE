@@ -17,10 +17,12 @@ FILES=(
     "push_history.sql"
     "data_quality_results.sql"
     "column_descriptions.sql"
+    "departments.sql"
     "glossaries.sql"
     "glossary_categories.sql"
     "glossary_terms.sql"
     "dataset_glossary_assignments.sql"
+    "user_department_scopes.sql"
 )
 
 # Copier les fichiers vers /tmp avec l'utilisateur actuel
@@ -53,10 +55,12 @@ FILES=(
     "push_history.sql"
     "data_quality_results.sql"
     "column_descriptions.sql"
+    "departments.sql"
     "glossaries.sql"
     "glossary_categories.sql"
     "glossary_terms.sql"
     "dataset_glossary_assignments.sql"
+    "user_department_scopes.sql"
 )
 
 # Exécution des fichiers SQL

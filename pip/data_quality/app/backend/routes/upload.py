@@ -18,7 +18,7 @@ from jwt_dependencies import get_current_user
 from db.connexion_db import get_db
 from db.datasets import Dataset
 from db.projects import Project  
-from core.permissions import can_upload_to_project
+from core.permissions import can_upload_to_project, can_view_dataset
 import logging 
 
 logger = logging.getLogger("upload")
@@ -136,13 +136,12 @@ def preview(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    dataset = db.query(Dataset).filter(
-        Dataset.id == dataset_id,
-        Dataset.owner_employee_id == user["sub"]
-    ).first()
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
 
     if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset introuvable ou non autorisé")
+        raise HTTPException(status_code=404, detail="Dataset introuvable")
+    if not can_view_dataset(user, dataset, db):
+        raise HTTPException(status_code=403, detail="Dataset introuvable ou non autorisé")
 
     if dataset_id in spark_cache:
         df = spark_cache[dataset_id]
@@ -162,12 +161,11 @@ def get_columns(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    dataset = db.query(Dataset).filter(
-        Dataset.id == dataset_id,
-        Dataset.owner_employee_id == user["sub"]
-    ).first()
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
 
     if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset introuvable ou non autorisé")
+        raise HTTPException(status_code=404, detail="Dataset introuvable")
+    if not can_view_dataset(user, dataset, db):
+        raise HTTPException(status_code=403, detail="Dataset introuvable ou non autorisé")
 
     return {"columns": dataset.columns_list}

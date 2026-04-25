@@ -27,6 +27,52 @@ if (!token || !allowedRoles.includes(viewerRole)) {
 }
 
 let currentEditEmployeeId = null;
+let departmentsCache = [];
+
+function escapeHtml(value) {
+    if (value === null || value === undefined) return "";
+    return String(value).replace(/[&<>"']/g, (char) => {
+        return {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;"
+        }[char];
+    });
+}
+
+function departmentOptions(selectedCode) {
+    const normalized = selectedCode ? String(selectedCode) : "";
+    if (!departmentsCache.length) {
+        return `<option value="">Aucun département</option>`;
+    }
+    return departmentsCache
+        .map((d) => {
+            const code = d.code;
+            const selected = normalized && String(code) === normalized ? " selected" : "";
+            return `<option value="${escapeHtml(code)}"${selected}>${escapeHtml(d.label)} (${escapeHtml(code)})</option>`;
+        })
+        .join("");
+}
+
+async function loadDepartments() {
+    try {
+        const res = await fetch(`${API_URL}/departments`, {
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error("Erreur chargement départements");
+        const depts = await res.json();
+        departmentsCache = Array.isArray(depts) ? depts : [];
+
+        const createSelect = document.getElementById("department");
+        const editSelect = document.getElementById("edit_department");
+        if (createSelect) createSelect.innerHTML = departmentOptions("");
+        if (editSelect) editSelect.innerHTML = departmentOptions("");
+    } catch (err) {
+        console.error(err);
+    }
+}
 
 async function loadUsers() {
     try {
@@ -202,7 +248,11 @@ window.toggleUserStatus = async function(employeeId, activate) {
 window.openEditForm = function(empId, username, department, role, isActive) {
     currentEditEmployeeId = empId;
     document.getElementById("edit_username").value = username;
-    document.getElementById("edit_department").value = department;
+    const deptSelect = document.getElementById("edit_department");
+    if (deptSelect) {
+        deptSelect.innerHTML = departmentOptions(department);
+        deptSelect.value = department || "";
+    }
     document.getElementById("edit_role").value = role;
     document.getElementById("edit_password").value = "";
     document.getElementById("edit_is_active").value = isActive ? "true" : "false";
@@ -304,4 +354,4 @@ document.getElementById("createBtn").addEventListener("click", async () => {
     }
 });
 
-loadUsers();
+loadDepartments().finally(loadUsers);

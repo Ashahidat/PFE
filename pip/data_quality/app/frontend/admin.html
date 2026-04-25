@@ -17,16 +17,21 @@
             <input type="text" id="emp_id" placeholder="Employee ID">
             <input type="text" id="username" placeholder="Username">
             <input type="password" id="password" placeholder="Mot de passe">
-            <input type="text" id="department" placeholder="Département">
+            <select id="department"></select>
             <select id="role">
-                <option value="DATA_OWNER">DATA_OWNER</option>
-                <option value="ADMIN">ADMIN</option>
-                <option value="ADMIN_GLOSSAIRE">ADMIN_GLOSSAIRE</option>
-                <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-                <option value="AUDIT">AUDIT</option>
+                <option value="DATA_OWNER">DATA_OWNER — propriétaire de data</option>
+                <option value="ADMIN">ADMIN — admin applicatif</option>
+                <option value="ADMIN_GLOSSAIRE">ADMIN_GLOSSAIRE — gestion glossaire</option>
+                <option value="SUPER_ADMIN">SUPER_ADMIN — super-admin</option>
+                <option value="AUDIT">AUDIT — lecture</option>
             </select>
             <button id="createBtn">Créer</button>
         </div>
+
+        <p class="muted" style="margin-top:-12px;">
+            Ici tu gères les utilisateurs (rôle, département, activation). La gestion des départements et des périmètres
+            <code>ADMIN_GLOSSAIRE</code> se fait dans “Départements”.
+        </p>
 
         <div class="role-limit-panel">
             <h2>⚖️ Capacités des rôles critiques</h2>
@@ -46,16 +51,16 @@
             </div>
             <div class="form-group">
                 <label>Département :</label>
-                <input type="text" id="edit_department" placeholder="Département">
+                <select id="edit_department"></select>
             </div>
             <div class="form-group">
                 <label>Rôle :</label>
                 <select id="edit_role">
-                    <option value="DATA_OWNER">DATA_OWNER</option>
-                    <option value="ADMIN">ADMIN</option>
-                    <option value="ADMIN_GLOSSAIRE">ADMIN_GLOSSAIRE</option>
-                    <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-                    <option value="AUDIT">AUDIT</option>
+                    <option value="DATA_OWNER">DATA_OWNER — propriétaire de data</option>
+                    <option value="ADMIN">ADMIN — admin applicatif</option>
+                    <option value="ADMIN_GLOSSAIRE">ADMIN_GLOSSAIRE — gestion glossaire</option>
+                    <option value="SUPER_ADMIN">SUPER_ADMIN — super-admin</option>
+                    <option value="AUDIT">AUDIT — lecture</option>
                 </select>
             </div>
             <div class="form-group">

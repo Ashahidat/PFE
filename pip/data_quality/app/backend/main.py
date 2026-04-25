@@ -47,7 +47,7 @@ from fastapi.responses import FileResponse
 import os
 
 from config import FRONTEND_DIR
-from routes import upload, dag, results, push_atlas, login, classifications, classifications_col, projects, descriptions, versionning, profile, glossary, datasets_meta
+from routes import upload, dag, results, push_atlas, login, classifications, classifications_col, projects, descriptions, versionning, profile, glossary, datasets_meta, departments
 
 app = FastAPI()
 
@@ -76,6 +76,7 @@ app.include_router(versionning.router)
 app.include_router(profile.router)
 app.include_router(glossary.router)
 app.include_router(datasets_meta.router)
+app.include_router(departments.router)
 
 
 # Frontend

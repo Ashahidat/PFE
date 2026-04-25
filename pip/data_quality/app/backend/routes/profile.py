@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from passlib.context import CryptContext
 from pydantic import BaseModel, ConfigDict
@@ -6,6 +8,7 @@ from sqlalchemy.orm import Session
 from core.permissions import require_role
 from core.roles import ADMIN, ADMIN_GLOSSAIRE, SUPER_ADMIN, CRITICAL_ROLES, is_valid_role, ROLE_LIMITS
 from db.connexion_db import get_db
+from db.departments import Department
 from db.users import User
 from jwt_dependencies import get_current_user
 
@@ -34,6 +37,23 @@ def _get_employee_id_from_token(user: dict) -> str:
     if not employee_id:
         raise HTTPException(status_code=400, detail="Identifiant utilisateur manquant")
     return employee_id
+
+
+def _validate_department(db: Session, department_code: str, *, allow_missing: bool = False) -> str:
+    """
+    Ensures the department exists and is active.
+    Returns the normalized department code (upper + underscore).
+    """
+    value = (department_code or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Département obligatoire")
+    normalized = re.sub(r"\s+", "_", value).upper()
+    if allow_missing:
+        return normalized
+    dept = db.query(Department).filter(Department.code == normalized, Department.is_active == True).first()
+    if not dept:
+        raise HTTPException(status_code=400, detail="Département inconnu ou inactif")
+    return normalized
 
 
 class UserSummaryResponse(BaseModel):
@@ -170,12 +190,13 @@ def create_user(
     _ensure_role_quota(db, payload.role)
 
     hashed_password = pwd.hash(payload.password)
+    department = _validate_department(db, payload.department, allow_missing=(payload.role == SUPER_ADMIN and user.get("role") == SUPER_ADMIN and db.query(Department).count() == 0))
 
     new_user = User(
         employee_id=payload.employee_id,
         username=payload.username,
         password_hash=hashed_password,
-        department=payload.department,
+        department=department,
         role=payload.role,
         is_protected=False,
         is_active=True
@@ -236,7 +257,7 @@ def update_user_by_admin(
     if payload.password is not None:
         target_user.password_hash = pwd.hash(payload.password)
     if payload.department is not None:
-        target_user.department = payload.department
+        target_user.department = _validate_department(db, payload.department, allow_missing=(target_user.role == SUPER_ADMIN and admin_user.get("role") == SUPER_ADMIN and db.query(Department).count() == 0))
     if payload.role is not None:
         target_user.role = payload.role
     if payload.is_active is not None:

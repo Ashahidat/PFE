@@ -158,6 +158,15 @@ def _dataset_visibility(dataset) -> str:
         return dataset.project.visibility
     return "DEPARTMENT"
 
+def _dataset_owner_employee_id(dataset) -> str | None:
+    owner = getattr(dataset, "owner_employee_id", None)
+    if owner:
+        return owner
+    project = getattr(dataset, "project", None)
+    if project and getattr(project, "owner_employee_id", None):
+        return project.owner_employee_id
+    return None
+
 
 def _is_same_department(user: dict, owner_employee_id: str, db: Session) -> bool:
     if not owner_employee_id:
@@ -175,14 +184,12 @@ def can_view_dataset(user: dict, dataset, db: Session) -> bool:
     if role == AUDIT:
         return True
     if role == DATA_OWNER:
-        emp_id = _get_employee_identifier(user)
-        if not emp_id or dataset.owner_employee_id != emp_id:
-            return False
         visibility = _dataset_visibility(dataset)
         if visibility == "PUBLIC":
             return True
         if visibility == "DEPARTMENT":
-            return _is_same_department(user, emp_id, db)
+            owner_emp_id = _dataset_owner_employee_id(dataset)
+            return _is_same_department(user, owner_emp_id, db)
     return False
 
 

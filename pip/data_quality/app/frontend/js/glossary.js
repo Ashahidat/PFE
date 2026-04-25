@@ -13,6 +13,7 @@ if (!token) {
 let currentEditId = null;
 const categoryCache = {};
 const glossariesById = {};
+let allowedDepartments = [];
 
 function escapeHtml(str) {
     if (!str) return "";
@@ -22,6 +23,43 @@ function escapeHtml(str) {
         if (m === ">") return "&gt;";
         return m;
     });
+}
+
+function deptOptions(selectedCode) {
+    const normalized = selectedCode ? String(selectedCode) : "";
+    if (!allowedDepartments.length) {
+        return "<option value=''>Aucun département</option>";
+    }
+    return allowedDepartments
+        .map((d) => {
+            const code = d.code;
+            const label = `${d.label} (${d.code})`;
+            const selected = normalized && String(code) === normalized ? "selected" : "";
+            return `<option value="${escapeHtml(code)}" ${selected}>${escapeHtml(label)}</option>`;
+        })
+        .join("");
+}
+
+async function loadAllowedDepartments() {
+    try {
+        const res = await fetch(`${API_URL}/departments/allowed`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+            allowedDepartments = [];
+            return;
+        }
+        const data = await res.json();
+        allowedDepartments = Array.isArray(data) ? data : [];
+        const select = document.getElementById("glossary-dept");
+        if (select) {
+            select.innerHTML = deptOptions("");
+            select.disabled = allowedDepartments.length === 0;
+        }
+    } catch (err) {
+        console.error("Erreur chargement départements:", err);
+        allowedDepartments = [];
+    }
 }
 
 async function ensureCategories(glossaryId) {
@@ -310,7 +348,7 @@ function renderGlossaryList(glossaries) {
                             <div class="edit-form" id="edit-glossary-form-${g.id}">
                                 <h4>Modifier le glossaire</h4>
                                 <input type="text" id="edit-glossary-name-${g.id}" value="${escapeHtml(g.name)}" placeholder="Nom affiché *">
-                                <input type="text" id="edit-glossary-dept-${g.id}" value="${escapeHtml(g.department || "")}" placeholder="Département (optionnel)">
+                                <select id="edit-glossary-dept-${g.id}">${deptOptions(g.department || "")}</select>
                                 <textarea id="edit-glossary-desc-${g.id}" placeholder="Description">${escapeHtml(g.description || "")}</textarea>
                                 <button onclick="saveGlossaryEdit(${g.id})" class="btn-save" style="margin-right:5px;">💾 Enregistrer</button>
                                 <button onclick="closeGlossaryEdit(${g.id})" style="background:#6c757d; color:white; border:none; padding:5px 10px; border-radius:3px;">Annuler</button>
@@ -609,6 +647,11 @@ document.getElementById("createGlossaryBtn").addEventListener("click", async () 
         status.style.color = "red";
         return;
     }
+    if (!department) {
+        status.innerText = "Le département est obligatoire";
+        status.style.color = "red";
+        return;
+    }
 
     try {
         const res = await fetch(`${API_URL}/glossary/glossaries`, {
@@ -621,7 +664,7 @@ document.getElementById("createGlossaryBtn").addEventListener("click", async () 
                 name,
                 qualified_name: name.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
                 description: description || null,
-                department: department || null,
+                department,
             }),
         });
         if (res.ok) {
@@ -658,5 +701,7 @@ if (categoryGlossarySelectElement) {
     });
 }
 
-loadGlossaries();
-loadTerms();
+loadAllowedDepartments().finally(() => {
+    loadGlossaries();
+    loadTerms();
+});

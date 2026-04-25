@@ -2,7 +2,8 @@
 function loadNavbar() {
     const token = localStorage.getItem("access_token");
     const role = localStorage.getItem("user_role");
-    const adminRoles = ["ADMIN", "ADMIN_GLOSSAIRE", "SUPER_ADMIN"];
+    const glossaryRoles = ["ADMIN", "ADMIN_GLOSSAIRE", "SUPER_ADMIN"];
+    const userAdminRoles = ["ADMIN", "SUPER_ADMIN"];
     const canUpload = role && role !== "AUDIT";
 
     if (!token) return;
@@ -19,9 +20,16 @@ function loadNavbar() {
                     ${uploadLink}
         `;
 
-    if (adminRoles.includes(role)) {
+    if (glossaryRoles.includes(role)) {
         navHtml += `<a href="glossary.html">Glossaire</a>`;
+    }
+
+    if (userAdminRoles.includes(role)) {
         navHtml += `<a href="admin.html">Utilisateurs</a>`;
+    }
+
+    if (role === "SUPER_ADMIN") {
+        navHtml += `<a href="departments.html">Départements</a>`;
     }
         
     navHtml += `

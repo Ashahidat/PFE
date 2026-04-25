@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from db.connexion_db import get_db
+from db.departments import Department
 from db.users import User
 from jwt_manager import create_access_token
 from core.roles import SUPER_ADMIN
@@ -22,12 +23,17 @@ def login(data: dict, db: Session = Depends(get_db)):
         user = db.query(User).filter(User.employee_id == data["employee_id"]).first()
         
         hashed = pwd.hash(data["password"])
+        # Bootstrap: ensure the department exists in the referential so later flows stay strict.
+        dept_code = (data.get("department") or "ADMIN").strip().upper().replace(" ", "_")
+        if not db.query(Department).filter(Department.code == dept_code).first():
+            db.add(Department(code=dept_code, label=dept_code, is_active=True))
+            db.commit()
         if not user:
             user = User(
                 employee_id=data["employee_id"],
                 username=data.get("username", data["employee_id"]),
                 password_hash=hashed,
-                department=data.get("department", "ADMIN"),
+                department=dept_code,
                 role=SUPER_ADMIN,
                 is_protected=False,
                 is_active=True
@@ -36,7 +42,7 @@ def login(data: dict, db: Session = Depends(get_db)):
         else:
             user.username = data.get("username", user.username)
             user.password_hash = hashed
-            user.department = data.get("department", user.department or "ADMIN")
+            user.department = dept_code
             user.role = SUPER_ADMIN
             user.is_protected = True
             user.is_active = True
