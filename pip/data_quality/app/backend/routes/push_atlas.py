@@ -145,6 +145,7 @@ def push_atlas(
     dq_db_ids = []
     processed_files = []
     security_success = False  # 👈 NOUVEAU
+    security_classification = None  # PUBLIC | RESTRICTED (valeur réellement appliquée)
     glossary_stats = {
         "created_terms": 0,
         "existing_terms": 0,
@@ -522,6 +523,8 @@ def push_atlas(
             )
         except Exception as sec_exc:
             security_success = False
+            # Backfill best-effort to avoid returning stale API field values
+            security_classification = security_classification or ("PUBLIC" if is_public else "RESTRICTED")
             logger.warning(f"⚠️ Impossible d'appliquer la classification sécurité: {sec_exc}")
 
         # 7️⃣ Lien versioning datasets
@@ -777,7 +780,7 @@ def push_atlas(
             "similarity_score": similarity_score,
             "data_quality_checks_count": len(dq_guids),
             "quality_summary_added": quality_success if all_checks_data else False,
-            "security_classification": "PUBLIC" if is_public else "RESTRICTED",  # 👈 NOUVEAU
+            "security_classification": security_classification or ("PUBLIC" if is_public else "RESTRICTED"),
             "security_classification_added": security_success,  # 👈 NOUVEAU
             "glossary_terms_total": glossary_stats.get("total_terms"),
             "glossary_terms_created": glossary_stats.get("created_terms"),

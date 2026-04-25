@@ -81,16 +81,28 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("step1-indicator").classList.add("completed");
         document.getElementById("step1-indicator").querySelector(".step-counter").innerHTML = "✓";
         
-        // 2. Cacher l'étape 1, afficher l'étape 2
+        // 2. Cacher l'étape 1
         document.getElementById("step1-content").style.display = "none";
+
+        // 3. Ne plus demander de classification : déjà déterminée à l'upload (dataset_visibility)
+        //    et appliquée automatiquement côté backend pendant le push.
         const section = document.getElementById("classificationSection");
-        if (section) {
-          section.style.display = "block";
-          console.log("✅ Section classification affichée");
+        if (section) section.style.display = "none";
+        document.getElementById("step2-indicator").classList.remove("active");
+        document.getElementById("step2-indicator").classList.add("completed");
+        document.getElementById("step2-indicator").querySelector(".step-counter").innerHTML = "✓";
+
+        // 4. Passer directement à l'étape 3 (colonnes)
+        const colSection = document.getElementById("columnClassificationSection");
+        if (colSection) colSection.style.display = "block";
+        document.getElementById("step3-indicator").classList.add("active");
+
+        // 5. Initialiser l'UI colonnes si disponible (définie dans classifications.js)
+        if (typeof initColumnUI === "function") {
+          initColumnUI(dataset_id);
+        } else {
+          console.warn("⚠️ initColumnUI introuvable (classifications.js non chargé ?)");
         }
-        
-        // 3. Activer visuellement l'étape 2
-        document.getElementById("step2-indicator").classList.add("active");
       }, 800); // Petit délai pour laisser le temps de lire "✅ Succès"
 
     } catch (err) {

@@ -40,6 +40,11 @@ Fichier : `pip/data_quality/app/backend/routes/push_atlas.py`
 - Le département utilisé pour `RESTRICTED` est celui du **owner** (priorité `dataset.owner_employee_id`, fallback `dataset.project.owner_employee_id`), **pas** celui de l'utilisateur qui push.
 - Le paramètre `is_public` est conservé pour compatibilité API, mais n'est plus la source de vérité (il sert uniquement de fallback si `dataset.classification` est vide).
 
+#### Ajustement API (retour JSON)
+
+Le champ `security_classification` renvoyé par `/push-atlas/{dataset_id}` reflète désormais la **valeur réellement appliquée** (déduite de `Dataset.classification`), et non plus une valeur dérivée de `is_public`.
+Cela évite les incohérences côté UI quand `is_public` n'est pas envoyé (ou quand il est différent de la visibilité stockée).
+
 ### 3) UI Upload
 
 Fichiers :
@@ -49,6 +54,24 @@ Fichiers :
 
 - Ajout d'un sélecteur "Visibilité du dataset"
 - Envoi du champ `dataset_visibility` dans le `FormData` vers `/upload`
+
+### 4) UI Push Atlas (suppression du re-choix de classification dataset)
+
+Fichiers :
+
+- `pip/data_quality/app/frontend/atlas.html`
+- `pip/data_quality/app/frontend/js/atlas.js`
+- `pip/data_quality/app/frontend/js/classifications.js`
+
+Changement UX :
+
+- La classification de sécurité du dataset (PUBLIC / RESTRICTED) est **déjà déterminée à l'upload** via `dataset_visibility` (persistée en DB dans `datasets.classification`) et **appliquée automatiquement** pendant le push Atlas.
+- En conséquence, l'étape 2 du stepper ("Classification du dataset") n'a plus vocation à demander un choix utilisateur à chaque push.
+
+Comportement :
+
+- Après "Envoyer vers Atlas", l'UI passe directement à l'étape 3 (classification des colonnes).
+- L'étape 2 est marquée comme terminée automatiquement (pas d'action requise).
 
 ## Test plan (manuel)
 
