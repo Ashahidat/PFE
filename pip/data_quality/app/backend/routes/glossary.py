@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from atlas.glossary import sync_glossary_terms
+from atlas.glossary import get_term_qualified_name_by_guid
 
 logger = logging.getLogger("routes.glossary")
 
@@ -573,17 +574,21 @@ def update_term_route(
         raise HTTPException(status_code=404, detail="Terme non trouvé")
 
     # Ensure a synced term has a stable qualified_name before allowing rename.
-    # Without this, the Atlas sync would derive a new qualifiedName from the new label and create duplicates.
+    # Without this, the Atlas sync could derive a new qualifiedName from the new label and create duplicates.
     if (
         term.atlas_guid
         and payload.term is not None
         and payload.term != term.term
         and not getattr(term, "qualified_name", None)
     ):
-        glossary = get_glossary_by_id(db, term.glossary_id)
-        if not glossary or not glossary.qualified_name:
-            raise HTTPException(status_code=500, detail="Glossaire introuvable pour ce terme")
-        term.qualified_name = f"{_slugify(term.term, 'term')}@{glossary.qualified_name}"
+        atlas_qn = get_term_qualified_name_by_guid(term.atlas_guid)
+        if atlas_qn:
+            term.qualified_name = atlas_qn
+        else:
+            glossary = get_glossary_by_id(db, term.glossary_id)
+            if not glossary or not glossary.qualified_name:
+                raise HTTPException(status_code=500, detail="Glossaire introuvable pour ce terme")
+            term.qualified_name = f"{_slugify(term.term, 'term')}@{glossary.qualified_name}"
         db.commit()
 
     # Moving a term to another glossary after it has been synced to Atlas would change its anchor and

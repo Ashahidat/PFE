@@ -45,18 +45,27 @@ function escapeHtml(value) {
     });
 }
 
-function renderTermOptions(selectedTermId) {
-    const normalized = selectedTermId ? String(selectedTermId) : "";
-    const options = ["<option value=\"\">— Aucun terme</option>"];
+function renderTermOptions(selectedTermIds) {
+    const selected = new Set(
+        (Array.isArray(selectedTermIds) ? selectedTermIds : (selectedTermIds ? [selectedTermIds] : []))
+            .filter(Boolean)
+            .map((id) => String(id))
+    );
+    const options = [];
     for (const term of glossaryTerms) {
         const label = term.category_name
             ? `${term.term} (${term.category_name})`
             : term.term;
         const value = String(term.id);
-        const selected = normalized && normalized === value ? " selected" : "";
-        options.push(`<option value=\"${value}\"${selected}>${escapeHtml(label)}</option>`);
+        const isSelected = selected.has(value) ? " selected" : "";
+        options.push(`<option value=\"${value}\"${isSelected}>${escapeHtml(label)}</option>`);
     }
     return options.join("");
+}
+
+function formatAssignedTerms(assignments) {
+    if (!assignments || !assignments.length) return "Pas de terme";
+    return assignments.map((a) => a.term).filter(Boolean).join(", ") || "Pas de terme";
 }
 
 function showPageMessage(message, type = "info") {
@@ -235,8 +244,8 @@ function createDatasetCard(dataset) {
     const assignmentBadge = document.createElement("span");
     assignmentBadge.className = "badge assignment-badge";
     assignmentBadge.dataset.assignmentBadge = dataset.id;
-    assignmentBadge.textContent = dataset.dataset_assignment
-        ? `Terme: ${dataset.dataset_assignment.term}`
+    assignmentBadge.textContent = dataset.dataset_assignments?.length
+        ? `Termes: ${formatAssignedTerms(dataset.dataset_assignments)}`
         : "Pas de terme";
     classificationRow.appendChild(assignmentBadge);
 
@@ -322,13 +331,15 @@ function createDatasetCard(dataset) {
     termLabel.textContent = "Terme Atlas:";
     const termSelect = document.createElement("select");
     termSelect.className = "dataset-term-select";
-    termSelect.innerHTML = renderTermOptions(dataset.dataset_assignment?.term_id);
+    termSelect.multiple = true;
+    termSelect.size = 6;
+    termSelect.innerHTML = renderTermOptions(dataset.dataset_assignments?.map((a) => a.term_id));
     termSelect.disabled = !dataset.can_edit;
     const termButton = document.createElement("button");
     termButton.type = "button";
     termButton.textContent = "Appliquer";
     termButton.disabled = !dataset.can_edit;
-    termButton.addEventListener("click", () => updateDatasetTerm(dataset, termSelect, card));
+    termButton.addEventListener("click", () => updateDatasetTerms(dataset, termSelect, card));
 
     termSection.append(termLabel, termSelect, termButton);
     detail.appendChild(termSection);
@@ -401,7 +412,9 @@ function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, exis
     labelText.textContent = column.name;
     const labelMeta = document.createElement("div");
     labelMeta.className = "column-meta";
-    labelMeta.textContent = column.classification?.term || "Pas de terme";
+    labelMeta.textContent = column.classifications?.length
+        ? formatAssignedTerms(column.classifications)
+        : (column.classification?.term || "Pas de terme");
     label.append(labelText, labelMeta);
 
     const description = document.createElement("textarea");
@@ -414,7 +427,9 @@ function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, exis
     actions.className = "column-actions";
     const termSelect = document.createElement("select");
     termSelect.className = "column-term-select";
-    termSelect.innerHTML = renderTermOptions(column.classification?.term_id);
+    termSelect.multiple = true;
+    termSelect.size = 5;
+    termSelect.innerHTML = renderTermOptions((column.classifications || []).map((a) => a.term_id));
     termSelect.disabled = !canEdit;
 
     const securitySelect = document.createElement("select");
@@ -451,7 +466,10 @@ function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, exis
 
     const datasetId = dataset?.id;
     saveBtn.addEventListener("click", async () => {
-        await saveColumnMetadata(datasetId, column.name, description, termSelect.value, columnStatus, saveBtn);
+        const termIds = Array.from(termSelect.selectedOptions || [])
+            .map((opt) => opt && opt.value ? Number(opt.value) : null)
+            .filter((v) => Number.isFinite(v));
+        await saveColumnMetadata(datasetId, column.name, description, termIds, columnStatus, saveBtn);
     });
 
     applySecBtn.addEventListener("click", async () => {
@@ -467,7 +485,7 @@ function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, exis
     return row;
 }
 
-async function saveColumnMetadata(datasetId, columnName, descriptionEl, termValue, statusEl, button) {
+async function saveColumnMetadata(datasetId, columnName, descriptionEl, termIds, statusEl, button) {
     if (button) button.disabled = true;
     statusEl.textContent = "Enregistrement...";
     statusEl.className = "column-status status-pill info";
@@ -477,7 +495,7 @@ async function saveColumnMetadata(datasetId, columnName, descriptionEl, termValu
     if (trimmed.length) {
         payload.description = trimmed;
     }
-    payload.glossary_term_id = termValue ? Number(termValue) : null;
+    payload.glossary_term_ids = Array.isArray(termIds) ? termIds : [];
 
     try {
         const res = await fetchWithAuth(`/api/datasets/${datasetId}/columns/${encodeURIComponent(columnName)}`, {
@@ -501,12 +519,15 @@ async function saveColumnMetadata(datasetId, columnName, descriptionEl, termValu
     }
 }
 
-async function updateDatasetTerm(dataset, selectEl, card) {
+async function updateDatasetTerms(dataset, selectEl, card) {
     if (!dataset.can_edit) return;
     const statusEl = card.querySelector(`#dataset-status-${dataset.id}`);
     showDetailMessage(statusEl, "Mise à jour...", "info");
+    const termIds = Array.from(selectEl.selectedOptions || [])
+        .map((opt) => opt && opt.value ? Number(opt.value) : null)
+        .filter((v) => Number.isFinite(v));
     const payload = {
-        glossary_term_id: selectEl.value ? Number(selectEl.value) : null
+        glossary_term_ids: termIds
     };
     try {
         const res = await fetchWithAuth(`/api/datasets/${dataset.id}/classification`, {
@@ -518,13 +539,17 @@ async function updateDatasetTerm(dataset, selectEl, card) {
             showDetailMessage(statusEl, err.detail || "Erreur", "error");
             return;
         }
-        const assignment = await res.json();
-        const termLabel = assignment?.term || "Pas de terme";
+        const data = await res.json();
+        const assignments = data?.dataset_assignments || [];
         const assignmentBadge = card.querySelector(`[data-assignment-badge="${dataset.id}"]`);
         if (assignmentBadge) {
-            assignmentBadge.textContent = assignment?.term ? `Terme: ${assignment.term}` : "Pas de terme";
+            assignmentBadge.textContent = assignments.length
+                ? `Termes: ${formatAssignedTerms(assignments)}`
+                : "Pas de terme";
         }
-        const message = assignment?.term ? `Terme mis à jour: ${assignment.term}` : "Terme retiré";
+        const message = assignments.length
+            ? "Termes mis à jour"
+            : "Termes retirés";
         showDetailMessage(statusEl, message, "success");
     } catch (error) {
         console.error(error);

@@ -131,42 +131,42 @@ function refreshUploadTermOptions(categoryId = "") {
         return;
     }
     select.disabled = false;
-    select.innerHTML =
-        "<option value=''>Sélectionnez un terme</option>" +
-        filtered
-            .map(
-                (term) =>
-                    `<option value="${term.id}">${escapeHtml(term.term)}${
-                        term.category_name ? ` (${escapeHtml(term.category_name)})` : ""
-                    }</option>`
-            )
-            .join("");
+    select.innerHTML = filtered
+        .map(
+            (term) =>
+                `<option value="${term.id}">${escapeHtml(term.term)}${
+                    term.category_name ? ` (${escapeHtml(term.category_name)})` : ""
+                }</option>`
+        )
+        .join("");
 }
 
 async function assignTermToDatasetAfterUpload(datasetId) {
     const termSelect = document.getElementById("uploadTermSelect");
     if (!termSelect) return false;
-    const termId = termSelect.value;
-    if (!termId) {
+    const termIds = Array.from(termSelect.selectedOptions || [])
+        .map((opt) => opt && opt.value ? Number(opt.value) : null)
+        .filter((v) => Number.isFinite(v));
+    if (!termIds.length) {
         setUploadGlossaryStatus("", "info");
         return false;
     }
     setUploadGlossaryStatus("Assignation glossaire en cours...", "info");
     try {
-        const res = await fetch(`${API_URL}/glossary/datasets/${datasetId}/terms`, {
-            method: "POST",
+        const res = await fetch(`${API_URL}/api/datasets/${datasetId}/classification`, {
+            method: "PUT",
             headers: {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({ term_id: termId }),
+            body: JSON.stringify({ glossary_term_ids: termIds }),
         });
         if (!res.ok) {
             const error = await res.json().catch(() => ({}));
             setUploadGlossaryStatus(`❌ ${error.detail || "Impossible d'assigner ce terme"}`, "error");
             return false;
         }
-        setUploadGlossaryStatus("✅ Terme assigné pour ce dataset", "success");
+        setUploadGlossaryStatus("✅ Terme(s) assigné(s) pour ce dataset", "success");
         return true;
     } catch (err) {
         console.error("Erreur assignation glossaire:", err);

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from atlas.client import atlas_post, atlas_get, ATLAS_ENTITY_URL, ATLAS_ENTITY_BULK_URL
 from atlas.columns import get_existing_columns
-from atlas.glossary import assign_terms_to_entity
+from atlas.glossary import set_terms_for_entity
 from db.dataset_glossary_crud import get_assignments_for_dataset
 from db.datasets import Dataset
 
@@ -96,7 +96,12 @@ def _update_column_descriptions(
     logger.debug(f"🔁 {len(entities)} descriptions de colonnes synchronisées pour {dataset.atlas_guid[:8]}")
 
 
-def _assign_glossary_terms(db: Session, dataset: Dataset, column_info: Dict[str, Dict[str, str]]) -> None:
+def _assign_glossary_terms(
+    db: Session,
+    dataset: Dataset,
+    column_info: Dict[str, Dict[str, str]],
+    columns_to_align: Iterable[str] | None = None,
+) -> None:
     assignments = get_assignments_for_dataset(db, dataset.id)
     dataset_terms = []
     column_terms = defaultdict(set)
@@ -109,31 +114,36 @@ def _assign_glossary_terms(db: Session, dataset: Dataset, column_info: Dict[str,
         else:
             dataset_terms.append(term.atlas_guid)
 
-    if dataset_terms:
-        assign_terms_to_entity(
-            dataset_terms,
-            dataset.atlas_guid,
-            "DataSet",
-            dataset.name or dataset.atlas_guid
-        )
-        logger.debug(f"📌 {len(dataset_terms)} termes alignés sur l'entité dataset")
+    # Always align dataset-level terms (including removals).
+    set_terms_for_entity(
+        dataset_terms,
+        dataset.atlas_guid,
+        "DataSet",
+        dataset.name or dataset.atlas_guid,
+    )
+    logger.debug(f"📌 {len(dataset_terms)} terme(s) aligné(s) sur l'entité dataset")
 
-    if not column_terms:
+    columns_to_process = set(column_terms.keys())
+    if columns_to_align:
+        columns_to_process.update(columns_to_align)
+
+    if not columns_to_process:
         return
 
-    for column_name, term_guids in column_terms.items():
+    for column_name in sorted(columns_to_process):
+        term_guids = list(column_terms.get(column_name) or [])
         info = column_info.get(column_name)
         if not info or not info.get("guid"):
             logger.debug(f"⚠️ Colonne {column_name} sans GUID Atlas, skip term assign")
             continue
         entity_display = info.get("qualified_name") or f"{dataset.name}.{column_name}"
-        assign_terms_to_entity(
-            list(term_guids),
+        set_terms_for_entity(
+            term_guids,
             info["guid"],
             "Column",
-            entity_display
+            entity_display,
         )
-        logger.debug(f"📌 Terme(s) assigné(s) à la colonne {column_name}")
+        logger.debug(f"📌 Terme(s) aligné(s) à la colonne {column_name}")
 
 
 def _get_dataset_details(dataset: Dataset) -> Dict:
@@ -146,7 +156,8 @@ def _get_dataset_details(dataset: Dataset) -> Dict:
 def sync_dataset_metadata_to_atlas(
     db: Session,
     dataset: Dataset,
-    column_descriptions: Dict[str, str] | None = None
+    column_descriptions: Dict[str, str] | None = None,
+    columns_to_align_terms: Iterable[str] | None = None,
 ) -> None:
     if not dataset.atlas_guid:
         raise ValueError("Dataset sans atlas_guid")
@@ -160,5 +171,5 @@ def sync_dataset_metadata_to_atlas(
     _update_dataset_description(dataset, dataset_name, dataset_qualified_name)
     if column_descriptions:
         _update_column_descriptions(dataset, dataset_qualified_name, column_descriptions, column_info)
-    _assign_glossary_terms(db, dataset, column_info)
+    _assign_glossary_terms(db, dataset, column_info, columns_to_align=columns_to_align_terms)
     logger.info(f"✅ Métadonnées Atlas synchronisées pour {dataset.atlas_guid[:8]}")

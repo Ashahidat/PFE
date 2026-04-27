@@ -7,7 +7,8 @@ from db.connexion_db import get_db
 from db.datasets import Dataset
 from db.dataset_glossary_crud import (
     get_assignments_for_dataset,
-    set_assignment_for_column
+    set_assignment_for_column,
+    set_assignments_for_column,
 )
 from db.dataset_versions import DatasetVersion
 from db.crud_column_descriptions import (
@@ -42,6 +43,7 @@ class ColumnMetadata(BaseModel):
     name: str
     description: str | None = None
     classification: AssignmentInfo | None = None
+    classifications: List[AssignmentInfo] = []
 
 
 class ProjectInfo(BaseModel):
@@ -60,6 +62,7 @@ class DatasetMetadataResponse(BaseModel):
     description: str | None = None
     classification: str
     dataset_assignment: AssignmentInfo | None = None
+    dataset_assignments: List[AssignmentInfo] = []
     columns: List[ColumnMetadata]
     can_edit: bool
 
@@ -75,6 +78,7 @@ class MyDatasetListItem(BaseModel):
     columns_count: int
     created_at: str | None = None
     dataset_assignment: AssignmentInfo | None = None
+    dataset_assignments: List[AssignmentInfo] = []
     atlas_guid: str | None = None
     atlas_synced: bool
     can_edit: bool
@@ -83,10 +87,12 @@ class MyDatasetListItem(BaseModel):
 class ColumnUpdatePayload(BaseModel):
     description: str | None = None
     glossary_term_id: int | None = None
+    glossary_term_ids: List[int] | None = None
 
 
 class DatasetClassificationPayload(BaseModel):
     glossary_term_id: int | None = None
+    glossary_term_ids: List[int] | None = None
 
 class DatasetDescriptionPayload(BaseModel):
     description: str | None = None
@@ -109,13 +115,20 @@ def _assignment_data(assignment) -> Optional[AssignmentInfo]:
         assigned_at=assignment.created_at.isoformat() if assignment.created_at else None
     )
 
+def _assignments_data(assignments: list) -> List[AssignmentInfo]:
+    items = [_assignment_data(a) for a in (assignments or [])]
+    cleaned = [a for a in items if a]
+    cleaned.sort(key=lambda a: (a.term or "").lower())
+    return cleaned
 
-def _build_column_payload(name: str, description_map: dict, assignments: dict) -> ColumnMetadata:
-    assignment = assignments.get(name)
+
+def _build_column_payload(name: str, description_map: dict, assignments_by_col: dict) -> ColumnMetadata:
+    assignments = assignments_by_col.get(name) or []
     return ColumnMetadata(
         name=name,
         description=description_map.get(name),
-        classification=_assignment_data(assignment)
+        classification=_assignment_data(assignments[0]) if assignments else None,
+        classifications=_assignments_data(assignments),
     )
 
 
@@ -186,7 +199,7 @@ def _get_assignments_map(assignments):
     result = {}
     for assignment in assignments:
         key = assignment.column_name or "__dataset__"
-        result[key] = assignment
+        result.setdefault(key, []).append(assignment)
     return result
 
 
@@ -225,7 +238,8 @@ def _ensure_term_synced_to_atlas(db: Session, term: GlossaryTerm) -> None:
 def _build_my_dataset_item(dataset: Dataset, user: dict, db: Session) -> MyDatasetListItem:
     assignments = get_assignments_for_dataset(db, str(dataset.id))
     assignment_map = _get_assignments_map(assignments)
-    dataset_assignment = assignment_map.get("__dataset__")
+    dataset_assignments = assignment_map.get("__dataset__") or []
+    dataset_assignment = dataset_assignments[0] if dataset_assignments else None
 
     project_info = None
     if dataset.project:
@@ -247,6 +261,7 @@ def _build_my_dataset_item(dataset: Dataset, user: dict, db: Session) -> MyDatas
         columns_count=len(dataset.columns_list or []),
         created_at=dataset.created_at.isoformat() if dataset.created_at else None,
         dataset_assignment=_assignment_data(dataset_assignment),
+        dataset_assignments=_assignments_data(dataset_assignments),
         atlas_guid=dataset.atlas_guid,
         atlas_synced=bool(dataset.atlas_synced),
         can_edit=can_edit
@@ -266,7 +281,8 @@ async def get_dataset_metadata(
 
     assignments = get_assignments_for_dataset(db, dataset_id)
     assignment_map = _get_assignments_map(assignments)
-    dataset_assignment = assignment_map.get("__dataset__")
+    dataset_assignments = assignment_map.get("__dataset__") or []
+    dataset_assignment = dataset_assignments[0] if dataset_assignments else None
 
     latest_version = _get_latest_version(db, dataset_id)
     descriptions = get_description_dict_by_version(db, str(latest_version.id)) if latest_version else {}
@@ -296,6 +312,7 @@ async def get_dataset_metadata(
         description=dataset.description,
         classification=_dataset_visibility(dataset),
         dataset_assignment=_assignment_data(dataset_assignment),
+        dataset_assignments=_assignments_data(dataset_assignments),
         columns=columns,
         can_edit=can_edit
     )
@@ -372,31 +389,31 @@ async def update_column_metadata(
                 user_id=user_id
             )
 
-        assignments = get_assignments_for_dataset(db, dataset_id)
-        current_assignment = next(
-            (a for a in assignments if a.column_name == column_name),
-            None
-        )
+        fields_set = getattr(payload, "__fields_set__", None) or getattr(payload, "model_fields_set", None) or set()
+        term_set_requested = False
+        desired_ids: List[int] = []
+        if "glossary_term_ids" in fields_set:
+            term_set_requested = True
+            desired_ids = list(payload.glossary_term_ids or [])
+        elif "glossary_term_id" in fields_set:
+            term_set_requested = True
+            desired_ids = [] if payload.glossary_term_id is None else [payload.glossary_term_id]
 
-        if payload.glossary_term_id is not None and payload.glossary_term_id != (current_assignment.glossary_term_id if current_assignment else None):
-            term = db.query(GlossaryTerm).filter(GlossaryTerm.id == payload.glossary_term_id).first()
-            if not term:
-                raise HTTPException(status_code=404, detail="Terme introuvable")
-            _ensure_term_synced_to_atlas(db, term)
-            set_assignment_for_column(
+        if term_set_requested:
+            # Validate and ensure all terms are synced to Atlas.
+            unique_ids = sorted({int(x) for x in desired_ids if x is not None})
+            for term_id in unique_ids:
+                term = db.query(GlossaryTerm).filter(GlossaryTerm.id == term_id).first()
+                if not term:
+                    raise HTTPException(status_code=404, detail="Terme introuvable")
+                _ensure_term_synced_to_atlas(db, term)
+
+            set_assignments_for_column(
                 db,
                 dataset_id,
                 column_name,
-                payload.glossary_term_id,
-                user_id
-            )
-        elif payload.glossary_term_id is None and current_assignment:
-            set_assignment_for_column(
-                db,
-                dataset_id,
-                column_name,
-                None,
-                user_id
+                unique_ids,
+                user_id,
             )
 
         assignments = get_assignments_for_dataset(db, dataset_id)
@@ -404,7 +421,12 @@ async def update_column_metadata(
         descriptions = get_description_dict_by_version(db, str(version.id))
 
         column_to_sync = {column_name: descriptions.get(column_name)}
-        sync_dataset_metadata_to_atlas(db, dataset, column_descriptions=column_to_sync)
+        sync_dataset_metadata_to_atlas(
+            db,
+            dataset,
+            column_descriptions=column_to_sync,
+            columns_to_align_terms=[column_name],
+        )
 
         dataset.atlas_synced = True
         db.commit()
@@ -440,24 +462,41 @@ async def update_dataset_classification(
 
     user_id = _get_employee_identifier(user) or ""
     try:
-        if payload.glossary_term_id is not None:
-            term = db.query(GlossaryTerm).filter(GlossaryTerm.id == payload.glossary_term_id).first()
+        fields_set = getattr(payload, "__fields_set__", None) or getattr(payload, "model_fields_set", None) or set()
+        if (
+            "glossary_term_ids" not in fields_set
+            and "glossary_term_id" not in fields_set
+        ):
+            raise HTTPException(status_code=400, detail="Aucun terme fourni")
+
+        desired_ids: List[int] = []
+        if "glossary_term_ids" in fields_set:
+            desired_ids = list(payload.glossary_term_ids or [])
+        elif "glossary_term_id" in fields_set:
+            desired_ids = [] if payload.glossary_term_id is None else [payload.glossary_term_id]
+
+        unique_ids = sorted({int(x) for x in desired_ids if x is not None})
+        for term_id in unique_ids:
+            term = db.query(GlossaryTerm).filter(GlossaryTerm.id == term_id).first()
             if not term:
                 raise HTTPException(status_code=404, detail="Terme introuvable")
             _ensure_term_synced_to_atlas(db, term)
 
-        assignment = set_assignment_for_column(
+        assignments = set_assignments_for_column(
             db,
             dataset_id,
             None,
-            payload.glossary_term_id,
-            user_id
+            unique_ids,
+            user_id,
         )
 
         sync_dataset_metadata_to_atlas(db, dataset)
         dataset.atlas_synced = True
         db.commit()
-        return _assignment_data(assignment)
+        return {
+            "dataset_assignment": _assignment_data(assignments[0]) if assignments else None,
+            "dataset_assignments": _assignments_data(assignments),
+        }
     except HTTPException:
         dataset.atlas_synced = previous_synced
         db.commit()
