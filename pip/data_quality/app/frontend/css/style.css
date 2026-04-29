@@ -312,6 +312,64 @@ h3 { margin-top: 15px; font-size: 1.2em; color: #555; }
     background: #475569;
 }
 
+.btn-small.danger {
+    background: #dc2626;
+}
+
+.btn-small.danger:hover {
+    background: #b91c1c;
+}
+
+.term-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.term-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #0f172a;
+    font-size: 0.9em;
+}
+
+.term-chip button {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: #64748b;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0 2px;
+}
+
+.term-chip button:hover {
+    color: #0f172a;
+}
+
+.term-bulk-editor {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.term-bulk-input {
+    min-width: 320px;
+    max-width: 520px;
+    flex: 1 1 320px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+}
+
 .columns-section {
     display: flex;
     flex-direction: column;

@@ -63,6 +63,206 @@ function renderTermOptions(selectedTermIds) {
     return options.join("");
 }
 
+function getGlossaryTermLabel(termId) {
+    const id = String(termId);
+    const found = glossaryTerms.find((t) => String(t.id) === id);
+    if (!found) return id;
+    return found.category_name ? `${found.term} (${found.category_name})` : found.term;
+}
+
+function parseBulkTermsInput(raw) {
+    if (!raw) return [];
+    return String(raw)
+        .split(/[\n,;]+/g)
+        .map((t) => t.trim())
+        .filter(Boolean);
+}
+
+function resolveGlossaryTermTokens(tokens) {
+    const byId = new Map(glossaryTerms.map((t) => [String(t.id), t]));
+    const byLabel = new Map();
+    const byTerm = new Map();
+
+    for (const t of glossaryTerms) {
+        const label = (t.category_name ? `${t.term} (${t.category_name})` : t.term) || "";
+        const labelKey = label.trim().toLowerCase();
+        if (labelKey) byLabel.set(labelKey, t);
+
+        const termKey = (t.term || "").trim().toLowerCase();
+        if (!termKey) continue;
+        const existing = byTerm.get(termKey) || [];
+        existing.push(t);
+        byTerm.set(termKey, existing);
+    }
+
+    const ids = [];
+    const missing = [];
+    const ambiguous = [];
+
+    for (const token of tokens) {
+        const normalized = String(token).trim();
+        if (!normalized) continue;
+        const lower = normalized.toLowerCase();
+
+        // 1) Exact id
+        if (/^\d+$/.test(normalized) && byId.has(normalized)) {
+            ids.push(Number(normalized));
+            continue;
+        }
+
+        // 2) Exact full label match: "Term (Category)"
+        const labelMatch = byLabel.get(lower);
+        if (labelMatch) {
+            ids.push(Number(labelMatch.id));
+            continue;
+        }
+
+        // 3) Match on raw term only (can be ambiguous)
+        const candidates = byTerm.get(lower) || [];
+        if (!candidates.length) {
+            missing.push(normalized);
+            continue;
+        }
+        if (candidates.length > 1) {
+            ambiguous.push(normalized);
+            continue;
+        }
+        ids.push(Number(candidates[0].id));
+    }
+
+    const unique = Array.from(new Set(ids.filter((v) => Number.isFinite(v))));
+    unique.sort((a, b) => a - b);
+    return { ids: unique, missing, ambiguous };
+}
+
+function applySelectedTermIds(selectEl, termIds) {
+    const selected = new Set((termIds || []).map((v) => String(v)));
+    for (const opt of Array.from(selectEl.options || [])) {
+        opt.selected = selected.has(String(opt.value));
+    }
+    // For multi-select, some browsers only fire `change` on blur.
+    // Emit `input` as well so UI (chips) updates immediately.
+    selectEl.dispatchEvent(new Event("input", { bubbles: true }));
+    selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function createBulkTermEditor(selectEl, statusEl, onSelectionChanged) {
+    const wrap = document.createElement("div");
+    wrap.className = "term-bulk-editor";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "term-bulk-input";
+    input.placeholder = "Ajouter/retirer: id ou terme (séparés par , ; ou retour ligne)";
+
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "btn-small secondary";
+    addBtn.textContent = "Ajouter";
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "btn-small danger";
+    removeBtn.textContent = "Retirer";
+
+    const run = (mode) => {
+        const tokens = parseBulkTermsInput(input.value);
+        if (!tokens.length) return;
+
+        const resolved = resolveGlossaryTermTokens(tokens);
+        if (resolved.ambiguous.length) {
+            showDetailMessage(
+                statusEl,
+                `Terme(s) ambigu(s) (précisez avec la catégorie): ${resolved.ambiguous.join(", ")}`,
+                "error"
+            );
+            return;
+        }
+        if (resolved.missing.length) {
+            showDetailMessage(
+                statusEl,
+                `Terme(s) introuvable(s): ${resolved.missing.join(", ")}`,
+                "error"
+            );
+            return;
+        }
+
+        const current = new Set(
+            Array.from(selectEl.selectedOptions || [])
+                .map((opt) => opt && opt.value ? String(opt.value) : null)
+                .filter(Boolean)
+        );
+        if (mode === "add") {
+            for (const id of resolved.ids) current.add(String(id));
+        } else {
+            for (const id of resolved.ids) current.delete(String(id));
+        }
+        applySelectedTermIds(selectEl, Array.from(current));
+        if (typeof onSelectionChanged === "function") onSelectionChanged();
+        showDetailMessage(statusEl, "Sélection mise à jour", "success");
+        input.value = "";
+    };
+
+    addBtn.addEventListener("click", () => run("add"));
+    removeBtn.addEventListener("click", () => run("remove"));
+
+    wrap.append(input, addBtn, removeBtn);
+    return wrap;
+}
+
+function createTermChips(selectEl) {
+    const container = document.createElement("div");
+    container.className = "term-chips";
+
+    // UX: allow single-click toggle on multi-select options (no Ctrl/Cmd needed),
+    // and ensure the rest of the UI updates immediately.
+    selectEl.addEventListener("mousedown", (event) => {
+        const opt = event.target && event.target.tagName === "OPTION" ? event.target : null;
+        if (!opt || selectEl.disabled) return;
+        event.preventDefault();
+        opt.selected = !opt.selected;
+        selectEl.dispatchEvent(new Event("input", { bubbles: true }));
+        selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const render = () => {
+        container.innerHTML = "";
+        const selectedIds = Array.from(selectEl.selectedOptions || [])
+            .map((opt) => opt && opt.value ? String(opt.value) : null)
+            .filter(Boolean);
+        if (!selectedIds.length) {
+            const empty = document.createElement("span");
+            empty.className = "muted";
+            empty.textContent = "Aucun terme sélectionné";
+            container.appendChild(empty);
+            return;
+        }
+        for (const termId of selectedIds) {
+            const chip = document.createElement("span");
+            chip.className = "term-chip";
+            const label = document.createElement("span");
+            label.textContent = getGlossaryTermLabel(termId);
+            const removeBtn = document.createElement("button");
+            removeBtn.type = "button";
+            removeBtn.title = "Retirer ce terme";
+            removeBtn.textContent = "×";
+            removeBtn.addEventListener("click", () => {
+                const option = Array.from(selectEl.options || []).find((o) => String(o.value) === String(termId));
+                if (option) option.selected = false;
+                selectEl.dispatchEvent(new Event("input", { bubbles: true }));
+                selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+            });
+            chip.append(label, removeBtn);
+            container.appendChild(chip);
+        }
+    };
+
+    selectEl.addEventListener("input", render);
+    selectEl.addEventListener("change", render);
+    render();
+    return container;
+}
+
 function formatAssignedTerms(assignments) {
     if (!assignments || !assignments.length) return "Pas de terme";
     return assignments.map((a) => a.term).filter(Boolean).join(", ") || "Pas de terme";
@@ -335,13 +535,30 @@ function createDatasetCard(dataset) {
     termSelect.size = 6;
     termSelect.innerHTML = renderTermOptions(dataset.dataset_assignments?.map((a) => a.term_id));
     termSelect.disabled = !dataset.can_edit;
+    const termChips = createTermChips(termSelect);
+    const clearTermsBtn = document.createElement("button");
+    clearTermsBtn.type = "button";
+    clearTermsBtn.className = "btn-small danger";
+    clearTermsBtn.textContent = "Retirer tous";
+    clearTermsBtn.disabled = !dataset.can_edit;
+    clearTermsBtn.addEventListener("click", () => {
+        for (const opt of Array.from(termSelect.options || [])) {
+            opt.selected = false;
+        }
+        termSelect.dispatchEvent(new Event("input", { bubbles: true }));
+        termSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     const termButton = document.createElement("button");
     termButton.type = "button";
-    termButton.textContent = "Appliquer";
+    termButton.textContent = "Sauvegarder";
     termButton.disabled = !dataset.can_edit;
     termButton.addEventListener("click", () => updateDatasetTerms(dataset, termSelect, card));
 
-    termSection.append(termLabel, termSelect, termButton);
+    const bulkEditor = createBulkTermEditor(termSelect, statusMessage, () => {});
+    bulkEditor.querySelectorAll("button").forEach((btn) => (btn.disabled = !dataset.can_edit));
+    bulkEditor.querySelector("input").disabled = !dataset.can_edit;
+
+    termSection.append(termLabel, termSelect, termChips, bulkEditor, clearTermsBtn, termButton);
     detail.appendChild(termSection);
 
     const columnsSection = document.createElement("div");
@@ -431,6 +648,18 @@ function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, exis
     termSelect.size = 5;
     termSelect.innerHTML = renderTermOptions((column.classifications || []).map((a) => a.term_id));
     termSelect.disabled = !canEdit;
+    const termChips = createTermChips(termSelect);
+    const clearTermsBtn = document.createElement("button");
+    clearTermsBtn.type = "button";
+    clearTermsBtn.className = "btn-small danger";
+    clearTermsBtn.textContent = "Retirer tous";
+    clearTermsBtn.disabled = !canEdit;
+    clearTermsBtn.addEventListener("click", () => {
+        for (const opt of Array.from(termSelect.options || [])) {
+            opt.selected = false;
+        }
+        termSelect.dispatchEvent(new Event("change"));
+    });
 
     const securitySelect = document.createElement("select");
     securitySelect.className = "column-security-select";
@@ -480,7 +709,7 @@ function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, exis
         securitySelect.value = "";
     });
 
-    actions.append(termSelect, securitySelect, saveBtn, applySecBtn, clearSecBtn, columnStatus);
+    actions.append(termSelect, termChips, clearTermsBtn, securitySelect, saveBtn, applySecBtn, clearSecBtn, columnStatus);
     row.append(label, description, actions);
     return row;
 }
