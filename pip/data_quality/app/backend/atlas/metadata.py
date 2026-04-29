@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from atlas.client import atlas_post, atlas_get, ATLAS_ENTITY_URL, ATLAS_ENTITY_BULK_URL
 from atlas.columns import get_existing_columns
-from atlas.glossary import set_terms_for_entity
+from atlas.glossary import remove_terms_from_entity, set_terms_for_entity
 from db.dataset_glossary_crud import get_assignments_for_dataset
 from db.datasets import Dataset
 
@@ -101,6 +101,8 @@ def _assign_glossary_terms(
     dataset: Dataset,
     column_info: Dict[str, Dict[str, str]],
     columns_to_align: Iterable[str] | None = None,
+    force_remove_dataset_term_guids: Iterable[str] | None = None,
+    force_remove_column_term_guids: Dict[str, Iterable[str]] | None = None,
 ) -> None:
     assignments = get_assignments_for_dataset(db, dataset.id)
     dataset_terms = []
@@ -114,13 +116,24 @@ def _assign_glossary_terms(
         else:
             dataset_terms.append(term.atlas_guid)
 
-    # Always align dataset-level terms (including removals).
-    set_terms_for_entity(
+    # Some Atlas deployments do not reliably expose meanings on entity GET,
+    # yet still maintain term->assignedEntities relationships. In those cases,
+    # `set_terms_for_entity()` cannot compute `to_remove`. We therefore support
+    # explicit forced removals based on DB "before/after" diffs.
+    if force_remove_dataset_term_guids:
+        remove_ok = remove_terms_from_entity(list({*force_remove_dataset_term_guids}), dataset.atlas_guid)
+        if not remove_ok:
+            raise RuntimeError("Échec détachement explicite des termes Atlas (dataset)")
+
+    # Always align dataset-level terms (including removals when Atlas reports them).
+    ok = set_terms_for_entity(
         dataset_terms,
         dataset.atlas_guid,
         "DataSet",
         dataset.name or dataset.atlas_guid,
     )
+    if not ok:
+        raise RuntimeError("Échec alignement des termes Atlas (dataset)")
     logger.debug(f"📌 {len(dataset_terms)} terme(s) aligné(s) sur l'entité dataset")
 
     columns_to_process = set(column_terms.keys())
@@ -137,12 +150,21 @@ def _assign_glossary_terms(
             logger.debug(f"⚠️ Colonne {column_name} sans GUID Atlas, skip term assign")
             continue
         entity_display = info.get("qualified_name") or f"{dataset.name}.{column_name}"
-        set_terms_for_entity(
+
+        forced = (force_remove_column_term_guids or {}).get(column_name) or []
+        if forced:
+            remove_ok = remove_terms_from_entity(list({*forced}), info["guid"])
+            if not remove_ok:
+                raise RuntimeError(f"Échec détachement explicite des termes Atlas (colonne={column_name})")
+
+        ok = set_terms_for_entity(
             term_guids,
             info["guid"],
             "Column",
             entity_display,
         )
+        if not ok:
+            raise RuntimeError(f"Échec alignement des termes Atlas (colonne={column_name})")
         logger.debug(f"📌 Terme(s) aligné(s) à la colonne {column_name}")
 
 
@@ -158,6 +180,8 @@ def sync_dataset_metadata_to_atlas(
     dataset: Dataset,
     column_descriptions: Dict[str, str] | None = None,
     columns_to_align_terms: Iterable[str] | None = None,
+    force_remove_dataset_term_guids: Iterable[str] | None = None,
+    force_remove_column_term_guids: Dict[str, Iterable[str]] | None = None,
 ) -> None:
     if not dataset.atlas_guid:
         raise ValueError("Dataset sans atlas_guid")
@@ -171,5 +195,12 @@ def sync_dataset_metadata_to_atlas(
     _update_dataset_description(dataset, dataset_name, dataset_qualified_name)
     if column_descriptions:
         _update_column_descriptions(dataset, dataset_qualified_name, column_descriptions, column_info)
-    _assign_glossary_terms(db, dataset, column_info, columns_to_align=columns_to_align_terms)
+    _assign_glossary_terms(
+        db,
+        dataset,
+        column_info,
+        columns_to_align=columns_to_align_terms,
+        force_remove_dataset_term_guids=force_remove_dataset_term_guids,
+        force_remove_column_term_guids=force_remove_column_term_guids,
+    )
     logger.info(f"✅ Métadonnées Atlas synchronisées pour {dataset.atlas_guid[:8]}")

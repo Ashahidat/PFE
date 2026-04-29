@@ -10,6 +10,8 @@ from atlas.client import (
     atlas_post,
     atlas_put,
     atlas_request,
+    _extract_logged_error_id,
+    _atlas_logged_id_is_not_found,
     ATLAS_ENTITY_URL,
     ATLAS_GLOSSARY_URL,
     ATLAS_GLOSSARY_TERM_URL,
@@ -511,6 +513,12 @@ def remove_terms_from_entity(term_guids: List[str], entity_guid: str) -> bool:
     if not term_guids:
         return True
 
+    def _is_not_found_mapped_500(res) -> bool:
+        if res.status_code != 500:
+            return False
+        error_id = _extract_logged_error_id(res.text or "")
+        return bool(error_id and _atlas_logged_id_is_not_found(error_id))
+
     ok = True
     payload = [
         {
@@ -518,21 +526,90 @@ def remove_terms_from_entity(term_guids: List[str], entity_guid: str) -> bool:
             "guid": entity_guid,
         }
     ]
+    def _is_detached(term_guid: str) -> bool:
+        try:
+            return term_guid not in set(get_entity_assigned_term_guids(entity_guid))
+        except Exception:
+            return False
+
     for term_guid in term_guids:
         try:
-            # Common Atlas pattern: DELETE /terms/{termGuid}/assignedEntities/{entityGuid}
-            url = f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities/{entity_guid}"
-            res = atlas_request("DELETE", url, auth=AUTH, headers=HEADERS)
-            if res.status_code in (200, 204):
+            logger.debug("Detaching term %s from entity %s", term_guid, entity_guid)
+            # Atlas API variants observed in the wild:
+            # - /glossary/terms/{guid}/assignedEntities/{entityGuid}
+            # - /glossary/term/{guid}/assignedEntities/{entityGuid}
+            #
+            # Some deployments also map NotFoundException to HTTP 500; treat those as idempotent success.
+            delete_urls = [
+                f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities/{entity_guid}",
+                f"{ATLAS_GLOSSARY_TERM_URL}/{term_guid}/assignedEntities/{entity_guid}",
+            ]
+            detached = False
+            for url in delete_urls:
+                res = atlas_request("DELETE", url, auth=AUTH, headers=HEADERS)
+                logger.debug("Atlas DELETE %s -> %s", url, res.status_code)
+                if res.status_code in (200, 204):
+                    detached = True
+                    break
+                # 404 (or some mapped-500 "NotFound") can mean either:
+                # - the entity was already detached (OK)
+                # - the API endpoint/feature is unavailable (NOT OK)
+                # Verify actual state before treating it as success.
+                if res.status_code == 404 or _is_not_found_mapped_500(res):
+                    if _is_detached(term_guid):
+                        detached = True
+                        break
+
+            if detached:
                 continue
 
             # Fallback: some Atlas versions accept DELETE with a JSON body on /assignedEntities
-            url = f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities"
-            res = atlas_request("DELETE", url, json=payload, auth=AUTH, headers=HEADERS)
-            if res.status_code not in (200, 204):
-                logger.warning(
-                    f"Échec détachement terme {term_guid} de {entity_guid}: {res.status_code} {res.text}"
-                )
+            body_urls = [
+                f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities",
+                f"{ATLAS_GLOSSARY_TERM_URL}/{term_guid}/assignedEntities",
+            ]
+            for url in body_urls:
+                res = atlas_request("DELETE", url, json=payload, auth=AUTH, headers=HEADERS)
+                logger.debug("Atlas DELETE %s (body) -> %s", url, res.status_code)
+                if res.status_code in (200, 204):
+                    detached = True
+                    break
+                if res.status_code == 404 or _is_not_found_mapped_500(res):
+                    if _is_detached(term_guid):
+                        detached = True
+                        break
+
+            if detached:
+                continue
+
+            # Additional Atlas API variant: remove meanings directly from the entity endpoint.
+            # Observed on some deployments where glossary assignedEntities endpoints are restricted/disabled.
+            entity_delete_urls = [
+                f"{ATLAS_ENTITY_URL}/guid/{entity_guid}/meanings/{term_guid}",
+                f"{ATLAS_ENTITY_URL}/guid/{entity_guid}/meanings?termGuid={term_guid}",
+            ]
+            for url in entity_delete_urls:
+                res = atlas_request("DELETE", url, auth=AUTH, headers=HEADERS)
+                logger.debug("Atlas DELETE %s (meanings) -> %s", url, res.status_code)
+                if res.status_code in (200, 204):
+                    detached = True
+                    break
+                if res.status_code == 404 or _is_not_found_mapped_500(res):
+                    if _is_detached(term_guid):
+                        detached = True
+                        break
+
+            if not detached:
+                # Last chance: if Atlas already no longer reports the meaning, treat as success.
+                # This covers edge cases where DELETE returns non-2xx but the operation actually applied.
+                try:
+                    if term_guid not in set(get_entity_assigned_term_guids(entity_guid)):
+                        detached = True
+                except Exception:
+                    pass
+
+            if not detached:
+                logger.warning(f"Échec détachement terme {term_guid} de {entity_guid}: {res.status_code} {res.text}")
                 ok = False
         except Exception as exc:
             logger.warning(f"Erreur détachement terme {term_guid} de {entity_guid}: {exc}")
@@ -553,6 +630,17 @@ def set_terms_for_entity(
     current = set(get_entity_assigned_term_guids(entity_guid))
     to_remove = sorted(current - desired)
     to_add = sorted(desired - current)
+
+    logger.debug(
+        "Align terms entity=%s type=%s display=%s current=%d desired=%d to_remove=%d to_add=%d",
+        entity_guid,
+        entity_type,
+        entity_display,
+        len(current),
+        len(desired),
+        len(to_remove),
+        len(to_add),
+    )
 
     success = True
     if to_remove:

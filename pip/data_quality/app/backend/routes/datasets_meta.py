@@ -15,14 +15,20 @@ from db.crud_column_descriptions import (
     create_or_update_description,
     get_description_dict_by_version
 )
-from db.glossary import GlossaryTerm
+from db.glossary import Glossary, GlossaryCategory, GlossaryTerm
 from jwt_dependencies import get_current_user
 from core.permissions import (
     can_view_dataset,
     can_modify_dataset,
     _get_employee_identifier
 )
-from atlas.glossary import sync_glossary_terms
+from atlas.glossary import (
+    DEFAULT_GLOSSARY_QUALIFIED_NAME,
+    _get_atlas_category_by_guid,
+    _get_atlas_term_by_guid,
+    sync_glossary_terms,
+    get_entity_assigned_term_guids,
+)
 from atlas.metadata import sync_dataset_metadata_to_atlas
 from atlas.columns import get_existing_columns
 router = APIRouter()
@@ -96,6 +102,151 @@ class DatasetClassificationPayload(BaseModel):
 
 class DatasetDescriptionPayload(BaseModel):
     description: str | None = None
+
+
+def _get_or_create_db_glossary(db: Session, qualified_name: str, display_name: str | None = None) -> Glossary:
+    qn = (qualified_name or "").strip() or DEFAULT_GLOSSARY_QUALIFIED_NAME
+    glossary = db.query(Glossary).filter(Glossary.qualified_name == qn).first()
+    if glossary:
+        return glossary
+    glossary = Glossary(
+        name=(display_name or qn).strip() or qn,
+        qualified_name=qn,
+        description=None,
+        department=None,
+        created_by=None,
+    )
+    db.add(glossary)
+    db.commit()
+    db.refresh(glossary)
+    return glossary
+
+
+def _get_or_create_db_category(
+    db: Session,
+    glossary: Glossary,
+    atlas_guid: str,
+    fallback_name: str | None = None,
+) -> GlossaryCategory | None:
+    guid = (atlas_guid or "").strip()
+    if not guid:
+        return None
+
+    existing = db.query(GlossaryCategory).filter(GlossaryCategory.atlas_guid == guid).first()
+    if existing:
+        return existing
+
+    atlas_category = _get_atlas_category_by_guid(guid) or {}
+    qualified_name = (atlas_category.get("qualifiedName") or "").strip() or None
+    name = (atlas_category.get("name") or atlas_category.get("displayText") or fallback_name or "").strip() or None
+
+    if qualified_name:
+        by_qn = db.query(GlossaryCategory).filter(GlossaryCategory.qualified_name == qualified_name).first()
+        if by_qn:
+            if not by_qn.atlas_guid:
+                by_qn.atlas_guid = guid
+                db.commit()
+                db.refresh(by_qn)
+            return by_qn
+
+    if not qualified_name:
+        # DB constraint: qualified_name is required and unique.
+        qualified_name = f"{guid}@{glossary.qualified_name}"
+
+    category = GlossaryCategory(
+        glossary_id=glossary.id,
+        name=name or qualified_name,
+        qualified_name=qualified_name,
+        description=(atlas_category.get("shortDescription") or atlas_category.get("longDescription") or None),
+        atlas_guid=guid,
+        created_by=None,
+    )
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return category
+
+
+def _ensure_atlas_terms_in_db(db: Session, term_guids: set[str]) -> dict[str, int]:
+    """
+    Ensure GlossaryTerm rows exist for the given Atlas term GUIDs.
+    Returns a mapping atlas_guid -> glossary_terms.id
+    """
+    cleaned = {str(g).strip() for g in (term_guids or set()) if str(g).strip()}
+    if not cleaned:
+        return {}
+
+    existing_terms = (
+        db.query(GlossaryTerm)
+        .filter(GlossaryTerm.atlas_guid.in_(list(cleaned)))
+        .all()
+    )
+    term_id_by_guid: dict[str, int] = {}
+    for term in existing_terms:
+        if term.atlas_guid:
+            term_id_by_guid[str(term.atlas_guid)] = int(term.id)
+
+    missing = sorted(cleaned - set(term_id_by_guid.keys()))
+    if not missing:
+        return term_id_by_guid
+
+    for guid in missing:
+        atlas_term = _get_atlas_term_by_guid(guid) or {}
+        term_name = (atlas_term.get("name") or atlas_term.get("displayText") or "").strip() or guid
+        qualified_name = (atlas_term.get("qualifiedName") or "").strip() or None
+
+        # Try to resolve the DB glossary from the Atlas qualifiedName suffix: "<slug>@<glossaryQN>"
+        glossary_qn = None
+        if qualified_name and "@" in qualified_name:
+            glossary_qn = qualified_name.rsplit("@", 1)[-1].strip() or None
+        glossary_qn = glossary_qn or DEFAULT_GLOSSARY_QUALIFIED_NAME
+
+        anchor = atlas_term.get("anchor") or {}
+        glossary_display = (anchor.get("displayText") or "").strip() or None
+        glossary = _get_or_create_db_glossary(db, glossary_qn, display_name=glossary_display)
+
+        # Category (optional).
+        categories = atlas_term.get("categories") or []
+        category_guid = None
+        category_fallback_name = None
+        if isinstance(categories, list) and categories:
+            first = categories[0] if isinstance(categories[0], dict) else {}
+            category_guid = (first.get("categoryGuid") or first.get("guid") or "").strip() or None
+            category_fallback_name = (first.get("displayText") or first.get("name") or "").strip() or None
+        category = _get_or_create_db_category(db, glossary, category_guid or "", fallback_name=category_fallback_name)
+
+        # If a term already exists by qualifiedName, reuse and backfill atlas_guid.
+        existing_by_qn = None
+        if qualified_name:
+            existing_by_qn = db.query(GlossaryTerm).filter(GlossaryTerm.qualified_name == qualified_name).first()
+        if existing_by_qn:
+            if not existing_by_qn.atlas_guid:
+                existing_by_qn.atlas_guid = guid
+            if category and not existing_by_qn.category_id:
+                existing_by_qn.category_id = category.id
+            if not existing_by_qn.glossary_id:
+                existing_by_qn.glossary_id = glossary.id
+            db.commit()
+            db.refresh(existing_by_qn)
+            term_id_by_guid[guid] = int(existing_by_qn.id)
+            continue
+
+        # DB constraint: glossary_id required; qualified_name unique but nullable.
+        term_row = GlossaryTerm(
+            glossary_id=glossary.id,
+            category_id=category.id if category else None,
+            term=term_name,
+            qualified_name=qualified_name,
+            description=(atlas_term.get("shortDescription") or atlas_term.get("longDescription") or None),
+            atlas_guid=guid,
+            created_by=None,
+        )
+        db.add(term_row)
+        db.commit()
+        db.refresh(term_row)
+        term_id_by_guid[guid] = int(term_row.id)
+
+    return term_id_by_guid
 
 
 def _assignment_data(assignment) -> Optional[AssignmentInfo]:
@@ -353,6 +504,82 @@ async def get_dataset_atlas_columns(
     columns = get_existing_columns(dataset.atlas_guid, qualified)
     return {"columns": columns}
 
+
+@router.get("/api/datasets/{dataset_id}/atlas-term-assignments")
+async def get_dataset_atlas_term_assignments(
+    dataset_id: str,
+    include_columns: bool = True,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Returns Atlas glossary term assignments for the dataset entity and (optionally) its columns.
+
+    Output uses local DB term ids (glossary_terms.id) so the frontend can pre-select terms
+    even when assignments were made directly in Atlas.
+    """
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset introuvable")
+    if not can_view_dataset(user, dataset, db):
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
+    if not dataset.atlas_guid:
+        return {"dataset_term_ids": [], "columns": {}}
+
+    dataset_term_guids = get_entity_assigned_term_guids(dataset.atlas_guid)
+    all_term_guids = set(dataset_term_guids)
+
+    qualified = (getattr(dataset, "atlas_qualified_name", None) or "").strip() or None
+    atlas_columns = get_existing_columns(dataset.atlas_guid, qualified) if include_columns else {}
+
+    column_guid_by_name: dict[str, str] = {}
+    if include_columns and atlas_columns:
+        for name, info in atlas_columns.items():
+            guid = (info or {}).get("guid")
+            if guid:
+                column_guid_by_name[str(name)] = str(guid)
+
+    column_term_guids: dict[str, list[str]] = {}
+    if include_columns and column_guid_by_name:
+        for col_name, guid in column_guid_by_name.items():
+            guids = get_entity_assigned_term_guids(guid) or []
+            if guids:
+                column_term_guids[col_name] = guids
+                all_term_guids.update(guids)
+
+    term_id_by_guid: dict[str, int] = _ensure_atlas_terms_in_db(db, set(all_term_guids or []))
+
+    dataset_term_ids = sorted(
+        {term_id_by_guid[g] for g in dataset_term_guids if g in term_id_by_guid}
+    )
+
+    columns: dict[str, list[int]] = {}
+    for col_name, guids in column_term_guids.items():
+        ids = sorted({term_id_by_guid[g] for g in guids if g in term_id_by_guid})
+        if ids:
+            columns[col_name] = ids
+
+    # Provide term payloads so the frontend can show Atlas-only assignments
+    # even when /glossary/terms was loaded before those terms were discovered.
+    payload_terms = []
+    if term_id_by_guid:
+        used_ids = sorted({int(v) for v in term_id_by_guid.values()})
+        rows = (
+            db.query(GlossaryTerm)
+            .options(joinedload(GlossaryTerm.category))
+            .filter(GlossaryTerm.id.in_(used_ids))
+            .all()
+        )
+        for t in rows:
+            payload_terms.append({
+                "id": int(t.id),
+                "term": t.term,
+                "category_name": t.category.name if t.category else None,
+            })
+
+    return {"dataset_term_ids": dataset_term_ids, "columns": columns, "terms": payload_terms}
+
 @router.put("/api/datasets/{dataset_id}/columns/{column_name}")
 async def update_column_metadata(
     dataset_id: str,
@@ -399,8 +626,15 @@ async def update_column_metadata(
             term_set_requested = True
             desired_ids = [] if payload.glossary_term_id is None else [payload.glossary_term_id]
 
+        force_remove_column_term_guids: dict[str, list[str]] = {}
         if term_set_requested:
             # Validate and ensure all terms are synced to Atlas.
+            existing_assignments = [
+                a for a in get_assignments_for_dataset(db, dataset_id)
+                if (a.column_name or None) == column_name
+            ]
+            existing_ids = {int(a.glossary_term_id) for a in existing_assignments}
+
             unique_ids = sorted({int(x) for x in desired_ids if x is not None})
             for term_id in unique_ids:
                 term = db.query(GlossaryTerm).filter(GlossaryTerm.id == term_id).first()
@@ -416,6 +650,16 @@ async def update_column_metadata(
                 user_id,
             )
 
+            removed_ids = sorted(existing_ids - set(unique_ids))
+            if removed_ids:
+                removed_guids: list[str] = []
+                for term_id in removed_ids:
+                    term = db.query(GlossaryTerm).filter(GlossaryTerm.id == term_id).first()
+                    if term and getattr(term, "atlas_guid", None):
+                        removed_guids.append(str(term.atlas_guid))
+                if removed_guids:
+                    force_remove_column_term_guids[column_name] = removed_guids
+
         assignments = get_assignments_for_dataset(db, dataset_id)
         assignment_map = _get_assignments_map(assignments)
         descriptions = get_description_dict_by_version(db, str(version.id))
@@ -426,6 +670,7 @@ async def update_column_metadata(
             dataset,
             column_descriptions=column_to_sync,
             columns_to_align_terms=[column_name],
+            force_remove_column_term_guids=force_remove_column_term_guids or None,
         )
 
         dataset.atlas_synced = True
@@ -475,6 +720,12 @@ async def update_dataset_classification(
         elif "glossary_term_id" in fields_set:
             desired_ids = [] if payload.glossary_term_id is None else [payload.glossary_term_id]
 
+        existing_assignments = [
+            a for a in get_assignments_for_dataset(db, dataset_id)
+            if (a.column_name or None) is None
+        ]
+        existing_ids = {int(a.glossary_term_id) for a in existing_assignments}
+
         unique_ids = sorted({int(x) for x in desired_ids if x is not None})
         for term_id in unique_ids:
             term = db.query(GlossaryTerm).filter(GlossaryTerm.id == term_id).first()
@@ -490,7 +741,18 @@ async def update_dataset_classification(
             user_id,
         )
 
-        sync_dataset_metadata_to_atlas(db, dataset)
+        removed_ids = sorted(existing_ids - set(unique_ids))
+        removed_guids: list[str] = []
+        for term_id in removed_ids:
+            term = db.query(GlossaryTerm).filter(GlossaryTerm.id == term_id).first()
+            if term and getattr(term, "atlas_guid", None):
+                removed_guids.append(str(term.atlas_guid))
+
+        sync_dataset_metadata_to_atlas(
+            db,
+            dataset,
+            force_remove_dataset_term_guids=removed_guids or None,
+        )
         dataset.atlas_synced = True
         db.commit()
         return {

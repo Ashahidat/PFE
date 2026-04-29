@@ -146,6 +146,86 @@ function applySelectedTermIds(selectEl, termIds) {
     selectEl.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+function encodeColumnKey(name) {
+    return encodeURIComponent(String(name || ""));
+}
+
+function getSelectedTermIds(selectEl) {
+    return Array.from(selectEl?.selectedOptions || [])
+        .map((opt) => opt && opt.value ? Number(opt.value) : null)
+        .filter((v) => Number.isFinite(v));
+}
+
+function unionTermIds(a, b) {
+    const ids = new Set();
+    for (const v of (a || [])) if (Number.isFinite(v)) ids.add(Number(v));
+    for (const v of (b || [])) if (Number.isFinite(v)) ids.add(Number(v));
+    return Array.from(ids).sort((x, y) => x - y);
+}
+
+function debounce(fn, delayMs) {
+    let timer = null;
+    return (...args) => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), delayMs);
+    };
+}
+
+async function applyAtlasTermAssignments(dataset, detailEl) {
+    if (!dataset || !dataset.id) return;
+    // Only useful when dataset already exists in Atlas.
+    if (!dataset.atlas_guid) return;
+
+    try {
+        const res = await fetchWithAuth(`/api/datasets/${dataset.id}/atlas-term-assignments?include_columns=true`);
+        if (!res.ok) return;
+        const data = await res.json().catch(() => ({}));
+
+        // Atlas may reference terms that were not loaded when /glossary/terms was first fetched.
+        // The backend can return those term definitions so we can render them in selects/chips.
+        if (Array.isArray(data.terms) && data.terms.length) {
+            const existingIds = new Set(glossaryTerms.map((t) => String(t.id)));
+            let changed = false;
+            for (const t of data.terms) {
+                if (!t || t.id == null) continue;
+                const id = String(t.id);
+                if (existingIds.has(id)) continue;
+                glossaryTerms.push(t);
+                existingIds.add(id);
+                changed = true;
+            }
+            if (changed) {
+                glossaryTerms.sort((a, b) => (a.term || "").localeCompare(b.term || ""));
+                // Re-render options for all term selects in the detail panel while preserving selections.
+                const selects = Array.from(detailEl?.querySelectorAll("select.dataset-term-select, select.column-term-select") || []);
+                for (const selectEl of selects) {
+                    const selectedIds = getSelectedTermIds(selectEl);
+                    selectEl.innerHTML = renderTermOptions(selectedIds);
+                    applySelectedTermIds(selectEl, selectedIds);
+                }
+            }
+        }
+
+        const datasetSelect = detailEl?.querySelector(".dataset-term-select");
+        if (datasetSelect && Array.isArray(data.dataset_term_ids) && data.dataset_term_ids.length) {
+            const current = getSelectedTermIds(datasetSelect);
+            applySelectedTermIds(datasetSelect, unionTermIds(current, data.dataset_term_ids));
+        }
+
+        const cols = data && data.columns && typeof data.columns === "object" ? data.columns : {};
+        for (const [colName, ids] of Object.entries(cols)) {
+            const key = encodeColumnKey(colName);
+            const colSelect = detailEl?.querySelector(`select.column-term-select[data-column-key="${key}"]`);
+            if (!colSelect || !Array.isArray(ids) || !ids.length) continue;
+            const current = getSelectedTermIds(colSelect);
+            applySelectedTermIds(colSelect, unionTermIds(current, ids));
+        }
+    } catch (e) {
+        // Non-blocking: if Atlas is unavailable, keep DB-based selections.
+        console.warn("Atlas term assignments lookup failed", e);
+    }
+}
+
 function createBulkTermEditor(selectEl, statusEl, onSelectionChanged) {
     const wrap = document.createElement("div");
     wrap.className = "term-bulk-editor";
@@ -554,6 +634,16 @@ function createDatasetCard(dataset) {
     termButton.disabled = !dataset.can_edit;
     termButton.addEventListener("click", () => updateDatasetTerms(dataset, termSelect, card));
 
+    if (dataset.can_edit) {
+        attachTermAutosave(
+            termSelect,
+            () => getSelectedTermIds(termSelect),
+            async () => {
+                await updateDatasetTerms(dataset, termSelect, card);
+            }
+        );
+    }
+
     const bulkEditor = createBulkTermEditor(termSelect, statusMessage, () => {});
     bulkEditor.querySelectorAll("button").forEach((btn) => (btn.disabled = !dataset.can_edit));
     bulkEditor.querySelector("input").disabled = !dataset.can_edit;
@@ -607,12 +697,14 @@ async function loadDatasetMetadata(dataset, detailEl, canEdit, card) {
 
         if (!metadata.columns.length) {
             columnsSection.innerHTML = "<p>Aucune colonne détectée.</p>";
+            await applyAtlasTermAssignments(dataset, detailEl);
             return;
         }
         columnsSection.innerHTML = "";
         for (const column of metadata.columns) {
             columnsSection.append(createColumnRow(dataset, column, canEdit, card, atlasColumns, existingColClasses));
         }
+        await applyAtlasTermAssignments(dataset, detailEl);
     } catch (error) {
         console.error(error);
         columnsSection.innerHTML = '<p class="error">Impossible de charger les colonnes.</p>';
@@ -644,6 +736,7 @@ function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, exis
     actions.className = "column-actions";
     const termSelect = document.createElement("select");
     termSelect.className = "column-term-select";
+    termSelect.dataset.columnKey = encodeColumnKey(column.name);
     termSelect.multiple = true;
     termSelect.size = 5;
     termSelect.innerHTML = renderTermOptions((column.classifications || []).map((a) => a.term_id));
@@ -701,6 +794,18 @@ function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, exis
         await saveColumnMetadata(datasetId, column.name, description, termIds, columnStatus, saveBtn);
     });
 
+    if (canEdit) {
+        attachTermAutosave(
+            termSelect,
+            () => Array.from(termSelect.selectedOptions || [])
+                .map((opt) => opt && opt.value ? Number(opt.value) : null)
+                .filter((v) => Number.isFinite(v)),
+            async (termIds) => {
+                await saveColumnMetadata(datasetId, column.name, description, termIds, columnStatus, null);
+            }
+        );
+    }
+
     applySecBtn.addEventListener("click", async () => {
         await applyColumnSecurityClassification(dataset, column.name, securitySelect.value, atlasColumns, columnStatus);
     });
@@ -737,7 +842,7 @@ async function saveColumnMetadata(datasetId, columnName, descriptionEl, termIds,
             statusEl.className = "column-status status-pill error";
             return;
         }
-        statusEl.textContent = "Mis à jour";
+        statusEl.textContent = "Mis à jour (Atlas)";
         statusEl.className = "column-status status-pill success";
     } catch (error) {
         console.error(error);
@@ -752,9 +857,7 @@ async function updateDatasetTerms(dataset, selectEl, card) {
     if (!dataset.can_edit) return;
     const statusEl = card.querySelector(`#dataset-status-${dataset.id}`);
     showDetailMessage(statusEl, "Mise à jour...", "info");
-    const termIds = Array.from(selectEl.selectedOptions || [])
-        .map((opt) => opt && opt.value ? Number(opt.value) : null)
-        .filter((v) => Number.isFinite(v));
+    const termIds = getSelectedTermIds(selectEl);
     const payload = {
         glossary_term_ids: termIds
     };
@@ -784,6 +887,39 @@ async function updateDatasetTerms(dataset, selectEl, card) {
         console.error(error);
         showDetailMessage(statusEl, "Erreur réseau", "error");
     }
+}
+
+function attachTermAutosave(selectEl, getCurrentIds, onPersist) {
+    const debounced = debounce(async () => {
+        const currentIds = getCurrentIds();
+        const previousIds = Array.isArray(selectEl._lastPersistedTermIds) ? selectEl._lastPersistedTermIds : [];
+
+        const prev = new Set(previousIds.map(String));
+        const curr = new Set((currentIds || []).map(String));
+        let removed = false;
+        for (const v of prev) {
+            if (!curr.has(v)) {
+                removed = true;
+                break;
+            }
+        }
+
+        // Auto-save only when at least one term was removed (intent: "retirer").
+        if (!removed) return;
+
+        await onPersist(currentIds);
+        selectEl._lastPersistedTermIds = Array.from(curr)
+            .map((v) => Number(v))
+            .filter((v) => Number.isFinite(v));
+    }, 600);
+
+    const handler = () => debounced();
+    selectEl.addEventListener("input", handler);
+    selectEl.addEventListener("change", handler);
+
+    selectEl._lastPersistedTermIds = Array.isArray(selectEl._lastPersistedTermIds)
+        ? selectEl._lastPersistedTermIds
+        : (getCurrentIds() || []);
 }
 
 async function saveDatasetDescription(dataset, textareaEl, statusEl, button, card) {
