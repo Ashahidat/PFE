@@ -121,6 +121,11 @@ def _assign_glossary_terms(
     # `set_terms_for_entity()` cannot compute `to_remove`. We therefore support
     # explicit forced removals based on DB "before/after" diffs.
     if force_remove_dataset_term_guids:
+        logger.info(
+            "Forcing Atlas term detach (dataset) entity=%s terms=%s",
+            dataset.atlas_guid,
+            sorted({str(g) for g in force_remove_dataset_term_guids if str(g).strip()}),
+        )
         remove_ok = remove_terms_from_entity(list({*force_remove_dataset_term_guids}), dataset.atlas_guid)
         if not remove_ok:
             raise RuntimeError("Échec détachement explicite des termes Atlas (dataset)")

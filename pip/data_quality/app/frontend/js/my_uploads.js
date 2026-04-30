@@ -290,6 +290,15 @@ function createBulkTermEditor(selectEl, statusEl, onSelectionChanged) {
     return wrap;
 }
 
+function wrapInAdvancedDetails(title, contentEl) {
+    const details = document.createElement("details");
+    details.className = "term-advanced";
+    const summary = document.createElement("summary");
+    summary.textContent = title;
+    details.append(summary, contentEl);
+    return details;
+}
+
 function createTermChips(selectEl) {
     const container = document.createElement("div");
     container.className = "term-chips";
@@ -634,21 +643,18 @@ function createDatasetCard(dataset) {
     termButton.disabled = !dataset.can_edit;
     termButton.addEventListener("click", () => updateDatasetTerms(dataset, termSelect, card));
 
-    if (dataset.can_edit) {
-        attachTermAutosave(
-            termSelect,
-            () => getSelectedTermIds(termSelect),
-            async () => {
-                await updateDatasetTerms(dataset, termSelect, card);
-            }
-        );
-    }
-
     const bulkEditor = createBulkTermEditor(termSelect, statusMessage, () => {});
     bulkEditor.querySelectorAll("button").forEach((btn) => (btn.disabled = !dataset.can_edit));
     bulkEditor.querySelector("input").disabled = !dataset.can_edit;
 
-    termSection.append(termLabel, termSelect, termChips, bulkEditor, clearTermsBtn, termButton);
+    const termActions = document.createElement("div");
+    termActions.className = "term-actions";
+    termActions.append(clearTermsBtn, termButton);
+
+    const advanced = wrapInAdvancedDetails("Avancé (ajout/retrait en lot)", bulkEditor);
+    if (!dataset.can_edit) advanced.open = false;
+
+    termSection.append(termLabel, termSelect, termChips, termActions, advanced);
     detail.appendChild(termSection);
 
     const columnsSection = document.createElement("div");
@@ -793,18 +799,6 @@ function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, exis
             .filter((v) => Number.isFinite(v));
         await saveColumnMetadata(datasetId, column.name, description, termIds, columnStatus, saveBtn);
     });
-
-    if (canEdit) {
-        attachTermAutosave(
-            termSelect,
-            () => Array.from(termSelect.selectedOptions || [])
-                .map((opt) => opt && opt.value ? Number(opt.value) : null)
-                .filter((v) => Number.isFinite(v)),
-            async (termIds) => {
-                await saveColumnMetadata(datasetId, column.name, description, termIds, columnStatus, null);
-            }
-        );
-    }
 
     applySecBtn.addEventListener("click", async () => {
         await applyColumnSecurityClassification(dataset, column.name, securitySelect.value, atlasColumns, columnStatus);

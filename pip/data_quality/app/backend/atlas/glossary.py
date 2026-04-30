@@ -404,8 +404,17 @@ def sync_glossary_terms(glossaries: List[Glossary], db: Session | None = None) -
 
 def _get_assigned_entities(term_guid: str) -> List[Dict]:
     try:
-        res = atlas_get(f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities")
-        data = res.json() if res and res.ok else {}
+        url = f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities"
+        res = atlas_get(url)
+        if not res or not res.ok:
+            logger.debug(
+                "Atlas assignedEntities GET failed term=%s status=%s body=%s",
+                term_guid,
+                getattr(res, "status_code", None),
+                (getattr(res, "text", "") or "")[:500],
+            )
+            return []
+        data = res.json() or {}
     except Exception as exc:
         logger.warning(f"Impossible de récupérer assignedEntities pour {term_guid}: {exc}")
         return []
@@ -528,7 +537,10 @@ def remove_terms_from_entity(term_guids: List[str], entity_guid: str) -> bool:
     ]
     def _is_detached(term_guid: str) -> bool:
         try:
-            return term_guid not in set(get_entity_assigned_term_guids(entity_guid))
+            # Prefer the glossary-term relationship endpoint as the source of truth.
+            # Some Atlas deployments (incl. 2.4.0 with specific configs) may show terms in the UI
+            # yet not reliably expose them in entity.attributes.meanings.
+            return not _entity_already_assigned(term_guid, entity_guid)
         except Exception:
             return False
 
@@ -603,13 +615,19 @@ def remove_terms_from_entity(term_guids: List[str], entity_guid: str) -> bool:
                 # Last chance: if Atlas already no longer reports the meaning, treat as success.
                 # This covers edge cases where DELETE returns non-2xx but the operation actually applied.
                 try:
-                    if term_guid not in set(get_entity_assigned_term_guids(entity_guid)):
+                    if _is_detached(term_guid):
                         detached = True
                 except Exception:
                     pass
 
             if not detached:
-                logger.warning(f"Échec détachement terme {term_guid} de {entity_guid}: {res.status_code} {res.text}")
+                logger.warning(
+                    "Échec détachement terme=%s entity=%s last_status=%s last_body=%s",
+                    term_guid,
+                    entity_guid,
+                    getattr(res, "status_code", None),
+                    (getattr(res, "text", "") or "")[:800],
+                )
                 ok = False
         except Exception as exc:
             logger.warning(f"Erreur détachement terme {term_guid} de {entity_guid}: {exc}")
