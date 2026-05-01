@@ -367,11 +367,11 @@ async def update_column_metadata(
     if not can_modify_dataset(user, dataset, db):
         raise HTTPException(status_code=403, detail="Droits insuffisants")
 
-    _ensure_atlas_synced(dataset)
-
+    atlas_ready = bool(getattr(dataset, "atlas_guid", None)) and bool(getattr(dataset, "atlas_synced", False))
     previous_synced = bool(getattr(dataset, "atlas_synced", False))
-    dataset.atlas_synced = False
-    db.commit()
+    if atlas_ready:
+        dataset.atlas_synced = False
+        db.commit()
 
     try:
         if column_name not in (dataset.columns_list or []):
@@ -400,13 +400,13 @@ async def update_column_metadata(
             desired_ids = [] if payload.glossary_term_id is None else [payload.glossary_term_id]
 
         if term_set_requested:
-            # Validate and ensure all terms are synced to Atlas.
             unique_ids = sorted({int(x) for x in desired_ids if x is not None})
             for term_id in unique_ids:
                 term = db.query(GlossaryTerm).filter(GlossaryTerm.id == term_id).first()
                 if not term:
                     raise HTTPException(status_code=404, detail="Terme introuvable")
-                _ensure_term_synced_to_atlas(db, term)
+                if atlas_ready:
+                    _ensure_term_synced_to_atlas(db, term)
 
             set_assignments_for_column(
                 db,
@@ -420,24 +420,26 @@ async def update_column_metadata(
         assignment_map = _get_assignments_map(assignments)
         descriptions = get_description_dict_by_version(db, str(version.id))
 
-        column_to_sync = {column_name: descriptions.get(column_name)}
-        sync_dataset_metadata_to_atlas(
-            db,
-            dataset,
-            column_descriptions=column_to_sync,
-            columns_to_align_terms=[column_name],
-        )
-
-        dataset.atlas_synced = True
-        db.commit()
+        if atlas_ready:
+            column_to_sync = {column_name: descriptions.get(column_name)}
+            sync_dataset_metadata_to_atlas(
+                db,
+                dataset,
+                column_descriptions=column_to_sync,
+                columns_to_align_terms=[column_name],
+            )
+            dataset.atlas_synced = True
+            db.commit()
         return _build_column_payload(column_name, descriptions, assignment_map)
     except HTTPException:
-        dataset.atlas_synced = previous_synced
-        db.commit()
+        if atlas_ready:
+            dataset.atlas_synced = previous_synced
+            db.commit()
         raise
     except Exception as exc:
-        dataset.atlas_synced = previous_synced
-        db.commit()
+        if atlas_ready:
+            dataset.atlas_synced = previous_synced
+            db.commit()
         raise HTTPException(status_code=500, detail=f"Erreur synchronisation Atlas: {exc}")
 
 
@@ -454,11 +456,11 @@ async def update_dataset_classification(
     if not can_modify_dataset(user, dataset, db):
         raise HTTPException(status_code=403, detail="Droits insuffisants")
 
-    _ensure_atlas_synced(dataset)
-
+    atlas_ready = bool(getattr(dataset, "atlas_guid", None)) and bool(getattr(dataset, "atlas_synced", False))
     previous_synced = bool(getattr(dataset, "atlas_synced", False))
-    dataset.atlas_synced = False
-    db.commit()
+    if atlas_ready:
+        dataset.atlas_synced = False
+        db.commit()
 
     user_id = _get_employee_identifier(user) or ""
     try:
@@ -480,7 +482,8 @@ async def update_dataset_classification(
             term = db.query(GlossaryTerm).filter(GlossaryTerm.id == term_id).first()
             if not term:
                 raise HTTPException(status_code=404, detail="Terme introuvable")
-            _ensure_term_synced_to_atlas(db, term)
+            if atlas_ready:
+                _ensure_term_synced_to_atlas(db, term)
 
         assignments = set_assignments_for_column(
             db,
@@ -490,20 +493,24 @@ async def update_dataset_classification(
             user_id,
         )
 
-        sync_dataset_metadata_to_atlas(db, dataset)
-        dataset.atlas_synced = True
-        db.commit()
+        if atlas_ready:
+            sync_dataset_metadata_to_atlas(db, dataset)
+            dataset.atlas_synced = True
+            db.commit()
         return {
             "dataset_assignment": _assignment_data(assignments[0]) if assignments else None,
             "dataset_assignments": _assignments_data(assignments),
+            "pending_atlas_sync": (not atlas_ready),
         }
     except HTTPException:
-        dataset.atlas_synced = previous_synced
-        db.commit()
+        if atlas_ready:
+            dataset.atlas_synced = previous_synced
+            db.commit()
         raise
     except Exception as exc:
-        dataset.atlas_synced = previous_synced
-        db.commit()
+        if atlas_ready:
+            dataset.atlas_synced = previous_synced
+            db.commit()
         raise HTTPException(status_code=500, detail=f"Erreur synchronisation Atlas: {exc}")
 
 

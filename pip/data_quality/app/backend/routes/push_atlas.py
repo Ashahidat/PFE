@@ -75,14 +75,6 @@ def _apply_saved_glossary_assignments(
         if not term or not term.atlas_guid:
             continue
 
-        if assign_terms_to_entity(
-            [term.atlas_guid],
-            dataset.atlas_guid,
-            "DataSet",
-            entity_display,
-        ):
-            results["dataset"] += 1
-
         column_name = assignment.column_name
         if column_name:
             info = column_info.get(column_name)
@@ -95,6 +87,14 @@ def _apply_saved_glossary_assignments(
                     display,
                 ):
                     results["columns"] += 1
+        else:
+            if assign_terms_to_entity(
+                [term.atlas_guid],
+                dataset.atlas_guid,
+                "DataSet",
+                entity_display,
+            ):
+                results["dataset"] += 1
 
     return results
 
@@ -455,18 +455,6 @@ def push_atlas(
                 )
             except Exception as exc:
                 logger.warning(f"⚠️ Échec de la synchronisation des glossaires: {exc}")
-
-        if glossary_stats.get("term_guids") and dataset_qualified_name:
-            got_assigned = assign_terms_to_entity(
-                glossary_stats["term_guids"],
-                dataset_guid,
-                "DataSet",
-                dataset_qualified_name
-            )
-            if got_assigned:
-                logger.info(f"📌 Glossaire Atlas assigné au dataset {dataset_guid}")
-            else:
-                logger.warning(f"⚠️ Impossible d'assigner les termes au dataset {dataset_guid}")
 
         # Mettre à jour l'atlas_guid du dataset
         dataset.atlas_guid = dataset_guid
