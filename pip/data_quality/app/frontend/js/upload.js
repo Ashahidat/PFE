@@ -175,6 +175,35 @@ async function assignTermToDatasetAfterUpload(datasetId) {
     }
 }
 
+// UX: allow multi-select without Ctrl/Cmd (toggle on click)
+function enableToggleMultiSelect(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    if (!select.multiple) return;
+    // Avoid double-binding if this script is loaded twice.
+    if (select.dataset.toggleMultiSelect === "1") return;
+    select.dataset.toggleMultiSelect = "1";
+
+    select.addEventListener("mousedown", (event) => {
+        const option = event.target && event.target.tagName === "OPTION" ? event.target : null;
+        if (!option) return;
+
+        // Keep native behavior for disabled/select-all cases.
+        if (select.disabled || option.disabled) return;
+
+        event.preventDefault();
+
+        const previousScrollTop = select.scrollTop;
+        option.selected = !option.selected;
+        // Keep focus so keyboard navigation still works.
+        select.focus();
+        select.scrollTop = previousScrollTop;
+
+        // Ensure code listening to change reacts.
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+}
+
 // ================= AFFICHAGE PROJET =================
 document.addEventListener("DOMContentLoaded", async () => {
     const projectName = localStorage.getItem("current_project_name");
@@ -201,6 +230,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             refreshUploadTermOptions(event.target.value);
         });
     }
+
+    enableToggleMultiSelect("uploadTermSelect");
 });
 
 // ================= UPLOAD CSV =================
