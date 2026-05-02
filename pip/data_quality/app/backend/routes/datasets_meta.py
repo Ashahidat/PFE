@@ -25,7 +25,9 @@ from core.permissions import (
 from atlas.glossary import sync_glossary_terms
 from atlas.metadata import sync_dataset_metadata_to_atlas
 from atlas.columns import get_existing_columns
+import logging
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class AssignmentInfo(BaseModel):
@@ -420,17 +422,37 @@ async def update_column_metadata(
         assignment_map = _get_assignments_map(assignments)
         descriptions = get_description_dict_by_version(db, str(version.id))
 
+        atlas_error = None
         if atlas_ready:
-            column_to_sync = {column_name: descriptions.get(column_name)}
-            sync_dataset_metadata_to_atlas(
-                db,
-                dataset,
-                column_descriptions=column_to_sync,
-                columns_to_align_terms=[column_name],
-            )
-            dataset.atlas_synced = True
-            db.commit()
-        return _build_column_payload(column_name, descriptions, assignment_map)
+            try:
+                column_to_sync = {column_name: descriptions.get(column_name)}
+                sync_dataset_metadata_to_atlas(
+                    db,
+                    dataset,
+                    column_descriptions=column_to_sync,
+                    columns_to_align_terms=[column_name],
+                )
+                dataset.atlas_synced = True
+                db.commit()
+            except Exception as exc:
+                atlas_error = str(exc)
+                logger.warning(
+                    "Atlas sync failed for dataset_id=%s column=%s: %s",
+                    dataset_id,
+                    column_name,
+                    atlas_error,
+                )
+                # Keep atlas_synced=False so UI can show "à synchroniser" and avoid further edits if desired.
+                dataset.atlas_synced = False
+                db.commit()
+
+        payload = _build_column_payload(column_name, descriptions, assignment_map)
+        # Non-breaking additional metadata for clients wanting to surface Atlas sync issues.
+        return {
+            **payload.model_dump(),
+            "pending_atlas_sync": bool(atlas_error) or (not atlas_ready),
+            "atlas_error": atlas_error,
+        }
     except HTTPException:
         if atlas_ready:
             dataset.atlas_synced = previous_synced
@@ -440,7 +462,7 @@ async def update_column_metadata(
         if atlas_ready:
             dataset.atlas_synced = previous_synced
             db.commit()
-        raise HTTPException(status_code=500, detail=f"Erreur synchronisation Atlas: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erreur interne: {exc}")
 
 
 @router.put("/api/datasets/{dataset_id}/classification")
@@ -493,14 +515,26 @@ async def update_dataset_classification(
             user_id,
         )
 
+        atlas_error = None
         if atlas_ready:
-            sync_dataset_metadata_to_atlas(db, dataset)
-            dataset.atlas_synced = True
-            db.commit()
+            try:
+                sync_dataset_metadata_to_atlas(db, dataset)
+                dataset.atlas_synced = True
+                db.commit()
+            except Exception as exc:
+                atlas_error = str(exc)
+                logger.warning(
+                    "Atlas sync failed for dataset_id=%s (classification update): %s",
+                    dataset_id,
+                    atlas_error,
+                )
+                dataset.atlas_synced = False
+                db.commit()
         return {
             "dataset_assignment": _assignment_data(assignments[0]) if assignments else None,
             "dataset_assignments": _assignments_data(assignments),
-            "pending_atlas_sync": (not atlas_ready),
+            "pending_atlas_sync": bool(atlas_error) or (not atlas_ready),
+            "atlas_error": atlas_error,
         }
     except HTTPException:
         if atlas_ready:

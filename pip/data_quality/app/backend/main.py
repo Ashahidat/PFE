@@ -35,6 +35,14 @@ if not root_logger.handlers:
         logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s", "%Y-%m-%d %H:%M:%S")
     )
     root_logger.addHandler(handler)
+
+    # Also log to stdout so dev runs (uvicorn) show Atlas/term sync diagnostics in the console.
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s", "%H:%M:%S")
+    )
+    root_logger.addHandler(stream_handler)
 root_logger.setLevel(logging.DEBUG)
 
 # ============================================================================

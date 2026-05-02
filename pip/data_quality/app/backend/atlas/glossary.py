@@ -440,6 +440,12 @@ def assign_terms_to_entity(
     if not term_guids:
         return False
 
+    logger.info(
+        "[atlas_terms] assign_terms_to_entity start entity=%s type=%s terms=%d",
+        entity_guid,
+        entity_type,
+        len(term_guids),
+    )
     success = True
     payload = [
         {
@@ -459,12 +465,20 @@ def assign_terms_to_entity(
             # L'endpoint Atlas attendu pour l'assignation est au pluriel `/terms/{guid}/assignedEntities`
             # (voir application.log: NotFound sur /term/.../assignedEntities).
             url = f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities"
+            logger.debug("[atlas_terms] POST %s (term=%s entity=%s)", url, term_guid, entity_guid)
             res = atlas_request("POST", url, json=payload, auth=AUTH, headers=HEADERS)
             if res.status_code not in (200, 204):
                 logger.warning(
                     f"Échec assignation terme {term_guid} à {entity_guid}: {res.status_code} {res.text}"
                 )
                 success = False
+            else:
+                logger.info(
+                    "[atlas_terms] assigned term=%s to entity=%s status=%s",
+                    term_guid,
+                    entity_guid,
+                    res.status_code,
+                )
         except Exception as exc:
             logger.error(f"Erreur assignation terme {term_guid}: {exc}")
             success = False
@@ -489,16 +503,66 @@ def _extract_term_guids_from_meanings(value) -> List[str]:
     return guids
 
 
+def _extract_term_guids_from_meanings_payload(payload) -> List[str]:
+    """
+    Atlas has a few shapes for "meanings" endpoints/attributes.
+    Try to robustly extract term GUIDs from common patterns.
+    """
+    if not payload:
+        return []
+    if isinstance(payload, dict):
+        # Some endpoints return {"meanings": [...]} or {"meanings": {...}}
+        if "meanings" in payload:
+            return _extract_term_guids_from_meanings(payload.get("meanings"))
+        # Others might return {"terms": [...]}
+        if "terms" in payload:
+            return _extract_term_guids_from_meanings(payload.get("terms"))
+    return _extract_term_guids_from_meanings(payload)
+
+
 def get_entity_assigned_term_guids(entity_guid: str) -> List[str]:
     """
     Returns Atlas glossary term GUIDs currently assigned to an entity.
     """
     try:
-        data = atlas_get(f"{ATLAS_ENTITY_URL}/guid/{entity_guid}").json() or {}
+        url = f"{ATLAS_ENTITY_URL}/guid/{entity_guid}"
+        logger.debug("[atlas_terms] GET entity meanings %s", url)
+        data = atlas_get(url).json() or {}
         entity = data.get("entity") or {}
         attrs = entity.get("attributes") or {}
         meanings = attrs.get("meanings") or entity.get("meanings")
-        return list({*(_extract_term_guids_from_meanings(meanings))})
+        guids = list({*(_extract_term_guids_from_meanings(meanings))})
+        logger.debug(
+            "[atlas_terms] entity=%s meanings_count=%s extracted_term_guids=%d sample=%s",
+            entity_guid,
+            (len(meanings) if isinstance(meanings, list) else (1 if meanings else 0)),
+            len(guids),
+            guids[:10],
+        )
+        # Fallback: Atlas can expose meanings via a dedicated endpoint.
+        # If the entity payload doesn't include meanings but the UI shows them, try the meanings endpoint.
+        if not guids:
+            meanings_url = f"{ATLAS_ENTITY_URL}/guid/{entity_guid}/meanings"
+            try:
+                logger.debug("[atlas_terms] GET entity meanings fallback %s", meanings_url)
+                meanings_payload = atlas_get(meanings_url).json() or {}
+                fallback_guids = list({*(_extract_term_guids_from_meanings_payload(meanings_payload))})
+                if fallback_guids:
+                    logger.warning(
+                        "[atlas_terms] meanings mismatch: entity=%s entity_get=0 fallback_meanings=%d sample=%s",
+                        entity_guid,
+                        len(fallback_guids),
+                        fallback_guids[:10],
+                    )
+                    return fallback_guids
+                logger.debug(
+                    "[atlas_terms] meanings fallback empty entity=%s keys=%s",
+                    entity_guid,
+                    sorted(list(meanings_payload.keys())) if isinstance(meanings_payload, dict) else type(meanings_payload).__name__,
+                )
+            except Exception as exc:
+                logger.warning("[atlas_terms] meanings fallback failed entity=%s: %s", entity_guid, exc)
+        return guids
     except Exception as exc:
         logger.warning(f"Impossible de récupérer les termes assignés pour {entity_guid}: {exc}")
         return []
@@ -511,6 +575,12 @@ def remove_terms_from_entity(term_guids: List[str], entity_guid: str) -> bool:
     if not term_guids:
         return True
 
+    logger.info(
+        "[atlas_terms] remove_terms_from_entity start entity=%s terms=%d sample=%s",
+        entity_guid,
+        len(term_guids),
+        term_guids[:10],
+    )
     ok = True
     payload = [
         {
@@ -522,21 +592,51 @@ def remove_terms_from_entity(term_guids: List[str], entity_guid: str) -> bool:
         try:
             # Common Atlas pattern: DELETE /terms/{termGuid}/assignedEntities/{entityGuid}
             url = f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities/{entity_guid}"
+            logger.debug("[atlas_terms] DELETE %s", url)
             res = atlas_request("DELETE", url, auth=AUTH, headers=HEADERS)
             if res.status_code in (200, 204):
+                logger.info(
+                    "[atlas_terms] detached term=%s from entity=%s status=%s (path delete)",
+                    term_guid,
+                    entity_guid,
+                    res.status_code,
+                )
                 continue
 
             # Fallback: some Atlas versions accept DELETE with a JSON body on /assignedEntities
             url = f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities"
+            logger.debug("[atlas_terms] DELETE %s (with payload)", url)
             res = atlas_request("DELETE", url, json=payload, auth=AUTH, headers=HEADERS)
             if res.status_code not in (200, 204):
                 logger.warning(
                     f"Échec détachement terme {term_guid} de {entity_guid}: {res.status_code} {res.text}"
                 )
                 ok = False
+            else:
+                logger.info(
+                    "[atlas_terms] detached term=%s from entity=%s status=%s (payload delete)",
+                    term_guid,
+                    entity_guid,
+                    res.status_code,
+                )
         except Exception as exc:
             logger.warning(f"Erreur détachement terme {term_guid} de {entity_guid}: {exc}")
             ok = False
+
+    try:
+        remaining = set(get_entity_assigned_term_guids(entity_guid))
+        still_there = sorted(set(term_guids) & remaining)
+        if still_there:
+            logger.warning(
+                "[atlas_terms] detach verification: entity=%s still_has=%d sample=%s",
+                entity_guid,
+                len(still_there),
+                still_there[:10],
+            )
+        else:
+            logger.info("[atlas_terms] detach verification: entity=%s ok", entity_guid)
+    except Exception as exc:
+        logger.warning("[atlas_terms] detach verification failed entity=%s: %s", entity_guid, exc)
     return ok
 
 
@@ -553,6 +653,23 @@ def set_terms_for_entity(
     current = set(get_entity_assigned_term_guids(entity_guid))
     to_remove = sorted(current - desired)
     to_add = sorted(desired - current)
+
+    logger.info(
+        "[atlas_terms] set_terms_for_entity entity=%s type=%s desired=%d current=%d to_add=%d to_remove=%d display=%s",
+        entity_guid,
+        entity_type,
+        len(desired),
+        len(current),
+        len(to_add),
+        len(to_remove),
+        entity_display,
+    )
+    logger.debug(
+        "[atlas_terms] set_terms_for_entity details entity=%s to_add_sample=%s to_remove_sample=%s",
+        entity_guid,
+        to_add[:10],
+        to_remove[:10],
+    )
 
     success = True
     if to_remove:

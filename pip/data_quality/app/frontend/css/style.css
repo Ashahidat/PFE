@@ -379,3 +379,61 @@ h3 { margin-top: 15px; font-size: 1.2em; color: #555; }
     color: #7a4b00;
     margin-bottom: 12px;
 }
+
+.term-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.term-chips__label {
+    font-weight: 700;
+    color: #334155;
+    margin-right: 6px;
+}
+
+.term-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #0f172a;
+    font-size: 0.82em;
+}
+
+.term-chip--draft {
+    background: #eef2ff;
+    border-color: #c7d2fe;
+}
+
+.term-chip__remove {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    line-height: 16px;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+}
+
+.term-chip__remove:hover {
+    background: #fee2e2;
+    border-color: #fecaca;
+    color: #991b1b;
+}
+
+.term-chip__remove:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

@@ -1,5 +1,7 @@
 const API_URL = "http://localhost:8000";
 const token = localStorage.getItem("access_token");
+const LOG_PREFIX = "[my_uploads]";
+const DEBUG_LOGS = true;
 
 const uploadsListEl = document.getElementById("uploadsList");
 const uploadsStatusEl = document.getElementById("uploadsStatus");
@@ -29,7 +31,27 @@ async function fetchWithAuth(path, options = {}) {
         window.location.href = "index.html";
     }
 
+    if (DEBUG_LOGS && !response.ok && response.status !== 401) {
+        logWarn("HTTP error", { path, status: response.status });
+    }
+
     return response;
+}
+
+function logDebug(...args) {
+    if (!DEBUG_LOGS) return;
+    // eslint-disable-next-line no-console
+    console.log(LOG_PREFIX, ...args);
+}
+
+function logWarn(...args) {
+    // eslint-disable-next-line no-console
+    console.warn(LOG_PREFIX, ...args);
+}
+
+function logError(...args) {
+    // eslint-disable-next-line no-console
+    console.error(LOG_PREFIX, ...args);
 }
 
 function escapeHtml(value) {
@@ -43,6 +65,78 @@ function escapeHtml(value) {
             "'": "&#39;"
         }[char];
     });
+}
+
+function getSelectedTermIds(selectEl) {
+    return Array.from(selectEl?.selectedOptions || [])
+        .map((opt) => opt && opt.value ? String(opt.value) : null)
+        .filter(Boolean);
+}
+
+function setSelectedTermIds(selectEl, selectedIds) {
+    const selected = new Set((selectedIds || []).map((v) => String(v)));
+    for (const opt of Array.from(selectEl?.options || [])) {
+        opt.selected = selected.has(String(opt.value));
+    }
+}
+
+function labelForAssignment(assignment) {
+    if (!assignment) return "";
+    const base = assignment.term || "";
+    const cat = assignment.category_name ? ` (${assignment.category_name})` : "";
+    return `${base}${cat}`.trim();
+}
+
+function labelForTermId(termId) {
+    const found = (glossaryTerms || []).find((t) => String(t.id) === String(termId));
+    if (!found) return `Terme #${termId}`;
+    const cat = found.category_name ? ` (${found.category_name})` : "";
+    return `${found.term || ""}${cat}`.trim() || `Terme #${termId}`;
+}
+
+function renderChipRow({ label, chips, variant = "associated", removable = false, disabled = false, onRemove } = {}) {
+    const row = document.createElement("div");
+    row.className = "term-chips";
+    if (label) {
+        const labelEl = document.createElement("span");
+        labelEl.className = "term-chips__label";
+        labelEl.textContent = label;
+        row.appendChild(labelEl);
+    }
+
+    if (!chips || !chips.length) {
+        const empty = document.createElement("span");
+        empty.className = "muted";
+        empty.textContent = "Aucun";
+        row.appendChild(empty);
+        return row;
+    }
+
+    for (const chip of chips) {
+        const chipEl = document.createElement("span");
+        chipEl.className = `term-chip${variant === "draft" ? " term-chip--draft" : ""}`;
+
+        const text = document.createElement("span");
+        text.textContent = chip.label || "";
+        chipEl.appendChild(text);
+
+        if (removable) {
+            const removeBtn = document.createElement("button");
+            removeBtn.type = "button";
+            removeBtn.className = "term-chip__remove";
+            removeBtn.textContent = "×";
+            removeBtn.disabled = disabled;
+            removeBtn.addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onRemove && onRemove(chip);
+            });
+            chipEl.appendChild(removeBtn);
+        }
+
+        row.appendChild(chipEl);
+    }
+    return row;
 }
 
 function renderTermOptions(selectedTermIds) {
@@ -328,20 +422,85 @@ function createDatasetCard(dataset) {
     const termSection = document.createElement("div");
     termSection.className = "dataset-term-section";
     const termLabel = document.createElement("span");
-    termLabel.textContent = "Terme Atlas:";
+    termLabel.textContent = "Termes Atlas:";
+
+    const associatedChipsHost = document.createElement("div");
+    const draftChipsHost = document.createElement("div");
+
     const termSelect = document.createElement("select");
     termSelect.className = "dataset-term-select";
     termSelect.multiple = true;
     termSelect.size = 6;
     termSelect.innerHTML = renderTermOptions(dataset.dataset_assignments?.map((a) => a.term_id));
     termSelect.disabled = !dataset.can_edit;
+
+    const resetBtn = document.createElement("button");
+    resetBtn.type = "button";
+    resetBtn.textContent = "Réinitialiser";
+    resetBtn.className = "btn-small secondary";
+    resetBtn.disabled = !dataset.can_edit;
+
     const termButton = document.createElement("button");
     termButton.type = "button";
     termButton.textContent = "Appliquer";
     termButton.disabled = !dataset.can_edit;
     termButton.addEventListener("click", () => updateDatasetTerms(dataset, termSelect, card));
 
-    termSection.append(termLabel, termSelect, termButton);
+    function refreshDatasetTermChips() {
+        const associated = (dataset.dataset_assignments || []).map((a) => ({
+            id: String(a.term_id),
+            termId: String(a.term_id),
+            label: labelForAssignment(a),
+        }));
+        associatedChipsHost.replaceChildren(renderChipRow({
+            label: "Associés:",
+            chips: associated,
+            variant: "associated",
+            removable: true,
+            disabled: !dataset.can_edit,
+            onRemove: async (chip) => {
+                const next = (dataset.dataset_assignments || [])
+                    .filter((a) => String(a.term_id) !== String(chip.termId))
+                    .map((a) => a.term_id);
+                // Force-align to DB/Atlas immediately.
+                await updateDatasetTerms(dataset, termSelect, card, next);
+            },
+        }));
+
+        const selectedIds = getSelectedTermIds(termSelect);
+        const draft = selectedIds.map((id) => ({
+            id: String(id),
+            termId: String(id),
+            label: labelForTermId(id),
+        }));
+        draftChipsHost.replaceChildren(renderChipRow({
+            label: "Sélection:",
+            chips: draft,
+            variant: "draft",
+            removable: true,
+            disabled: !dataset.can_edit,
+            onRemove: (chip) => {
+                if (!dataset.can_edit) return;
+                const current = new Set(getSelectedTermIds(termSelect));
+                current.delete(String(chip.termId));
+                setSelectedTermIds(termSelect, Array.from(current));
+                refreshDatasetTermChips();
+            },
+        }));
+    }
+    termSelect.__refreshTermChips = refreshDatasetTermChips;
+
+    resetBtn.addEventListener("click", () => {
+        if (!dataset.can_edit) return;
+        const ids = (dataset.dataset_assignments || []).map((a) => String(a.term_id));
+        setSelectedTermIds(termSelect, ids);
+        refreshDatasetTermChips();
+    });
+
+    termSelect.addEventListener("change", () => refreshDatasetTermChips());
+
+    termSection.append(termLabel, associatedChipsHost, draftChipsHost, termSelect, resetBtn, termButton);
+    refreshDatasetTermChips();
     detail.appendChild(termSection);
 
     const columnsSection = document.createElement("div");
@@ -425,12 +584,27 @@ function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, exis
 
     const actions = document.createElement("div");
     actions.className = "column-actions";
+
+    const termBlock = document.createElement("div");
+    termBlock.style.display = "flex";
+    termBlock.style.flexDirection = "column";
+    termBlock.style.gap = "6px";
+
+    const associatedChipsHost = document.createElement("div");
+    const draftChipsHost = document.createElement("div");
+
     const termSelect = document.createElement("select");
     termSelect.className = "column-term-select";
     termSelect.multiple = true;
     termSelect.size = 5;
     termSelect.innerHTML = renderTermOptions((column.classifications || []).map((a) => a.term_id));
     termSelect.disabled = !canEdit;
+
+    const resetBtn = document.createElement("button");
+    resetBtn.type = "button";
+    resetBtn.textContent = "Réinitialiser";
+    resetBtn.className = "btn-small secondary";
+    resetBtn.disabled = !canEdit;
 
     const securitySelect = document.createElement("select");
     securitySelect.className = "column-security-select";
@@ -469,7 +643,15 @@ function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, exis
         const termIds = Array.from(termSelect.selectedOptions || [])
             .map((opt) => opt && opt.value ? Number(opt.value) : null)
             .filter((v) => Number.isFinite(v));
-        await saveColumnMetadata(datasetId, column.name, description, termIds, columnStatus, saveBtn);
+        const updated = await saveColumnMetadata(datasetId, column.name, description, termIds, columnStatus, saveBtn);
+        if (updated) {
+            column.classifications = updated.classifications || [];
+            labelMeta.textContent = column.classifications?.length
+                ? formatAssignedTerms(column.classifications)
+                : (updated.classification?.term || "Pas de terme");
+            setSelectedTermIds(termSelect, (column.classifications || []).map((a) => String(a.term_id)));
+            if (typeof termSelect.__refreshTermChips === "function") termSelect.__refreshTermChips();
+        }
     });
 
     applySecBtn.addEventListener("click", async () => {
@@ -480,7 +662,70 @@ function createColumnRow(dataset, column, canEdit, card, atlasColumns = {}, exis
         securitySelect.value = "";
     });
 
-    actions.append(termSelect, securitySelect, saveBtn, applySecBtn, clearSecBtn, columnStatus);
+    function refreshColumnTermChips() {
+        const associated = (column.classifications || []).map((a) => ({
+            id: String(a.term_id),
+            termId: String(a.term_id),
+            label: labelForAssignment(a),
+        }));
+        associatedChipsHost.replaceChildren(renderChipRow({
+            label: "Associés:",
+            chips: associated,
+            variant: "associated",
+            removable: true,
+            disabled: !canEdit,
+            onRemove: async (chip) => {
+                if (!canEdit) return;
+                const nextIds = (column.classifications || [])
+                    .filter((a) => String(a.term_id) !== String(chip.termId))
+                    .map((a) => a.term_id);
+                const updated = await updateColumnTerms(datasetId, column.name, nextIds, columnStatus);
+                if (updated) {
+                    column.classifications = updated.classifications || [];
+                    labelMeta.textContent = column.classifications?.length
+                        ? formatAssignedTerms(column.classifications)
+                        : (updated.classification?.term || "Pas de terme");
+                    setSelectedTermIds(termSelect, (column.classifications || []).map((a) => String(a.term_id)));
+                    refreshColumnTermChips();
+                }
+            },
+        }));
+
+        const selectedIds = getSelectedTermIds(termSelect);
+        const draft = selectedIds.map((id) => ({
+            id: String(id),
+            termId: String(id),
+            label: labelForTermId(id),
+        }));
+        draftChipsHost.replaceChildren(renderChipRow({
+            label: "Sélection:",
+            chips: draft,
+            variant: "draft",
+            removable: true,
+            disabled: !canEdit,
+            onRemove: (chip) => {
+                if (!canEdit) return;
+                const current = new Set(getSelectedTermIds(termSelect));
+                current.delete(String(chip.termId));
+                setSelectedTermIds(termSelect, Array.from(current));
+                refreshColumnTermChips();
+            },
+        }));
+    }
+
+    termSelect.__refreshTermChips = refreshColumnTermChips;
+    termSelect.addEventListener("change", () => refreshColumnTermChips());
+
+    resetBtn.addEventListener("click", () => {
+        if (!canEdit) return;
+        setSelectedTermIds(termSelect, (column.classifications || []).map((a) => String(a.term_id)));
+        refreshColumnTermChips();
+    });
+
+    termBlock.append(associatedChipsHost, draftChipsHost, termSelect, resetBtn);
+    refreshColumnTermChips();
+
+    actions.append(termBlock, securitySelect, saveBtn, applySecBtn, clearSecBtn, columnStatus);
     row.append(label, description, actions);
     return row;
 }
@@ -498,20 +743,27 @@ async function saveColumnMetadata(datasetId, columnName, descriptionEl, termIds,
     payload.glossary_term_ids = Array.isArray(termIds) ? termIds : [];
 
     try {
+        logDebug("PUT /api/datasets/%s/columns/%s payload:", datasetId, columnName, payload);
         const res = await fetchWithAuth(`/api/datasets/${datasetId}/columns/${encodeURIComponent(columnName)}`, {
             method: "PUT",
             body: JSON.stringify(payload)
         });
         if (!res.ok) {
             const err = await res.json().catch(() => ({ detail: "Erreur inconnue" }));
+            logWarn("Column metadata update failed", { datasetId, columnName, status: res.status, err });
             statusEl.textContent = err.detail || "Erreur";
             statusEl.className = "column-status status-pill error";
             return;
         }
-        statusEl.textContent = "Mis à jour";
-        statusEl.className = "column-status status-pill success";
+        const updated = await res.json().catch(() => null);
+        if (updated?.atlas_error) {
+            logWarn("Atlas sync error (column update)", updated.atlas_error);
+        }
+        statusEl.textContent = updated?.pending_atlas_sync ? "Mis à jour (Atlas à resynchroniser)" : "Mis à jour";
+        statusEl.className = `column-status status-pill ${updated?.pending_atlas_sync ? "info" : "success"}`;
+        return updated;
     } catch (error) {
-        console.error(error);
+        logError("Column metadata update exception", error);
         statusEl.textContent = "Erreur réseau";
         statusEl.className = "column-status status-pill error";
     } finally {
@@ -519,40 +771,88 @@ async function saveColumnMetadata(datasetId, columnName, descriptionEl, termIds,
     }
 }
 
-async function updateDatasetTerms(dataset, selectEl, card) {
+async function updateColumnTerms(datasetId, columnName, termIds, statusEl) {
+    statusEl.textContent = "Mise à jour termes...";
+    statusEl.className = "column-status status-pill info";
+    const payload = { glossary_term_ids: Array.isArray(termIds) ? termIds : [] };
+    try {
+        logDebug("PUT /api/datasets/%s/columns/%s (terms-only) payload:", datasetId, columnName, payload);
+        const res = await fetchWithAuth(`/api/datasets/${datasetId}/columns/${encodeURIComponent(columnName)}`, {
+            method: "PUT",
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: "Erreur inconnue" }));
+            logWarn("Column terms update failed", { datasetId, columnName, status: res.status, err });
+            statusEl.textContent = err.detail || "Erreur";
+            statusEl.className = "column-status status-pill error";
+            return null;
+        }
+        const updated = await res.json().catch(() => null);
+        if (updated?.atlas_error) {
+            logWarn("Atlas sync error (column terms)", updated.atlas_error);
+        }
+        statusEl.textContent = updated?.pending_atlas_sync ? "Termes mis à jour (Atlas à resynchroniser)" : "Termes mis à jour";
+        statusEl.className = `column-status status-pill ${updated?.pending_atlas_sync ? "info" : "success"}`;
+        return updated;
+    } catch (error) {
+        logError("Column terms update exception", error);
+        statusEl.textContent = "Erreur réseau";
+        statusEl.className = "column-status status-pill error";
+        return null;
+    }
+}
+
+async function updateDatasetTerms(dataset, selectEl, card, forcedTermIds = null) {
     if (!dataset.can_edit) return;
     const statusEl = card.querySelector(`#dataset-status-${dataset.id}`);
     showDetailMessage(statusEl, "Mise à jour...", "info");
-    const termIds = Array.from(selectEl.selectedOptions || [])
-        .map((opt) => opt && opt.value ? Number(opt.value) : null)
-        .filter((v) => Number.isFinite(v));
+    const termIds = Array.isArray(forcedTermIds)
+        ? forcedTermIds
+        : Array.from(selectEl.selectedOptions || [])
+            .map((opt) => opt && opt.value ? Number(opt.value) : null)
+            .filter((v) => Number.isFinite(v));
     const payload = {
         glossary_term_ids: termIds
     };
     try {
+        logDebug("PUT /api/datasets/%s/classification payload:", dataset.id, payload);
         const res = await fetchWithAuth(`/api/datasets/${dataset.id}/classification`, {
             method: "PUT",
             body: JSON.stringify(payload)
         });
         if (!res.ok) {
             const err = await res.json().catch(() => ({ detail: "Erreur inconnue" }));
+            logWarn("Dataset terms update failed", { datasetId: dataset.id, status: res.status, err });
             showDetailMessage(statusEl, err.detail || "Erreur", "error");
             return;
         }
         const data = await res.json();
         const assignments = data?.dataset_assignments || [];
+        dataset.dataset_assignments = assignments;
+
+        const selectedIds = assignments.map((a) => String(a.term_id));
+        setSelectedTermIds(selectEl, selectedIds);
+        if (typeof selectEl.__refreshTermChips === "function") {
+            selectEl.__refreshTermChips();
+        }
+        if (data?.atlas_error) {
+            logWarn("Atlas sync error (dataset terms)", data.atlas_error);
+        }
+
         const assignmentBadge = card.querySelector(`[data-assignment-badge="${dataset.id}"]`);
         if (assignmentBadge) {
             assignmentBadge.textContent = assignments.length
                 ? `Termes: ${formatAssignedTerms(assignments)}`
                 : "Pas de terme";
         }
-        const message = assignments.length
-            ? "Termes mis à jour"
-            : "Termes retirés";
-        showDetailMessage(statusEl, message, "success");
+        const baseMessage = assignments.length ? "Termes mis à jour" : "Termes retirés";
+        const message = data?.pending_atlas_sync
+            ? `${baseMessage} (Atlas à resynchroniser)`
+            : baseMessage;
+        showDetailMessage(statusEl, message, data?.pending_atlas_sync ? "info" : "success");
     } catch (error) {
-        console.error(error);
+        logError("Dataset terms update exception", error);
         showDetailMessage(statusEl, "Erreur réseau", "error");
     }
 }
