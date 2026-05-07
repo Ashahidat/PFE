@@ -1,8 +1,10 @@
 import logging
+import os
 import re
 from typing import List, Dict, Optional
 from urllib.parse import quote
 
+import requests
 from sqlalchemy.orm import Session
 
 from atlas.client import (
@@ -23,6 +25,13 @@ logger = logging.getLogger("atlas.glossary")
 logger.setLevel(logging.DEBUG)
 
 ATLAS_GLOSSARY_CATEGORY_URL = f"{ATLAS_GLOSSARY_URL}/category"
+
+_ATLAS_USE_ENTITY_MEANINGS_ENDPOINT = os.getenv("ATLAS_USE_ENTITY_MEANINGS_ENDPOINT", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+)
 
 DEFAULT_GLOSSARY_QUALIFIED_NAME = "pfe_glossary"
 DEFAULT_GLOSSARY_DISPLAY_NAME = "Glossaire PFE"
@@ -530,18 +539,26 @@ def get_entity_assigned_term_guids(entity_guid: str) -> List[str]:
         data = atlas_get(url).json() or {}
         entity = data.get("entity") or {}
         attrs = entity.get("attributes") or {}
-        meanings = attrs.get("meanings") or entity.get("meanings")
-        guids = list({*(_extract_term_guids_from_meanings(meanings))})
+        rel_attrs = entity.get("relationshipAttributes") or {}
+
+        # In Atlas UI payloads, meanings are typically under relationshipAttributes.meanings.
+        guids_set = set()
+        guids_set.update(_extract_term_guids_from_meanings(rel_attrs.get("meanings")))
+        guids_set.update(_extract_term_guids_from_meanings(attrs.get("meanings")))
+        guids_set.update(_extract_term_guids_from_meanings(entity.get("meanings")))
+        guids = list(guids_set)
+
         logger.debug(
             "[atlas_terms] entity=%s meanings_count=%s extracted_term_guids=%d sample=%s",
             entity_guid,
-            (len(meanings) if isinstance(meanings, list) else (1 if meanings else 0)),
+            len(rel_attrs.get("meanings") or attrs.get("meanings") or entity.get("meanings") or []),
             len(guids),
             guids[:10],
         )
-        # Fallback: Atlas can expose meanings via a dedicated endpoint.
-        # If the entity payload doesn't include meanings but the UI shows them, try the meanings endpoint.
-        if not guids:
+
+        # Optional fallback: some Atlas deployments expose meanings via a dedicated endpoint.
+        # For Atlas 2.4.0 in this repo, this endpoint returns 404 and spams application.log, so keep it opt-in.
+        if not guids and _ATLAS_USE_ENTITY_MEANINGS_ENDPOINT:
             meanings_url = f"{ATLAS_ENTITY_URL}/guid/{entity_guid}/meanings"
             try:
                 logger.debug("[atlas_terms] GET entity meanings fallback %s", meanings_url)
@@ -560,12 +577,79 @@ def get_entity_assigned_term_guids(entity_guid: str) -> List[str]:
                     entity_guid,
                     sorted(list(meanings_payload.keys())) if isinstance(meanings_payload, dict) else type(meanings_payload).__name__,
                 )
+            except requests.exceptions.HTTPError as exc:
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                # If the endpoint is not implemented (404), treat as benign.
+                if status == 404:
+                    logger.debug("[atlas_terms] meanings endpoint not available (404) entity=%s", entity_guid)
+                else:
+                    logger.warning("[atlas_terms] meanings fallback failed entity=%s: %s", entity_guid, exc)
             except Exception as exc:
                 logger.warning("[atlas_terms] meanings fallback failed entity=%s: %s", entity_guid, exc)
         return guids
     except Exception as exc:
         logger.warning(f"Impossible de récupérer les termes assignés pour {entity_guid}: {exc}")
         return []
+
+
+def get_entity_term_assignment_relationship_guids(entity_guid: str) -> Dict[str, str]:
+    """
+    Returns a mapping {termGuid -> relationshipGuid} for glossary term assignments (meanings) on an entity.
+
+    Atlas UI uses `relationshipGuid` from `relationshipAttributes.meanings` and sends it back when removing
+    a term from an entity. Without it Atlas 2.4.0 errors with:
+    "Missing mandatory attribute, TermAssignment relationship guid".
+    """
+    try:
+        url = f"{ATLAS_ENTITY_URL}/guid/{entity_guid}"
+        data = atlas_get(url).json() or {}
+        entity = data.get("entity") or {}
+        rel_attrs = entity.get("relationshipAttributes") or {}
+        meanings = rel_attrs.get("meanings") or []
+        mapping: Dict[str, str] = {}
+        if isinstance(meanings, dict):
+            meanings = [meanings]
+        if isinstance(meanings, list):
+            for meaning in meanings:
+                if not isinstance(meaning, dict):
+                    continue
+                term_guid = meaning.get("guid")
+                rel_guid = meaning.get("relationshipGuid") or meaning.get("relationGuid") or meaning.get("relationshipguid")
+                if term_guid and rel_guid:
+                    mapping[str(term_guid)] = str(rel_guid)
+        logger.debug(
+            "[atlas_terms] relationshipGuid map entity=%s terms=%d sample=%s",
+            entity_guid,
+            len(mapping),
+            list(mapping.items())[:5],
+        )
+        return mapping
+    except Exception as exc:
+        logger.warning("[atlas_terms] failed to get relationshipGuid map entity=%s: %s", entity_guid, exc)
+        return {}
+
+
+def _get_term_assignment_relationship_guid(term_guid: str, entity_guid: str) -> Optional[str]:
+    """
+    Best-effort lookup of the TermAssignment relationship guid for a given (term, entity) pair.
+    """
+    for entry in _get_assigned_entities(term_guid):
+        if not isinstance(entry, dict):
+            continue
+        match = False
+        for key in ("entityGuid", "guid", "assignedEntityGuid"):
+            if entry.get(key) == entity_guid:
+                match = True
+                break
+        if not match:
+            continue
+        return (
+            entry.get("relationshipGuid")
+            or entry.get("relationGuid")
+            or entry.get("relationshipguid")
+            or entry.get("relationguid")
+        )
+    return None
 
 
 def remove_terms_from_entity(term_guids: List[str], entity_guid: str) -> bool:
@@ -582,39 +666,48 @@ def remove_terms_from_entity(term_guids: List[str], entity_guid: str) -> bool:
         term_guids[:10],
     )
     ok = True
-    payload = [
-        {
-            "entityStatus": "ACTIVE",
-            "guid": entity_guid,
-        }
-    ]
+
+    rel_guid_map = get_entity_term_assignment_relationship_guids(entity_guid)
     for term_guid in term_guids:
         try:
-            # Common Atlas pattern: DELETE /terms/{termGuid}/assignedEntities/{entityGuid}
-            url = f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities/{entity_guid}"
-            logger.debug("[atlas_terms] DELETE %s", url)
-            res = atlas_request("DELETE", url, auth=AUTH, headers=HEADERS)
-            if res.status_code in (200, 204):
-                logger.info(
-                    "[atlas_terms] detached term=%s from entity=%s status=%s (path delete)",
+            relationship_guid = rel_guid_map.get(term_guid) or _get_term_assignment_relationship_guid(term_guid, entity_guid)
+            if not relationship_guid:
+                logger.warning(
+                    "[atlas_terms] missing relationshipGuid for detach term=%s entity=%s; will try legacy delete",
+                    term_guid,
+                    entity_guid,
+                )
+                # Legacy attempt (may fail on Atlas 2.4.0 if relationshipGuid is required)
+                url = f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities/{entity_guid}"
+                res = atlas_request("DELETE", url, auth=AUTH, headers=HEADERS)
+                if res.status_code not in (200, 204):
+                    ok = False
+                    logger.warning(
+                        "[atlas_terms] legacy detach failed term=%s entity=%s status=%s body=%s",
+                        term_guid,
+                        entity_guid,
+                        res.status_code,
+                        res.text,
+                    )
+                continue
+
+            # Atlas UI uses PUT /glossary/terms/{termGuid}/assignedEntities with a body containing relationshipGuid.
+            url = f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities"
+            payload = [{"guid": entity_guid, "relationshipGuid": relationship_guid}]
+            logger.debug("[atlas_terms] PUT %s (term=%s entity=%s relationshipGuid=%s)", url, term_guid, entity_guid, relationship_guid)
+            res = atlas_request("PUT", url, json=payload, auth=AUTH, headers=HEADERS)
+            if res.status_code not in (200, 204):
+                logger.warning(
+                    "[atlas_terms] detach failed term=%s entity=%s status=%s body=%s",
                     term_guid,
                     entity_guid,
                     res.status_code,
-                )
-                continue
-
-            # Fallback: some Atlas versions accept DELETE with a JSON body on /assignedEntities
-            url = f"{ATLAS_GLOSSARY_TERMS_URL}/{term_guid}/assignedEntities"
-            logger.debug("[atlas_terms] DELETE %s (with payload)", url)
-            res = atlas_request("DELETE", url, json=payload, auth=AUTH, headers=HEADERS)
-            if res.status_code not in (200, 204):
-                logger.warning(
-                    f"Échec détachement terme {term_guid} de {entity_guid}: {res.status_code} {res.text}"
+                    res.text,
                 )
                 ok = False
             else:
                 logger.info(
-                    "[atlas_terms] detached term=%s from entity=%s status=%s (payload delete)",
+                    "[atlas_terms] detached term=%s from entity=%s status=%s (put)",
                     term_guid,
                     entity_guid,
                     res.status_code,
