@@ -77,7 +77,7 @@ async function fetchResults() {
 
     const token = getAuthToken();
     if (!token) {
-        window.location.href = "index.html";
+        window.location.href = "admin.html";
         return;
     }
 
@@ -261,11 +261,73 @@ function addPushAtlasButton() {
     const pushButton = document.createElement('button');
     pushButton.id = 'pushAtlasBtn';
     pushButton.className = 'back-button';
-    pushButton.textContent = 'Continuer vers Atlas';
+    pushButton.textContent = 'Finaliser (push vers Atlas)';
 
-    pushButton.onclick = () => window.location.href = "atlas.html";
+    pushButton.onclick = () => finalizePushToAtlas(pushButton);
 
     container.appendChild(pushButton);
+}
+
+async function finalizePushToAtlas(pushButton) {
+    const statusDiv = document.getElementById("status");
+
+    const token = getAuthToken();
+    if (!token) {
+        window.location.href = "index.html";
+        return;
+    }
+
+    const datasetId = localStorage.getItem("last_uploaded_dataset_id");
+    if (!datasetId) {
+        renderEmptyState("Aucun dataset trouvé. Uploadez un dataset puis réessayez.");
+        return;
+    }
+
+    pushButton.disabled = true;
+    statusDiv.style.display = "block";
+    statusDiv.innerText = "⏳ Synchronisation vers Atlas…";
+
+    try {
+        const res = await fetch(`${API_URL}/push-atlas/${datasetId}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        const text = await res.text().catch(() => "");
+        if (!res.ok) {
+            statusDiv.innerText = `❌ Push Atlas impossible.\n${text || ""}`;
+            pushButton.disabled = false;
+            return;
+        }
+
+        let data = {};
+        try {
+            data = JSON.parse(text);
+        } catch {
+            data = {};
+        }
+
+        if (data.dataset_guid) localStorage.setItem("last_atlas_guid", data.dataset_guid);
+        if (data.column_guids && typeof data.column_guids === "object") {
+            localStorage.setItem("last_column_guids", JSON.stringify(data.column_guids));
+        }
+
+        const applied = typeof data.column_classifications_applied === "number" ? data.column_classifications_applied : null;
+        const errors = typeof data.column_classifications_errors === "number" ? data.column_classifications_errors : null;
+
+        const extra = [
+            applied !== null ? `🏷️ Classifications colonnes appliquées: ${applied}` : null,
+            errors !== null && errors > 0 ? `⚠️ Erreurs classification colonnes: ${errors}` : null
+        ].filter(Boolean).join("\n");
+
+        statusDiv.innerText = `✅ Push Atlas terminé.${extra ? `\n${extra}` : ""}\nRedirection…`;
+        setTimeout(() => {
+            window.location.href = "index.html";
+        }, 1500);
+    } catch (err) {
+        statusDiv.innerText = `❌ Erreur réseau: ${err.message || err}`;
+        pushButton.disabled = false;
+    }
 }
 
 document.addEventListener('DOMContentLoaded', fetchResults);
