@@ -14,6 +14,10 @@ from db.crud_column_descriptions import (
     get_descriptions_by_version,
     get_description_dict_by_version
 )
+from db.crud_column_classification_choices import (
+    bulk_set_choices as bulk_set_column_classification_choices,
+    get_choices_by_version as get_column_classification_choices_by_version,
+)
 from jwt_dependencies import get_current_user
 
 router = APIRouter()
@@ -66,6 +70,7 @@ class ColumnDescriptionInput(BaseModel):
 
 class SaveDescriptionsInput(BaseModel):
     descriptions: List[ColumnDescriptionInput]
+    classifications: Optional[List["ColumnClassificationInput"]] = None
 
 class DatasetSimpleInfo(BaseModel):
     id: str
@@ -77,6 +82,19 @@ class DescriptionResponse(BaseModel):
     column_name: str
     description: str
     created_at: Optional[str] = None
+
+
+class ColumnClassificationInput(BaseModel):
+    column_name: str
+    classification_name: Optional[str] = None  # 'PII' | 'SENSITIVE' | 'NONE'/null
+
+
+class ColumnClassificationResponse(BaseModel):
+    column_name: str
+    classification_name: str
+
+
+SaveDescriptionsInput.model_rebuild()
 
 # ===================== ROUTES =====================
 
@@ -216,9 +234,27 @@ async def save_descriptions(
     logger.info(f"✅ {saved_count} descriptions sauvegardées")
     logger.info("=" * 60)
 
+    saved_classifications_count = 0
+    if input_data.classifications is not None:
+        try:
+            choices_dict = {
+                item.column_name: item.classification_name
+                for item in input_data.classifications
+                if item and item.column_name
+            }
+            saved_classifications_count = bulk_set_column_classification_choices(
+                db=db,
+                dataset_version_id=str(dataset_version.id),
+                choices=choices_dict,
+                user_id=user["sub"],
+            )
+        except Exception as exc:
+            logger.warning(f"⚠️ Impossible de sauvegarder les classifications colonnes: {exc}")
+
     return {
         "message": f"{saved_count} descriptions sauvegardées",
         "saved_count": saved_count,
+        "saved_classifications_count": saved_classifications_count,
         "dataset_version_id": str(dataset_version.id),
         "dataset_version_number": dataset_version.version_number
     }
@@ -263,6 +299,38 @@ async def get_descriptions(
         }
         for d in descriptions
     ]
+
+
+@router.get(
+    "/api/datasets/{dataset_id}/column-classifications",
+    response_model=List[ColumnClassificationResponse],
+)
+async def get_column_classifications(
+    dataset_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Récupère les classifications colonnes (PII/SENSITIVE) enregistrées
+    pour la dernière version (brouillon ou publiée).
+    """
+    dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id,
+        Dataset.owner_employee_id == user["sub"],
+    ).first()
+
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset introuvable")
+
+    latest_version = _get_latest_published_version(db, dataset_id) or db.query(DatasetVersion).filter(
+        DatasetVersion.dataset_id == dataset_id
+    ).order_by(DatasetVersion.version_number.desc()).first()
+
+    if not latest_version:
+        return []
+
+    rows = get_column_classification_choices_by_version(db, str(latest_version.id))
+    return [{"column_name": r.column_name, "classification_name": r.classification_name} for r in rows]
 
 
 @router.get("/api/datasets/{dataset_id}/descriptions/check")

@@ -19,6 +19,13 @@ let assignmentCategories = [];
 
 let currentDatasetId = null;
 
+function cssEscape(value) {
+    if (window.CSS && typeof window.CSS.escape === "function") {
+        return window.CSS.escape(String(value));
+    }
+    return String(value).replace(/"/g, '\\"');
+}
+
 async function loadAssignmentCategories() {
     try {
         const token = localStorage.getItem('access_token');
@@ -78,6 +85,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Charger les données
     await loadDatasetInfo();
     await loadExistingDescriptions();
+    await loadExistingClassifications();
     
     // 🔥 NOUVEAU : Charger les suggestions d'héritage
     await loadInheritedDescriptions();
@@ -137,7 +145,7 @@ async function loadExistingDescriptions() {
         
         // Pré-remplir les inputs
         descriptions.forEach(desc => {
-            const input = document.querySelector(`[data-column="${escapeHtml(desc.column_name)}"]`);
+            const input = document.querySelector(`.column-description-input[data-column="${cssEscape(desc.column_name)}"]`);
             if (input) {
                 input.value = desc.description;
                 input.classList.add('completed');
@@ -146,6 +154,27 @@ async function loadExistingDescriptions() {
         
     } catch (error) {
         console.error('Erreur chargement descriptions:', error);
+    }
+}
+
+async function loadExistingClassifications() {
+    try {
+        const token = localStorage.getItem('access_token');
+        const response = await fetch(`${API_URL}/api/datasets/${currentDatasetId}/column-classifications`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!response.ok) return;
+
+        const rows = await response.json();
+        rows.forEach(row => {
+            const select = document.querySelector(`.column-classification-select[data-column="${cssEscape(row.column_name)}"]`);
+            if (select) {
+                select.value = row.classification_name || "NONE";
+            }
+        });
+    } catch (error) {
+        console.error('Erreur chargement classifications:', error);
     }
 }
 
@@ -505,11 +534,18 @@ function renderColumnsForm(columns) {
             <div class="column-header">
                 <span class="column-name">${escapeHtml(column)}</span>
             </div>
-            <input type="text" 
-                   class="column-description-input" 
-                   data-column="${escapeHtml(column)}"
-                   placeholder="Décrivez cette colonne..."
-                   autocomplete="off">
+            <div class="column-controls">
+                <input type="text" 
+                       class="column-description-input" 
+                       data-column="${escapeHtml(column)}"
+                       placeholder="Décrivez cette colonne..."
+                       autocomplete="off">
+                <select class="column-classification-select" data-column="${escapeHtml(column)}" aria-label="Classification">
+                    <option value="NONE">Aucune</option>
+                    <option value="PII">PII</option>
+                    <option value="SENSITIVE">SENSITIVE</option>
+                </select>
+            </div>
         `;
         
         columnsListEl.appendChild(columnItem);
@@ -536,6 +572,7 @@ function debugDescriptionsBeforeSave() {
     
     let filledCount = 0;
     const descriptionsData = [];
+    const classificationsData = [];
     
     inputs.forEach((input, idx) => {
         const rawValue = input.value;
@@ -561,13 +598,23 @@ function debugDescriptionsBeforeSave() {
                 description: trimmedValue
             });
         }
+
+        const select = document.querySelector(`.column-classification-select[data-column="${cssEscape(columnName || datasetColumn)}"]`);
+        if (select) {
+            const value = (select.value || "NONE").toUpperCase();
+            classificationsData.push({
+                column_name: columnName || datasetColumn,
+                classification_name: value === "NONE" ? null : value
+            });
+        }
     });
     
     console.log(`✅ ${filledCount}/${inputs.length} inputs remplis`);
     console.log(`📦 Données à envoyer:`, descriptionsData);
+    console.log(`🏷️ Classifications à envoyer:`, classificationsData.filter(x => x.classification_name));
     console.groupEnd();
     
-    return descriptionsData;
+    return { descriptionsData, classificationsData };
 }
 
 // ===================== SAUVEGARDE =====================
@@ -575,7 +622,7 @@ async function saveDescriptions(e) {
     e.preventDefault();
     
     // 🔥 DEBUG: Afficher l'état avant sauvegarde
-    const descriptions = debugDescriptionsBeforeSave();
+    const { descriptionsData: descriptions, classificationsData } = debugDescriptionsBeforeSave();
     
     if (descriptions.length === 0) {
         console.warn("⚠️ Aucune description trouvée!");
@@ -590,7 +637,7 @@ async function saveDescriptions(e) {
     
     try {
         const token = localStorage.getItem('access_token');
-        console.log("📤 Envoi au backend:", JSON.stringify({ descriptions }, null, 2));
+        console.log("📤 Envoi au backend:", JSON.stringify({ descriptions, classifications: classificationsData }, null, 2));
         
         const response = await fetch(`${API_URL}/api/datasets/${currentDatasetId}/descriptions`, {
             method: 'POST',
@@ -598,7 +645,7 @@ async function saveDescriptions(e) {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify({ descriptions })
+            body: JSON.stringify({ descriptions, classifications: classificationsData })
         });
         
         console.log("📥 Réponse backend:", {

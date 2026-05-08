@@ -92,17 +92,22 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("step2-indicator").classList.add("completed");
         document.getElementById("step2-indicator").querySelector(".step-counter").innerHTML = "✓";
 
-        // 4. Passer directement à l'étape 3 (colonnes)
+        // 4. Les classifications colonnes sont maintenant gérées dans describe + appliquées automatiquement au push.
         const colSection = document.getElementById("columnClassificationSection");
-        if (colSection) colSection.style.display = "block";
-        document.getElementById("step3-indicator").classList.add("active");
+        if (colSection) colSection.style.display = "none";
+        document.getElementById("step3-indicator").classList.add("completed");
+        document.getElementById("step3-indicator").querySelector(".step-counter").innerHTML = "✓";
 
-        // 5. Initialiser l'UI colonnes si disponible (définie dans classifications.js)
-        if (typeof initColumnUI === "function") {
-          initColumnUI(dataset_id);
-        } else {
-          console.warn("⚠️ initColumnUI introuvable (classifications.js non chargé ?)");
+        if (typeof data.column_classifications_applied === "number") {
+          statusDiv.innerHTML += `<br>🏷️ Classifications colonnes appliquées automatiquement : ${data.column_classifications_applied}`;
         }
+        if (typeof data.column_classifications_errors === "number" && data.column_classifications_errors > 0) {
+          statusDiv.innerHTML += `<br>⚠️ Erreurs classification colonnes : ${data.column_classifications_errors}`;
+        }
+
+        setTimeout(() => {
+          window.location.href = "admin.html";
+        }, 1500);
       }, 800); // Petit délai pour laisser le temps de lire "✅ Succès"
 
     } catch (err) {

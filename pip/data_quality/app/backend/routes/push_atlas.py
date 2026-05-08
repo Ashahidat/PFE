@@ -49,6 +49,10 @@ from db.users_crud import get_user_department
 from atlas.client import get_typedef_by_name
 from atlas.glossary import sync_glossary_terms, assign_terms_to_entity
 from db.column_descriptions import ColumnDescription
+from db.crud_column_classification_choices import (
+    copy_choices_from_previous_version as copy_column_classification_choices_from_previous_version,
+    get_choice_dict_by_version as get_column_classification_choice_dict_by_version,
+)
 from db.dataset_glossary_crud import get_assignments_for_dataset
 from db.glossary_crud import get_glossaries_with_categories
 from atlas.data_quality import create_data_quality_checks_from_json
@@ -397,6 +401,20 @@ def push_atlas(
                 db.commit()
                 logger.info(f"📌 Descriptions transférées de l'ancienne version v{existing_temp.version_number} vers v{target_version_number}")
 
+                try:
+                    copied = copy_column_classification_choices_from_previous_version(
+                        db=db,
+                        new_version_id=str(new_version.id),
+                        previous_version_id=str(old_version_id),
+                        user_id=employee_id,
+                    )
+                    logger.info(
+                        f"📌 {copied} classification(s) colonne transférée(s) "
+                        f"de v{existing_temp.version_number} vers v{target_version_number}"
+                    )
+                except Exception as exc:
+                    logger.warning(f"⚠️ Impossible de transférer les classifications colonnes: {exc}")
+
                 # ❌ NE PAS SUPPRIMER l'ancienne version temporaire (elle reste en base mais inutilisée)
 
         # ----------------------
@@ -639,6 +657,37 @@ def push_atlas(
             )
 
         # ----------------------
+        # 8.5️⃣ Appliquer les classifications colonnes sauvegardées (depuis describe)
+        # ----------------------
+        column_classifications_applied = 0
+        column_classifications_errors = 0
+        try:
+            choices = get_column_classification_choice_dict_by_version(db, str(new_version.id))
+            if choices:
+                logger.info(f"🏷️ Application de {len(choices)} classification(s) colonne sauvegardée(s)...")
+            for col_name, class_name in (choices or {}).items():
+                guid = column_guids.get(col_name)
+                if not guid:
+                    continue
+                try:
+                    apply_classification_use_case(
+                        db,
+                        entity_type="COLUMN",
+                        entity_id=str(dataset.id),
+                        atlas_guid=guid,
+                        classification_name=class_name,
+                        attributes={},
+                        user=user,
+                        column_name=col_name,
+                    )
+                    column_classifications_applied += 1
+                except Exception as exc:
+                    column_classifications_errors += 1
+                    logger.warning(f"⚠️ Échec classification {col_name}={class_name}: {exc}")
+        except Exception as exc:
+            logger.warning(f"⚠️ Impossible d'appliquer les classifications colonnes sauvegardées: {exc}")
+
+        # ----------------------
         # 🔟 ENVOYER LES RÉSULTATS DE QUALITÉ
         # ----------------------
         print("--------------------------------------------------------------------------------------------------")
@@ -780,6 +829,8 @@ def push_atlas(
             "glossary_guids": glossary_stats.get("glossary_guids"),
             "glossary_dataset_assignments": glossary_stats.get("dataset_assignments"),
             "glossary_column_assignments": glossary_stats.get("column_assignments"),
+            "column_classifications_applied": column_classifications_applied,
+            "column_classifications_errors": column_classifications_errors,
         }
 
     except Exception as e:
