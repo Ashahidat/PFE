@@ -6,16 +6,27 @@ import re
 from typing import Any, Dict, Optional, Tuple
 from functools import lru_cache
 
-ATLAS_ENTITY_BULK_URL = "http://localhost:21000/api/atlas/v2/entity/bulk"
-ATLAS_TYPEDEF_URL = "http://localhost:21000/api/atlas/v2/types/typedefs"
-ATLAS_RELATIONSHIP_URL = "http://localhost:21000/api/atlas/v2/relationship"
-ATLAS_SEARCH_URL = "http://localhost:21000/api/atlas/v2/search/basic"
-ATLAS_ENTITY_URL = "http://localhost:21000/api/atlas/v2/entity"
-ATLAS_GLOSSARY_URL = "http://localhost:21000/api/atlas/v2/glossary"
+# IMPORTANT:
+# - Humans should access Atlas through a read-only reverse-proxy.
+# - The application should talk directly to the internal Atlas port for write operations.
+#
+# Default internal port is 21001 (see pip/data_governance/nginx/atlas_readonly.conf).
+ATLAS_REST_ADDRESS = os.getenv("ATLAS_REST_ADDRESS", "http://127.0.0.1:21001").rstrip("/")
+ATLAS_V2_BASE_URL = f"{ATLAS_REST_ADDRESS}/api/atlas/v2"
+
+ATLAS_ENTITY_BULK_URL = f"{ATLAS_V2_BASE_URL}/entity/bulk"
+ATLAS_TYPEDEF_URL = f"{ATLAS_V2_BASE_URL}/types/typedefs"
+ATLAS_RELATIONSHIP_URL = f"{ATLAS_V2_BASE_URL}/relationship"
+ATLAS_SEARCH_URL = f"{ATLAS_V2_BASE_URL}/search/basic"
+ATLAS_ENTITY_URL = f"{ATLAS_V2_BASE_URL}/entity"
+ATLAS_GLOSSARY_URL = f"{ATLAS_V2_BASE_URL}/glossary"
 ATLAS_GLOSSARY_TERM_URL = f"{ATLAS_GLOSSARY_URL}/term"
 ATLAS_GLOSSARY_TERMS_URL = f"{ATLAS_GLOSSARY_URL}/terms"
 
-AUTH = ("admin", "admin")
+AUTH = (
+    os.getenv("ATLAS_USERNAME", "admin"),
+    os.getenv("ATLAS_PASSWORD", "admin"),
+)
 HEADERS = {"Content-Type": "application/json"}
 
 logger = logging.getLogger("atlas.client")

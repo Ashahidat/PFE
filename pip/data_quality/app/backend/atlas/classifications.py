@@ -1,12 +1,12 @@
-from atlas.client import atlas_post, atlas_get, atlas_delete
+from atlas.client import atlas_post, atlas_get, atlas_delete, ATLAS_V2_BASE_URL
 import logging
 import time  
 from typing import List, Optional, Dict
 import json
 from sqlalchemy.orm import Session  # ← AJOUTER CET IMPORT
 
-ATLAS_BULK_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/bulk/classification"
-ATLAS_ENTITY_CLASSIFICATION_URL = "http://localhost:21000/api/atlas/v2/entity/guid"
+ATLAS_BULK_CLASSIFICATION_URL = f"{ATLAS_V2_BASE_URL}/entity/bulk/classification"
+ATLAS_ENTITY_CLASSIFICATION_URL = f"{ATLAS_V2_BASE_URL}/entity/guid"
 
 logger = logging.getLogger(__name__)
 
