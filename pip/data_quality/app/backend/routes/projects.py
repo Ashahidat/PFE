@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import logging
 import uuid
+import os
 
 from db.connexion_db import get_db
 from db.crud_projects import create_project, get_user_projects, get_project, delete_project
@@ -20,6 +21,8 @@ from core.permissions import (
     require_role,
     require_project_access
 )
+from grafana.settings import get_grafana_settings
+from grafana.provisioning import provision_project_dashboards
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 logger = logging.getLogger("projects")
@@ -83,6 +86,32 @@ def create_new_project(
     db.add(db_project)
     db.commit()
     db.refresh(db_project)
+
+    # Grafana provisioning (Dashboard as Code) - best effort, never blocks project creation.
+    try:
+        settings = get_grafana_settings()
+        result = provision_project_dashboards(
+            settings,
+            project_id=str(db_project.id),
+            project_name=db_project.name,
+            project_visibility=db_project.visibility,
+            owner_department=user.get("department") or "UNKNOWN",
+        )
+        if result.get("enabled") is False:
+            logger.info("⏭️ Grafana provisioning disabled (GRAFANA_PROVISIONING_ENABLED=false)")
+        elif result.get("skipped"):
+            logger.warning("⚠️ Grafana provisioning skipped: %s", result.get("reason"))
+        else:
+            logger.info("✅ Grafana provisioning done: folder_uid=%s", (result.get("folder") or {}).get("uid"))
+    except Exception as e:
+        # Use exception() to keep the traceback in logs; this is the main breadcrumb when provisioning fails.
+        logger.exception(
+            "⚠️ Grafana provisioning failed for project %s (url=%s enabled=%s): %s",
+            db_project.id,
+            os.getenv("GRAFANA_URL", "http://localhost:3000"),
+            os.getenv("GRAFANA_PROVISIONING_ENABLED", "true"),
+            e,
+        )
     
     return {
         "id": str(db_project.id),

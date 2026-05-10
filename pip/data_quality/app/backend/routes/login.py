@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from db.connexion_db import get_db
@@ -6,6 +7,8 @@ from db.departments import Department
 from db.users import User
 from jwt_manager import create_access_token
 from core.roles import SUPER_ADMIN
+from grafana.settings import get_grafana_settings
+from grafana.provisioning import sync_user_to_grafana
 
 router = APIRouter()
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -56,8 +59,21 @@ def login(data: dict, db: Session = Depends(get_db)):
             "department": user.department,
             "employee_id": user.employee_id
         })
+
+        # Best-effort Grafana sync (Auth Proxy + Teams)
+        try:
+            settings = get_grafana_settings()
+            sync_user_to_grafana(
+                settings,
+                employee_id=user.employee_id,
+                username=user.username,
+                department=user.department,
+                role=user.role,
+            )
+        except Exception:
+            pass
         
-        return {
+        payload = {
             "access_token": token,
             "token_type": "bearer",
             "username": user.username,
@@ -65,6 +81,16 @@ def login(data: dict, db: Session = Depends(get_db)):
             "department": user.department,
             "employee_id": user.employee_id
         }
+        response = JSONResponse(content=payload)
+        response.set_cookie(
+            key="access_token",
+            value=token,
+            httponly=True,
+            samesite="lax",
+            secure=False,
+            path="/",
+        )
+        return response
     
     # =========================================================
     # CAS 2 : Login normal (admin existe déjà)
@@ -88,8 +114,21 @@ def login(data: dict, db: Session = Depends(get_db)):
         "department": user.department,
         "employee_id": user.employee_id
     })
+
+    # Best-effort Grafana sync (Auth Proxy + Teams)
+    try:
+        settings = get_grafana_settings()
+        sync_user_to_grafana(
+            settings,
+            employee_id=user.employee_id,
+            username=user.username,
+            department=user.department,
+            role=user.role,
+        )
+    except Exception:
+        pass
     
-    return {
+    payload = {
         "access_token": token,
         "token_type": "bearer",
         "username": user.username,
@@ -97,6 +136,16 @@ def login(data: dict, db: Session = Depends(get_db)):
         "department": user.department,
         "employee_id": user.employee_id
     }
+    response = JSONResponse(content=payload)
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        path="/",
+    )
+    return response
 
 
 @router.get("/users/count-admin")

@@ -55,7 +55,7 @@ from fastapi.responses import FileResponse
 import os
 
 from config import FRONTEND_DIR
-from routes import upload, dag, results, push_atlas, login, classifications, classifications_col, projects, descriptions, versionning, profile, glossary, datasets_meta, departments
+from routes import upload, dag, results, push_atlas, login, classifications, classifications_col, projects, descriptions, versionning, profile, glossary, datasets_meta, departments, grafana_auth, grafana_proxy
 
 app = FastAPI()
 
@@ -85,6 +85,8 @@ app.include_router(profile.router)
 app.include_router(glossary.router)
 app.include_router(datasets_meta.router)
 app.include_router(departments.router)
+app.include_router(grafana_auth.router)
+app.include_router(grafana_proxy.router)
 
 
 # Frontend

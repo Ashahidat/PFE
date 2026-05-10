@@ -11,6 +11,8 @@ from db.connexion_db import get_db
 from db.departments import Department
 from db.users import User
 from jwt_dependencies import get_current_user
+from grafana.settings import get_grafana_settings
+from grafana.provisioning import sync_user_to_grafana
 
 router = APIRouter(tags=["profile"])
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -206,6 +208,20 @@ def create_user(
     db.commit()
     db.refresh(new_user)
 
+    # Grafana RBAC sync (Auth Proxy + Teams) - best effort.
+    try:
+        settings = get_grafana_settings()
+        sync_user_to_grafana(
+            settings,
+            employee_id=new_user.employee_id,
+            username=new_user.username,
+            department=new_user.department,
+            role=new_user.role,
+        )
+    except Exception:
+        # Never block user lifecycle on Grafana connectivity.
+        pass
+
     return new_user
 
 
@@ -265,5 +281,18 @@ def update_user_by_admin(
 
     db.commit()
     db.refresh(target_user)
+
+    # Grafana RBAC sync (Auth Proxy + Teams) - best effort.
+    try:
+        settings = get_grafana_settings()
+        sync_user_to_grafana(
+            settings,
+            employee_id=target_user.employee_id,
+            username=target_user.username,
+            department=target_user.department,
+            role=target_user.role,
+        )
+    except Exception:
+        pass
 
     return target_user
