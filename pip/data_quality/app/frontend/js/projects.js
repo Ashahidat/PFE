@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:8000";
+const API_URL = window.API_URL || window.location.origin;
 const token = localStorage.getItem("access_token");
 
 if (!token) window.location.href = "index.html";
@@ -34,6 +34,14 @@ function displayProjects(projects) {
         const actionButton = role === "AUDIT"
             ? '<span style="color: gray; font-style: italic;">Lecture seule</span>'
             : `<button onclick="selectProject('${p.id}', '${p.name}')" style="background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Utiliser</button>`;
+
+        const grafanaFolderUrl = p.grafana_links && p.grafana_links.folder && p.grafana_links.folder.url
+            ? `${API_URL}${p.grafana_links.folder.url}`
+            : "";
+
+        const grafanaButton = grafanaFolderUrl
+            ? `<button onclick="openGrafanaFolder('${grafanaFolderUrl}')" style="background: #343a40; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-left: 8px;">Voir dashboards Grafana</button>`
+            : "";
         
         html += `
             <div style="border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
@@ -44,12 +52,18 @@ function displayProjects(projects) {
                 </div>
                 <div>
                     ${actionButton}
+                    ${grafanaButton}
                 </div>
             </div>
         `;
     });
     container.innerHTML = html;
 }
+
+window.openGrafanaFolder = function(url) {
+    if (!url) return;
+    window.open(url, "_blank", "noopener");
+};
 
 window.selectProject = function(projectId, projectName) {
     localStorage.setItem("current_project_id", projectId);

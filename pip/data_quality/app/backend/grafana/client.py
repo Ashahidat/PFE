@@ -20,7 +20,7 @@ class GrafanaAuth:
 
 
 class GrafanaClient:
-    def __init__(self, settings: GrafanaSettings):
+    def __init__(self, settings: GrafanaSettings, *, extra_headers: dict[str, str] | None = None):
         self.settings = settings
         self.base_url = settings.url
         self.auth = GrafanaAuth(
@@ -28,11 +28,14 @@ class GrafanaClient:
             basic_user=settings.admin_user,
             basic_password=settings.admin_password,
         )
+        self.extra_headers = dict(extra_headers or {})
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
         if self.auth.bearer_token:
             headers["Authorization"] = f"Bearer {self.auth.bearer_token}"
+        if self.extra_headers:
+            headers.update(self.extra_headers)
         return headers
 
     def _request(self, method: str, path: str, *, json: Any | None = None, allow_404: bool = False):

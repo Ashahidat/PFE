@@ -13,7 +13,7 @@ def get_current_user(request: Request):
     else:
         cookie_token = request.cookies.get("access_token")
         if cookie_token:
-            token = cookie_token
+            token = cookie_token.split(" ", 1)[1] if cookie_token.startswith("Bearer ") else cookie_token
 
     if not token:
         print("❌ Token manquant ou mal formaté")

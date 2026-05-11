@@ -26,12 +26,14 @@ header_name = X-WEBAUTH-USER
 header_property = username
 auto_sign_up = true
 headers = Name:X-WEBAUTH-NAME Role:X-WEBAUTH-ROLE
-enable_login_token = false
+enable_login_token = true
 ```
 
 Notes :
 - `default_role = Viewer` garantit qu’un user créé automatiquement n’a pas de droits d’édition.
+- Dans ce repo, le backend envoie **toujours** `X-WEBAUTH-ROLE=Viewer` (read-only) ; la visibilité se fait via permissions de folders + teams.
 - En PFE, garde un accès admin “break-glass” local uniquement pour bootstrap.
+- `enable_login_token = true` évite des comportements instables du frontend (ex: appels `/api/user/auth-tokens/rotate` en 401) sur certaines versions récentes de Grafana.
 
 ## 3) Reverse-proxy (Nginx) : Grafana “derrière l’app”
 
@@ -87,6 +89,10 @@ Important (Grafana derrière un sous-chemin) : dans `/etc/grafana/grafana.ini`, 
 root_url = http://localhost:8000/grafana/
 serve_from_sub_path = true
 ```
+
+Astuce (fix automatique du reload loop) :
+- `sudo bash scripts/grafana_fix_reload_loop.sh --base-url http://localhost:8000/grafana/`
+- Si tu passes par Nginx : `sudo bash scripts/grafana_fix_reload_loop.sh --base-url http://localhost:8080/grafana/`
 
 ## 4) Backend : variables d’environnement (provisioning)
 

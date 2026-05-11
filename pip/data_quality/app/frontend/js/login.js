@@ -1,10 +1,20 @@
-const API_URL = "http://localhost:8000";
+const API_URL = window.API_URL || window.location.origin;
+
+async function readJsonSafely(res) {
+    const contentType = (res.headers && res.headers.get && res.headers.get("content-type")) || "";
+    if (contentType.includes("application/json")) {
+        return await res.json();
+    }
+    const text = await res.text();
+    const preview = text.slice(0, 200).replace(/\s+/g, " ").trim();
+    throw new Error(`Réponse non-JSON (${res.status}) : ${preview || "[vide]"}`);
+}
 
 // Au chargement de la page, vérifier si un admin existe
 async function checkAdminExists() {
     try {
-        const res = await fetch(`${API_URL}/users/count-admin`);
-        const data = await res.json();
+        const res = await fetch(`${API_URL}/users/count-admin`, { credentials: "include" });
+        const data = await readJsonSafely(res);
         const infoMessage = document.getElementById("infoMessage");
         
         if (data.admin_exists === false) {
@@ -34,10 +44,12 @@ document.getElementById("loginBtn").addEventListener("click", async () => {
         const res = await fetch(`${API_URL}/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ employee_id, password })
+            body: JSON.stringify({ employee_id, password }),
+            // Needed so the browser stores the httpOnly `access_token` cookie when API_URL is cross-origin.
+            credentials: "include",
         });
 
-        const data = await res.json();
+        const data = await readJsonSafely(res);
 
         if (!res.ok) {
             status.innerText = data.detail || "Identifiants incorrects.";

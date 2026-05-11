@@ -2,7 +2,7 @@
    classifications.js - SIMPLIFIÉ AVEC ATTRIBUTS CORRIGÉS
    ============================ */
 
-const API_URL = window.API_URL || "http://localhost:8000";
+const API_URL = window.API_URL || window.location.origin;
 
 console.log("✅ classifications.js chargé - API_URL:", API_URL);
 

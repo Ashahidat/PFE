@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:8000";
+const API_URL = window.API_URL || window.location.origin;
 const token = localStorage.getItem("access_token");
 const viewerRole = localStorage.getItem("user_role");
 const allowedRoles = ["SUPER_ADMIN", "ADMIN", "ADMIN_GLOSSAIRE"];

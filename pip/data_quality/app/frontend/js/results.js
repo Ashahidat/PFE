@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:8000";
+const API_URL = window.API_URL || window.location.origin;
 
 const POLL_INTERVAL_MS = 4000;
 const MAX_ATTEMPTS = 80;
@@ -270,6 +270,7 @@ function addPushAtlasButton() {
 
 async function finalizePushToAtlas(pushButton) {
     const statusDiv = document.getElementById("status");
+    const container = document.querySelector(".container");
 
     const token = getAuthToken();
     if (!token) {
@@ -320,10 +321,52 @@ async function finalizePushToAtlas(pushButton) {
             errors !== null && errors > 0 ? `⚠️ Erreurs classification colonnes: ${errors}` : null
         ].filter(Boolean).join("\n");
 
-        statusDiv.innerText = `✅ Push Atlas terminé.${extra ? `\n${extra}` : ""}\nRedirection…`;
-        setTimeout(() => {
-            window.location.href = "index.html";
-        }, 1500);
+        statusDiv.innerText = `✅ Push Atlas terminé.${extra ? `\n${extra}` : ""}`;
+
+        // Offer optional redirect to Grafana dashboards for the current project.
+        const projectId = localStorage.getItem("current_project_id");
+        const existingCta = document.getElementById("grafanaAfterAtlasCta");
+        if (container && !existingCta) {
+            const ctaWrap = document.createElement("div");
+            ctaWrap.id = "grafanaAfterAtlasCta";
+            ctaWrap.style.marginTop = "12px";
+            ctaWrap.style.display = "flex";
+            ctaWrap.style.gap = "10px";
+            ctaWrap.style.flexWrap = "wrap";
+
+            const homeBtn = document.createElement("button");
+            homeBtn.className = "back-button";
+            homeBtn.textContent = "Retour accueil";
+            homeBtn.onclick = () => (window.location.href = "index.html");
+
+            const grafanaBtn = document.createElement("button");
+            grafanaBtn.className = "back-button";
+            grafanaBtn.textContent = "Voir dashboards Grafana";
+            grafanaBtn.disabled = !projectId;
+            grafanaBtn.onclick = async () => {
+                try {
+                    if (!projectId) return;
+                    grafanaBtn.disabled = true;
+                    const resLinks = await fetch(`${API_URL}/projects/${projectId}/grafana-links`, {
+                        headers: { Authorization: `Bearer ${token}` },
+                        credentials: "include",
+                    });
+                    if (!resLinks.ok) throw new Error("Impossible de récupérer les liens Grafana");
+                    const links = await resLinks.json();
+                    const url = links && links.folder && links.folder.url ? `${API_URL}${links.folder.url}` : null;
+                    if (!url) throw new Error("Lien Grafana manquant");
+                    window.open(url, "_blank", "noopener");
+                } catch (e) {
+                    alert(`Erreur: ${e.message || e}`);
+                } finally {
+                    grafanaBtn.disabled = false;
+                }
+            };
+
+            ctaWrap.appendChild(grafanaBtn);
+            ctaWrap.appendChild(homeBtn);
+            container.appendChild(ctaWrap);
+        }
     } catch (err) {
         statusDiv.innerText = `❌ Erreur réseau: ${err.message || err}`;
         pushButton.disabled = false;

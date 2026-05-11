@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
@@ -13,9 +13,15 @@ from grafana.provisioning import sync_user_to_grafana
 router = APIRouter()
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+def _is_secure_request(request: Request) -> bool:
+    forwarded = request.headers.get("x-forwarded-proto")
+    if forwarded:
+        return forwarded.split(",")[0].strip().lower() == "https"
+    return request.url.scheme == "https"
+
 
 @router.post("/login")
-def login(data: dict, db: Session = Depends(get_db)):
+def login(data: dict, request: Request, db: Session = Depends(get_db)):
     # Vérifier si un admin existe déjà dans la base
     super_admin_exists = db.query(User).filter(User.role == SUPER_ADMIN).first()
     
@@ -87,7 +93,7 @@ def login(data: dict, db: Session = Depends(get_db)):
             value=token,
             httponly=True,
             samesite="lax",
-            secure=False,
+            secure=_is_secure_request(request),
             path="/",
         )
         return response
@@ -142,7 +148,7 @@ def login(data: dict, db: Session = Depends(get_db)):
         value=token,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=_is_secure_request(request),
         path="/",
     )
     return response

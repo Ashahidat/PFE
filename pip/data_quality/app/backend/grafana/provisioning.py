@@ -82,6 +82,7 @@ def provision_project_dashboards(
     project_name: str,
     project_visibility: str,
     owner_department: str,
+    identity_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """
     Creates/updates:
@@ -98,6 +99,8 @@ def provision_project_dashboards(
         auth_mode = "bearer"
     elif settings.admin_user and settings.admin_password:
         auth_mode = "basic"
+    elif identity_headers:
+        auth_mode = "auth-proxy"
     logger.info(
         "🚀 [Grafana] provisioning start project_id=%s folder=%s url=%s auth=%s templates_dir=%s",
         project_id,
@@ -110,7 +113,7 @@ def provision_project_dashboards(
         logger.warning("⏭️ [Grafana] provisioning skipped: no Grafana credentials configured")
         return {"enabled": True, "skipped": True, "reason": "no-auth"}
 
-    client = GrafanaClient(settings)
+    client = GrafanaClient(settings, extra_headers=identity_headers)
     templates = load_dashboard_templates(settings)
 
     folder_title = f"PFE - {project_name}"
@@ -141,8 +144,14 @@ def provision_project_dashboards(
         uid = _dashboard_uid(code, project_id)
         dashboard = instantiate_template(template, project_id=project_id, project_name=project_name, uid=uid)
         dashboard["title"] = f"PFE - {project_name} - {code.capitalize()}"
-        res = client.upsert_dashboard(dashboard, folder_id=folder_id, overwrite=True)
-        results["dashboards"][code] = res
+        try:
+            res = client.upsert_dashboard(dashboard, folder_id=folder_id, overwrite=True)
+            results["dashboards"][code] = res
+        except Exception as e:
+            # Keep provisioning resilient: one broken template/dashboard should not prevent the
+            # others from being created. Log the error and keep going.
+            logger.exception("⚠️ [Grafana] dashboard upsert failed code=%s uid=%s: %s", code, uid, e)
+            results["dashboards"][code] = {"uid": uid, "error": str(e)}
 
     return results
 
@@ -151,7 +160,8 @@ def sync_user_to_grafana(settings: GrafanaSettings, *, employee_id: str, usernam
     """
     Best-effort:
     - ensure Grafana user exists (requires admin creds)
-    - add user to department team (DATA_OWNER) or role teams (AUDIT / ADMIN*)
+    - add user to department team (all users) so DEPARTMENT folders work
+    - add user to role teams (AUDIT / ADMIN*) for consolidated access
     """
     if not settings.enabled:
         return
@@ -163,24 +173,24 @@ def sync_user_to_grafana(settings: GrafanaSettings, *, employee_id: str, usernam
 
     user_id = int(user.get("id"))
 
-    role_value = (role or "").upper()
-    if role_value == DATA_OWNER:
-        team = client.ensure_team(_team_name_for_department(department))
+    # Always map a user to their department team so folder permissions based on department apply
+    # to all members of the department (not only DATA_OWNER).
+    dept_value = (department or "").strip()
+    if dept_value:
+        team = client.ensure_team(_team_name_for_department(dept_value))
         team_id = _team_id(team)
         if team_id is not None:
             client.add_user_to_team(team_id=team_id, user_id=user_id)
-        return
 
+    role_value = (role or "").upper()
     if role_value == AUDIT:
         team = client.ensure_team(_team_name_for_role("audit"))
         team_id = _team_id(team)
         if team_id is not None:
             client.add_user_to_team(team_id=team_id, user_id=user_id)
-        return
 
     if role_value in ADMINISTRATORS:
         team = client.ensure_team(_team_name_for_role("admin"))
         team_id = _team_id(team)
         if team_id is not None:
             client.add_user_to_team(team_id=team_id, user_id=user_id)
-        return

@@ -19,10 +19,14 @@ from core.permissions import (
     can_upload_to_project, 
     can_create_project,
     require_role,
-    require_project_access
+    require_project_access,
+    require_super_admin,
 )
+from core.roles import ADMINISTRATORS, PROJECT_CREATORS
 from grafana.settings import get_grafana_settings
+from grafana.client import GrafanaClient
 from grafana.provisioning import provision_project_dashboards
+from grafana.links import build_project_grafana_links
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 logger = logging.getLogger("projects")
@@ -41,6 +45,7 @@ class ProjectResponse(BaseModel):
     visibility: str  # AJOUTÉ
     created_at: str
     datasets_count: int
+    grafana_links: Optional[dict] = None
 
     class Config:
         from_attributes = True
@@ -90,12 +95,20 @@ def create_new_project(
     # Grafana provisioning (Dashboard as Code) - best effort, never blocks project creation.
     try:
         settings = get_grafana_settings()
+        identity_headers = None
+        if str(user.get("role") or "").upper() in ADMINISTRATORS:
+            identity_headers = {
+                "X-WEBAUTH-USER": str(user.get("employee_id") or user.get("sub") or ""),
+                "X-WEBAUTH-NAME": str(user.get("username") or ""),
+                "X-WEBAUTH-ROLE": "Admin",
+            }
         result = provision_project_dashboards(
             settings,
             project_id=str(db_project.id),
             project_name=db_project.name,
             project_visibility=db_project.visibility,
             owner_department=user.get("department") or "UNKNOWN",
+            identity_headers=identity_headers,
         )
         if result.get("enabled") is False:
             logger.info("⏭️ Grafana provisioning disabled (GRAFANA_PROVISIONING_ENABLED=false)")
@@ -157,7 +170,12 @@ def list_my_projects(
             "owner_employee_id": p.owner_employee_id,
             "visibility": p.visibility,  # AJOUTÉ
             "created_at": str(p.created_at),
-            "datasets_count": datasets_count
+            "datasets_count": datasets_count,
+            "grafana_links": build_project_grafana_links(
+                project_id=str(p.id),
+                project_name=p.name,
+                org_id=get_grafana_settings().org_id,
+            ),
         })
     
     return result
@@ -189,8 +207,177 @@ def get_project_details(
         "owner_employee_id": project.owner_employee_id,
         "visibility": project.visibility,  # AJOUTÉ
         "created_at": str(project.created_at),
-        "datasets_count": datasets_count
+        "datasets_count": datasets_count,
+        "grafana_links": build_project_grafana_links(
+            project_id=str(project.id),
+            project_name=project.name,
+            org_id=get_grafana_settings().org_id,
+        ),
     }
+
+
+@router.get("/{project_id}/grafana-links")
+def get_project_grafana_links(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Returns the Grafana folder + 4 dashboards URLs for this project.
+    URLs are meant to be opened through the backend reverse-proxy `/grafana/...`.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projet introuvable")
+    if not can_view_project(user, project, db):
+        raise HTTPException(status_code=403, detail="Vous n'avez pas les droits pour voir ce projet")
+
+    # Best-effort: if provisioning was skipped/failed at creation time, try again on-demand
+    # so users don't end up with broken `/grafana/dashboards/f/...` links.
+    settings = get_grafana_settings()
+    try:
+        folder_uid = build_project_grafana_links(
+            project_id=str(project.id),
+            project_name=project.name,
+            org_id=None,
+        )["folder"]["uid"]
+        identity_headers = None
+        if str(user.get("role") or "").upper() in PROJECT_CREATORS:
+            # Allow provisioning through Grafana auth-proxy when no API creds are configured.
+            identity_headers = {
+                "X-WEBAUTH-USER": str(user.get("employee_id") or user.get("sub") or ""),
+                "X-WEBAUTH-NAME": str(user.get("username") or ""),
+                "X-WEBAUTH-ROLE": "Admin",
+            }
+
+        if settings.enabled:
+            client = GrafanaClient(settings, extra_headers=identity_headers)
+            existing = client.get_folder_by_uid(folder_uid)
+            if not existing:
+                provision_project_dashboards(
+                    settings,
+                    project_id=str(project.id),
+                    project_name=project.name,
+                    project_visibility=project.visibility,
+                    owner_department=user.get("department") or "UNKNOWN",
+                    identity_headers=identity_headers,
+                )
+    except Exception:
+        # Do not fail link retrieval when provisioning fails.
+        pass
+
+    return build_project_grafana_links(
+        project_id=str(project.id),
+        project_name=project.name,
+        org_id=get_grafana_settings().org_id,
+    )
+
+
+@router.post("/{project_id}/grafana-provision")
+def provision_grafana_for_project(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(require_super_admin()),
+):
+    """
+    Force Grafana provisioning for a given project (folder + permissions + dashboards).
+    Useful when provisioning was previously skipped (missing Grafana creds) or failed.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projet introuvable")
+
+    settings = get_grafana_settings()
+    try:
+        identity_headers = None
+        if str(user.get("role") or "").upper() in ADMINISTRATORS:
+            identity_headers = {
+                "X-WEBAUTH-USER": str(user.get("employee_id") or user.get("sub") or ""),
+                "X-WEBAUTH-NAME": str(user.get("username") or ""),
+                "X-WEBAUTH-ROLE": "Admin",
+            }
+        result = provision_project_dashboards(
+            settings,
+            project_id=str(project.id),
+            project_name=project.name,
+            project_visibility=project.visibility,
+            owner_department=user.get("department") or "UNKNOWN",
+            identity_headers=identity_headers,
+        )
+    except Exception as e:
+        logger.exception("⚠️ Grafana provisioning failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=f"Grafana provisioning failed: {e}")
+
+    return {
+        "project_id": str(project.id),
+        "folder_uid": (result.get("folder") or {}).get("uid"),
+        "result": result,
+    }
+
+
+@router.post("/grafana-provision-all")
+def provision_grafana_for_all_projects(
+    db: Session = Depends(get_db),
+    user=Depends(require_super_admin()),
+):
+    """
+    Force Grafana provisioning for ALL projects (folder + permissions + dashboards).
+    Useful when provisioning was previously skipped (missing Grafana creds) or after a fresh Grafana install.
+    """
+    settings = get_grafana_settings()
+    identity_headers = {
+        "X-WEBAUTH-USER": str(user.get("employee_id") or user.get("sub") or ""),
+        "X-WEBAUTH-NAME": str(user.get("username") or ""),
+        "X-WEBAUTH-ROLE": "Admin",
+    }
+    projects = db.query(Project).order_by(Project.created_at.asc()).all()
+
+    summary = {
+        "total": len(projects),
+        "ok": 0,
+        "skipped": 0,
+        "failed": 0,
+        "items": [],
+    }
+
+    for project in projects:
+        try:
+            result = provision_project_dashboards(
+                settings,
+                project_id=str(project.id),
+                project_name=project.name,
+                project_visibility=project.visibility,
+                owner_department=user.get("department") or "UNKNOWN",
+                identity_headers=identity_headers,
+            )
+            if result.get("enabled") is False or result.get("skipped"):
+                summary["skipped"] += 1
+                status = "skipped"
+            else:
+                summary["ok"] += 1
+                status = "ok"
+            summary["items"].append(
+                {
+                    "project_id": str(project.id),
+                    "project_name": project.name,
+                    "folder_uid": (result.get("folder") or {}).get("uid"),
+                    "status": status,
+                    "result": result,
+                }
+            )
+        except Exception as e:
+            summary["failed"] += 1
+            logger.exception("⚠️ Grafana provisioning failed for project %s: %s", project.id, e)
+            summary["items"].append(
+                {
+                    "project_id": str(project.id),
+                    "project_name": project.name,
+                    "status": "failed",
+                    "error": str(e),
+                }
+            )
+
+    return summary
 
 
 @router.delete("/{project_id}")

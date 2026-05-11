@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:8000";
+const API_URL = window.API_URL || window.location.origin;
 
 // 🔒 Protection : empêcher d’ouvrir preview.html sans upload
 document.addEventListener("DOMContentLoaded", () => {

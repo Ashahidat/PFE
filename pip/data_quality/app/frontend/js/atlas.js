@@ -1,6 +1,4 @@
-if (typeof API_URL === 'undefined') {
-    const API_URL = "http://localhost:8000";
-}
+const API_URL = window.API_URL || window.location.origin;
 
 console.log("✅ atlas.js chargé");
 

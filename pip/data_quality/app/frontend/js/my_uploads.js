@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:8000";
+const API_URL = window.API_URL || window.location.origin;
 const token = localStorage.getItem("access_token");
 const LOG_PREFIX = "[my_uploads]";
 const DEBUG_LOGS = true;
