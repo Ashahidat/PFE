@@ -54,7 +54,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 
-from config import FRONTEND_DIR
+from config import FRONTEND_DIR, REACT_DIST_DIR
 from routes import upload, dag, results, push_atlas, login, classifications, classifications_col, projects, descriptions, versionning, profile, glossary, datasets_meta, departments, grafana_auth, grafana_proxy
 
 app = FastAPI()
@@ -95,3 +95,19 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 @app.get("/ui")
 def get_ui():
     return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+
+
+# React SPA (build output under app/frontend-react/dist)
+if os.path.isdir(REACT_DIST_DIR):
+    app.mount("/app/assets", StaticFiles(directory=os.path.join(REACT_DIST_DIR, "assets")), name="react-assets")
+
+    @app.get("/app")
+    def get_react_root():
+        return FileResponse(os.path.join(REACT_DIST_DIR, "index.html"))
+
+    @app.get("/app/{full_path:path}")
+    def get_react_spa(full_path: str):
+        candidate = os.path.join(REACT_DIST_DIR, full_path)
+        if full_path and os.path.isfile(candidate):
+            return FileResponse(candidate)
+        return FileResponse(os.path.join(REACT_DIST_DIR, "index.html"))
