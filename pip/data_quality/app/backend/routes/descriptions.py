@@ -12,13 +12,15 @@ from db.column_descriptions import ColumnDescription
 from db.crud_column_descriptions import (
     bulk_create_or_update_descriptions,
     get_descriptions_by_version,
-    get_description_dict_by_version
+    get_description_dict_by_version,
+    delete_descriptions_for_columns,
 )
 from db.crud_column_classification_choices import (
     bulk_set_choices as bulk_set_column_classification_choices,
     get_choices_by_version as get_column_classification_choices_by_version,
 )
 from jwt_dependencies import get_current_user
+from atlas.metadata import sync_dataset_metadata_to_atlas
 
 router = APIRouter()
 logger = logging.getLogger("descriptions")
@@ -209,29 +211,45 @@ async def save_descriptions(
     else:
         logger.info(f"✅ Version cible pour metadata: v{dataset_version.version_number} (ID: {dataset_version.id}) guid={dataset_version.atlas_guid or 'NULL'}")
 
-    # 3️⃣ Convertir et filtrer
-    descriptions_dict = {
-        desc.column_name: desc.description 
-        for desc in input_data.descriptions 
-        if desc.description and desc.description.strip()
-    }
+    # 3️⃣ Convertir en dict (on garde aussi les descriptions vides pour pouvoir effacer)
+    input_by_column: Dict[str, str] = {}
+    for desc in input_data.descriptions or []:
+        col = (desc.column_name or "").strip()
+        if not col:
+            continue
+        input_by_column[col] = (desc.description or "").strip()
+
+    descriptions_dict = {c: d for c, d in input_by_column.items() if d}
+    empty_columns = [c for c, d in input_by_column.items() if not d]
+
+    logger.info(
+        f"📊 Input colonnes: {len(input_by_column)} (non vides: {len(descriptions_dict)}, vides: {len(empty_columns)})"
+    )
     
-    logger.info(f"📊 Après filtrage: {len(descriptions_dict)} descriptions non vides")
-    
-    if len(descriptions_dict) == 0 and len(input_data.descriptions) > 0:
-        logger.warning(f"⚠️ Toutes les {len(input_data.descriptions)} descriptions étaient vides après trim!")
-        for desc in input_data.descriptions:
-            logger.warning(f"   - '{desc.column_name}': '{repr(desc.description)}'")
+    if len(input_by_column) == 0 and len(input_data.descriptions) > 0:
+        logger.warning("⚠️ Toutes les lignes reçues étaient invalides (column_name vide)")
 
     # 4️⃣ Sauvegarde
-    saved_count = bulk_create_or_update_descriptions(
-        db=db,
-        dataset_version_id=str(dataset_version.id),
-        descriptions=descriptions_dict,
-        user_id=user["sub"]
-    )
+    saved_count = 0
+    if descriptions_dict:
+        saved_count = bulk_create_or_update_descriptions(
+            db=db,
+            dataset_version_id=str(dataset_version.id),
+            descriptions=descriptions_dict,
+            user_id=user["sub"]
+        )
+
+    deleted_count = 0
+    if empty_columns:
+        deleted_count = delete_descriptions_for_columns(
+            db=db,
+            dataset_version_id=str(dataset_version.id),
+            columns=empty_columns,
+        )
 
     logger.info(f"✅ {saved_count} descriptions sauvegardées")
+    if deleted_count:
+        logger.info(f"🗑️ {deleted_count} descriptions supprimées (vides)")
     logger.info("=" * 60)
 
     saved_classifications_count = 0
@@ -251,9 +269,32 @@ async def save_descriptions(
         except Exception as exc:
             logger.warning(f"⚠️ Impossible de sauvegarder les classifications colonnes: {exc}")
 
+    # 5️⃣ Synchroniser Atlas si le dataset est déjà publié
+    atlas_synced = False
+    atlas_error: str | None = None
+    if dataset.atlas_guid:
+        try:
+            # On pousse toutes les colonnes présentes dans la requête (y compris vides => effacement).
+            sync_dataset_metadata_to_atlas(
+                db=db,
+                dataset=dataset,
+                column_descriptions=input_by_column,
+            )
+            atlas_synced = True
+        except Exception as exc:
+            atlas_error = str(exc)
+            logger.warning(f"⚠️ Échec synchro Atlas (descriptions): {exc}", exc_info=True)
+
+    message = f"{saved_count} description(s) sauvegardée(s)"
+    if deleted_count:
+        message += f", {deleted_count} effacée(s)"
+    if dataset.atlas_guid:
+        message += " — Atlas synchronisé" if atlas_synced else " — ⚠️ Atlas non synchronisé"
+
     return {
-        "message": f"{saved_count} descriptions sauvegardées",
+        "message": message if not atlas_error else f"{message} ({atlas_error})",
         "saved_count": saved_count,
+        "deleted_count": deleted_count,
         "saved_classifications_count": saved_classifications_count,
         "dataset_version_id": str(dataset_version.id),
         "dataset_version_number": dataset_version.version_number

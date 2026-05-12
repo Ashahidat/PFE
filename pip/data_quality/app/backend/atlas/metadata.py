@@ -84,7 +84,9 @@ def _update_column_descriptions(
             "typeName": "Column",
             "guid": guid,
             "attributes": {
-                "description": description or (info.get("description") or ""),
+                # Important: if the caller explicitly provides an empty string, we want to clear the description
+                # in Atlas (not keep the existing one).
+                "description": "" if description is None else str(description),
                 "qualifiedName": qualified_name,
                 "name": column_name,
                 "dataset": {"typeName": "DataSet", "guid": dataset.atlas_guid},

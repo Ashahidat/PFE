@@ -23,6 +23,7 @@ import PeopleOutlinedIcon from "@mui/icons-material/PeopleOutlined";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import AccountCircleOutlinedIcon from "@mui/icons-material/AccountCircleOutlined";
 import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
+import BusinessOutlinedIcon from "@mui/icons-material/BusinessOutlined";
 import { clearToken, getUserRole } from "../lib/storage";
 
 const drawerWidth = 264;
@@ -31,6 +32,7 @@ function buildNav(role: string | null) {
   const canUpload = role && role !== "AUDIT";
   const canManageGlossary = role && ["ADMIN", "ADMIN_GLOSSAIRE", "SUPER_ADMIN"].includes(role);
   const canManageUsers = role && ["ADMIN", "ADMIN_GLOSSAIRE", "SUPER_ADMIN"].includes(role);
+  const canManageDepartments = role === "SUPER_ADMIN";
   const items = [{ to: "/projects", label: "Projets", icon: <FolderOutlinedIcon /> }];
   if (canUpload) {
     items.push({ to: "/uploads", label: "Mes uploads", icon: <Inventory2OutlinedIcon /> });
@@ -41,6 +43,7 @@ function buildNav(role: string | null) {
   items.push({ to: "/results", label: "Résultats", icon: <AssessmentOutlinedIcon /> });
   if (canManageGlossary) items.push({ to: "/glossary", label: "Glossaire", icon: <LibraryBooksOutlinedIcon /> });
   if (canManageUsers) items.push({ to: "/users", label: "Utilisateurs", icon: <PeopleOutlinedIcon /> });
+  if (canManageDepartments) items.push({ to: "/departments", label: "Départements", icon: <BusinessOutlinedIcon /> });
   items.push({ to: "/profile", label: "Mon profil", icon: <AccountCircleOutlinedIcon /> });
   return items;
 }

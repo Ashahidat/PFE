@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from db.column_descriptions import ColumnDescription
 import uuid
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Iterable
 import logging
 
 # Configuration du logger
@@ -145,3 +145,27 @@ def delete_descriptions_by_version(
     ).delete(synchronize_session=False)
     db.commit()
     return deleted
+
+
+def delete_descriptions_for_columns(
+    db: Session,
+    dataset_version_id: str,
+    columns: Iterable[str],
+) -> int:
+    """
+    Supprime les descriptions d'une liste de colonnes pour une version donnée.
+    Utile quand l'UI envoie une description vide => on veut effacer en base.
+    """
+    cols = [c for c in (columns or []) if c and str(c).strip()]
+    if not cols:
+        return 0
+    deleted = (
+        db.query(ColumnDescription)
+        .filter(
+            ColumnDescription.dataset_version_id == dataset_version_id,
+            ColumnDescription.column_name.in_(cols),
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return int(deleted or 0)

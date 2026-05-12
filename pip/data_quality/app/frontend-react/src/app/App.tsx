@@ -8,6 +8,7 @@ import ResultsPage from "../pages/ResultsPage";
 import DescribePage from "../pages/DescribePage";
 import GlossaryAdminPage from "../pages/GlossaryAdminPage";
 import UsersAdminPage from "../pages/UsersAdminPage";
+import DepartmentsAdminPage from "../pages/DepartmentsAdminPage";
 import MyUploadsPage from "../pages/MyUploadsPage";
 import ProfilePage from "../pages/ProfilePage";
 import { getToken, getUserRole } from "../lib/storage";
@@ -82,6 +83,14 @@ export default function App() {
           element={
             <RequireRole roles={["ADMIN", "ADMIN_GLOSSAIRE"]}>
               <UsersAdminPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="departments"
+          element={
+            <RequireRole roles={[]}>
+              <DepartmentsAdminPage />
             </RequireRole>
           }
         />
