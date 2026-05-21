@@ -171,28 +171,16 @@ def get_or_create_glossary(
         encoded = quote(qualified_name, safe="")
         res = atlas_get(f"{ATLAS_GLOSSARY_URL}?name={encoded}")
         glossaries = res.json() or []
+        for glossary in glossaries:
+            if glossary.get("qualifiedName") == qualified_name:
+                logger.debug(f"Glossaire trouvé dans Atlas: {glossary.get('name')} ({glossary.get('guid')})")
+                return glossary
+
         if glossaries:
-            glossary = glossaries[0]
-            # Best-effort: keep Atlas display name aligned with DB renames.
-            # Even if this fails (API differences), term/category sync should still work.
-            try:
-                glossary_guid = glossary.get("guid")
-                current_name = glossary.get("name")
-                if glossary_guid and display_name and current_name and current_name != display_name:
-                    update_payload = {
-                        "guid": glossary_guid,
-                        "qualifiedName": glossary.get("qualifiedName") or qualified_name,
-                        "name": display_name,
-                        "shortDescription": glossary.get("shortDescription") or DEFAULT_GLOSSARY_SHORT_DESCRIPTION,
-                        "longDescription": glossary.get("longDescription") or DEFAULT_GLOSSARY_LONG_DESCRIPTION,
-                        "language": glossary.get("language") or DEFAULT_GLOSSARY_LANGUAGE,
-                    }
-                    updated = atlas_put(f"{ATLAS_GLOSSARY_URL}/{glossary_guid}", update_payload).json() or {}
-                    glossary = updated or glossary
-            except Exception as exc:
-                logger.debug(f"Mise à jour du nom du glossaire Atlas ignorée: {exc}")
-            logger.debug(f"Glossaire trouvé dans Atlas: {glossary['name']} ({glossary['guid']})")
-            return glossary
+            logger.debug(
+                "Un glossaire Atlas existe déjà avec un nom proche, mais pas le qualifiedName attendu "
+                f"({qualified_name}). Création d'un nouveau glossaire."
+            )
     except Exception as exc:
         logger.debug(f"Recherche du glossaire {qualified_name} échouée: {exc}")
 

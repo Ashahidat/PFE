@@ -58,12 +58,22 @@ logs/
 .cache/
 *.temp
 *.tmp
+node_modules/
+test_codex.js
+.agents
 
 # ============================================
 # OUTPUT
 # ============================================
 outputs/
 checkpoints/
+
+# ============================================
+# FRONTEND REACT / VITE
+# ============================================
+pip/data_quality/app/frontend-react/dist/
+pip/data_quality/app/frontend-react/node_modules/.vite/
+pip/data_quality/app/frontend-react/*.tsbuildinfo
 
 # ============================================
 # SYSTEM
@@ -77,6 +87,7 @@ pip/data_quality/data/*
 # Données
 datasets/
 *.csv
+*.docx
 
 # Logs
 *.log
@@ -95,5 +106,6 @@ AGENTS.md
 
 
 !pip/data_governance/apache-atlas-2.4.0/README_LOCAL_ATLAS_SETUP.md
-/home/ashahi/PFE/test_codex.js
+
+
 

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Shell from "./Shell";
 import LoginPage from "../pages/LoginPage";
 import ProjectsPage from "../pages/ProjectsPage";
+import ProjectDetailsPage from "../pages/ProjectDetailsPage";
 import UploadPage from "../pages/UploadPage";
 import RunTestsPage from "../pages/RunTestsPage";
 import ResultsPage from "../pages/ResultsPage";
@@ -46,6 +47,7 @@ export default function App() {
       >
         <Route index element={<Navigate to="projects" replace />} />
         <Route path="projects" element={<ProjectsPage />} />
+        <Route path="projects/:projectId" element={<ProjectDetailsPage />} />
         <Route
           path="upload"
           element={

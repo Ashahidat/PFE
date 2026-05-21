@@ -25,5 +25,5 @@ atexit.register(stop_spark)
 
 # Dossiers
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(BASE_DIR, "..", "frontend")
-REACT_DIST_DIR = os.path.join(BASE_DIR, "..", "frontend-react", "dist")
+FRONTEND_REACT_DIR = os.path.join(BASE_DIR, "..", "frontend-react")
+REACT_DIST_DIR = os.path.join(FRONTEND_REACT_DIR, "dist")

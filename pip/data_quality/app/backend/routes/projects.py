@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional, List
 import logging
@@ -18,6 +18,8 @@ from core.permissions import (
     can_view_project, 
     can_upload_to_project, 
     can_create_project,
+    can_view_dataset,
+    can_modify_dataset,
     require_role,
     require_project_access,
     require_super_admin,
@@ -46,6 +48,23 @@ class ProjectResponse(BaseModel):
     created_at: str
     datasets_count: int
     grafana_links: Optional[dict] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ProjectDatasetResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    uploaded_by: Optional[str] = None
+    classification: str
+    columns: List[str]
+    columns_count: int
+    created_at: Optional[str] = None
+    atlas_guid: Optional[str] = None
+    atlas_synced: bool
+    can_edit: bool
 
     class Config:
         from_attributes = True
@@ -214,6 +233,54 @@ def get_project_details(
             org_id=get_grafana_settings().org_id,
         ),
     }
+
+
+@router.get("/{project_id}/datasets", response_model=List[ProjectDatasetResponse])
+def list_project_datasets(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Liste les datasets visibles d'un projet avec un résumé utile pour la page détail.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projet introuvable")
+    if not can_view_project(user, project, db):
+        raise HTTPException(status_code=403, detail="Vous n'avez pas les droits pour voir ce projet")
+
+    datasets = (
+        db.query(Dataset)
+        .options(joinedload(Dataset.project))
+        .filter(Dataset.project_id == project_id)
+        .order_by(Dataset.created_at.desc())
+        .all()
+    )
+
+    result = []
+    for dataset in datasets:
+        if not can_view_dataset(user, dataset, db):
+            continue
+
+        classification = dataset.classification or (dataset.project.visibility if dataset.project else "DEPARTMENT")
+        result.append(
+            {
+                "id": str(dataset.id),
+                "name": dataset.name,
+                "description": dataset.description,
+                "uploaded_by": dataset.owner_employee_id,
+                "classification": classification,
+                "columns": dataset.columns_list or [],
+                "columns_count": len(dataset.columns_list or []),
+                "created_at": dataset.created_at.isoformat() if dataset.created_at else None,
+                "atlas_guid": dataset.atlas_guid,
+                "atlas_synced": bool(dataset.atlas_synced),
+                "can_edit": can_modify_dataset(user, dataset, db),
+            }
+        )
+
+    return result
 
 
 @router.get("/{project_id}/grafana-links")

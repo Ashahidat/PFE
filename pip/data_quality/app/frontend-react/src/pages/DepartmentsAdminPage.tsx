@@ -2,12 +2,18 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
+  FormControl,
   FormControlLabel,
+  InputLabel,
+  MenuItem,
   Paper,
+  Select,
   Stack,
   Switch,
   TextField,
@@ -21,12 +27,25 @@ import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../lib/api";
 
 type Department = { code: string; label: string; is_active: boolean };
+type UserItem = {
+  employee_id: string;
+  username: string;
+  department: string;
+  role: string;
+  is_protected: boolean;
+  is_active: boolean;
+};
 
 export default function DepartmentsAdminPage() {
   const [items, setItems] = useState<Department[]>([]);
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [scopes, setScopes] = useState<Department[]>([]);
   const [loading, setLoading] = useState(false);
+  const [scopeLoading, setScopeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [scopeError, setScopeError] = useState<string | null>(null);
+  const [scopeNotice, setScopeNotice] = useState<string | null>(null);
 
   // Create form
   const [code, setCode] = useState("");
@@ -40,13 +59,28 @@ export default function DepartmentsAdminPage() {
   const [editLabel, setEditLabel] = useState("");
   const [editIsActive, setEditIsActive] = useState(true);
 
+  // ADMIN_GLOSSAIRE scopes
+  const [scopeEmployeeId, setScopeEmployeeId] = useState("");
+  const [scopeDepartmentCode, setScopeDepartmentCode] = useState("");
+  const adminGlossaireUsers = users.filter((u) => u.role === "ADMIN_GLOSSAIRE");
+
   async function loadAll() {
     setError(null);
     setNotice(null);
     setLoading(true);
     try {
-      const depts = await api.get<Department[]>("/departments?include_inactive=true");
+      const [depts, allUsers] = await Promise.all([
+        api.get<Department[]>("/departments?include_inactive=true"),
+        api.get<UserItem[]>("/users").catch(() => [])
+      ]);
       setItems(depts || []);
+      setUsers(allUsers || []);
+      if (!scopeEmployeeId) {
+        const firstAdminGlossaire = (allUsers || []).find((u) => u.role === "ADMIN_GLOSSAIRE");
+        if (firstAdminGlossaire) {
+          setScopeEmployeeId(firstAdminGlossaire.employee_id);
+        }
+      }
     } catch (e) {
       const err = e as ApiError;
       setError(err.bodyText || err.message);
@@ -58,6 +92,33 @@ export default function DepartmentsAdminPage() {
   useEffect(() => {
     void loadAll();
   }, []);
+
+  useEffect(() => {
+    async function loadScopes() {
+      if (!scopeEmployeeId) {
+        setScopes([]);
+        return;
+      }
+      setScopeError(null);
+      setScopeNotice(null);
+      setScopeLoading(true);
+      try {
+        const data = await api.get<Department[]>(`/departments/scopes/${encodeURIComponent(scopeEmployeeId)}`);
+        setScopes(data || []);
+        if (!scopeDepartmentCode && data?.length) {
+          setScopeDepartmentCode(data[0].code);
+        }
+      } catch (e) {
+        const err = e as ApiError;
+        setScopeError(err.bodyText || err.message);
+        setScopes([]);
+      } finally {
+        setScopeLoading(false);
+      }
+    }
+
+    void loadScopes();
+  }, [scopeEmployeeId]);
 
   async function createDepartment() {
     if (!canCreate) return;
@@ -112,6 +173,59 @@ export default function DepartmentsAdminPage() {
     }
   }
 
+  async function grantScope() {
+    if (!scopeEmployeeId || !scopeDepartmentCode) return;
+    setScopeError(null);
+    setScopeNotice(null);
+    setScopeLoading(true);
+    try {
+      await api.post("/departments/scopes", {
+        employee_id: scopeEmployeeId,
+        department_code: scopeDepartmentCode
+      });
+      setScopeNotice("Périmètre ajouté.");
+      const data = await api.get<Department[]>(`/departments/scopes/${encodeURIComponent(scopeEmployeeId)}`);
+      setScopes(data || []);
+    } catch (e) {
+      const err = e as ApiError;
+      setScopeError(err.bodyText || err.message);
+    } finally {
+      setScopeLoading(false);
+    }
+  }
+
+  async function revokeScope(code: string) {
+    if (!scopeEmployeeId || !code) return;
+    setScopeError(null);
+    setScopeNotice(null);
+    setScopeLoading(true);
+    try {
+      const res = await fetch("/departments/scopes", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("access_token") || ""}`
+        },
+        body: JSON.stringify({
+          employee_id: scopeEmployeeId,
+          department_code: code
+        })
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      setScopeNotice("Périmètre retiré.");
+      const data = await api.get<Department[]>(`/departments/scopes/${encodeURIComponent(scopeEmployeeId)}`);
+      setScopes(data || []);
+    } catch (e) {
+      const err = e as ApiError;
+      setScopeError(err.bodyText || err.message);
+    } finally {
+      setScopeLoading(false);
+    }
+  }
+
   return (
     <Box>
       <PageHeader
@@ -126,6 +240,8 @@ export default function DepartmentsAdminPage() {
 
       {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
       {notice ? <Alert severity="info" sx={{ mb: 2 }}>{notice}</Alert> : null}
+      {scopeError ? <Alert severity="error" sx={{ mb: 2 }}>{scopeError}</Alert> : null}
+      {scopeNotice ? <Alert severity="info" sx={{ mb: 2 }}>{scopeNotice}</Alert> : null}
 
       <Paper elevation={0} sx={{ p: 3, borderRadius: 3, mb: 2 }}>
         <Stack spacing={2}>
@@ -188,6 +304,95 @@ export default function DepartmentsAdminPage() {
         </Stack>
       </Paper>
 
+      <Paper elevation={0} sx={{ p: 3, borderRadius: 3, mt: 2 }}>
+        <Stack spacing={2}>
+          <Typography variant="subtitle1">Périmètres ADMIN_GLOSSAIRE</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Sélectionne un compte d’admin glossaire, puis attribue les départements dans lesquels il peut créer ou modifier des glossaires.
+          </Typography>
+
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ md: "center" }}>
+            <FormControl fullWidth>
+              <InputLabel id="admin-glossaire-user-label">Admin glossaire</InputLabel>
+              <Select
+                labelId="admin-glossaire-user-label"
+                label="Admin glossaire"
+                value={scopeEmployeeId}
+                onChange={(e) => {
+                  setScopeEmployeeId(String(e.target.value));
+                  setScopeDepartmentCode("");
+                }}
+              >
+                <MenuItem value="">
+                  <em>Sélectionner…</em>
+                </MenuItem>
+                {adminGlossaireUsers.map((u) => (
+                  <MenuItem key={u.employee_id} value={u.employee_id}>
+                    {u.username} ({u.employee_id}) - {u.department}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth>
+              <InputLabel id="scope-dept-label">Département autorisé</InputLabel>
+              <Select
+                labelId="scope-dept-label"
+                label="Département autorisé"
+                value={scopeDepartmentCode}
+                onChange={(e) => setScopeDepartmentCode(String(e.target.value))}
+              >
+                <MenuItem value="">
+                  <em>Sélectionner…</em>
+                </MenuItem>
+                {items.map((d) => (
+                  <MenuItem key={d.code} value={d.code} disabled={!d.is_active}>
+                    {d.label} ({d.code}){!d.is_active ? " - inactif" : ""}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <Button
+              variant="contained"
+              onClick={grantScope}
+              disabled={scopeLoading || !scopeEmployeeId || !scopeDepartmentCode}
+            >
+              Autoriser
+            </Button>
+          </Stack>
+
+          <Divider />
+
+          <Stack spacing={1}>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              Périmètres actuels
+            </Typography>
+            {scopeLoading ? (
+              <Typography variant="body2" color="text.secondary">
+                Chargement…
+              </Typography>
+            ) : scopes.length ? (
+              <Stack direction="row" spacing={1} flexWrap="wrap">
+                {scopes.map((d) => (
+                  <Chip
+                    key={d.code}
+                    label={`${d.label} (${d.code})`}
+                    onDelete={() => void revokeScope(d.code)}
+                    disabled={scopeLoading}
+                    variant="outlined"
+                  />
+                ))}
+              </Stack>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                Aucun périmètre défini pour cet admin glossaire.
+              </Typography>
+            )}
+          </Stack>
+        </Stack>
+      </Paper>
+
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Modifier {editTarget?.code || ""}</DialogTitle>
         <DialogContent sx={{ pt: 1 }}>
@@ -211,4 +416,3 @@ export default function DepartmentsAdminPage() {
     </Box>
   );
 }
-

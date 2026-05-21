@@ -13,8 +13,8 @@ alias atlas-internal-stop='(cd /home/ashahi/PFE/pip/data_governance/apache-atlas
 # Atlas UI read-only proxy (humans entrypoint)
 alias atlas-ui-start='(cd /home/ashahi/PFE && ./pip/data_governance/run_nginx_atlas_readonly.sh)'
 alias atlas-ui-stop='(cd /home/ashahi/PFE && ./pip/data_governance/stop_nginx_atlas_readonly.sh)'
+alias atlas-check='(cd /home/ashahi/PFE && ./pip/data_governance/check_atlas_ports.sh)'
 
 # Convenience: start/stop the whole stack
 alias atlas-ro-start='(cd /home/ashahi/PFE && ./pip/data_governance/start_atlas_readonly_stack.sh)'
 alias atlas-ro-stop='(cd /home/ashahi/PFE && ./pip/data_governance/stop_atlas_readonly_stack.sh)'
-

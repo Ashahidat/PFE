@@ -195,4 +195,3 @@ def list_allowed_departments_for_current_user(
             .all()
         )
     return []
-

@@ -113,8 +113,8 @@ export default function LoginPage() {
             <Typography variant="caption" color="text.secondary">
               Astuce: au premier lancement, le 1er utilisateur devient SUPER_ADMIN (voir backend `/login`).
             </Typography>
-            <Link href="/ui" underline="hover" sx={{ fontSize: 13 }}>
-              Ouvrir l'ancienne UI (legacy)
+            <Link href="/app" underline="hover" sx={{ fontSize: 13 }}>
+              Ouvrir l'application React
             </Link>
           </Stack>
         </Paper>

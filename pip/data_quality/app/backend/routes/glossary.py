@@ -142,11 +142,11 @@ def _assert_glossary_department_allowed(db: Session, dept_code: str, user: dict)
     role = user.get("role")
     if role == ADMIN_GLOSSAIRE:
         emp_id = user.get("employee_id") or user.get("sub")
-        allowed = (
-            db.query(UserDepartmentScope)
-            .filter(UserDepartmentScope.employee_id == emp_id, UserDepartmentScope.department_code == dept_code)
-            .first()
-        )
+        allowed = db.query(UserDepartmentScope).filter(
+            UserDepartmentScope.employee_id == emp_id,
+            UserDepartmentScope.department_code == dept_code,
+        ).first()
+
         if not allowed:
             raise HTTPException(status_code=403, detail="Vous n'êtes pas autorisé à gérer ce département")
 

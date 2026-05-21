@@ -20,7 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Dossiers de l'application
 APP_DIR = BASE_DIR / "app"
 BACKEND_DIR = APP_DIR / "backend"
-FRONTEND_DIR = BASE_DIR / "frontend"
+FRONTEND_REACT_DIR = APP_DIR / "frontend-react"
 
 # Dossiers fonctionnels
 ORCHESTRATION_DIR = BASE_DIR / "orchestration"
@@ -71,7 +71,7 @@ __all__ = [
     "BASE_DIR",
     "APP_DIR",
     "BACKEND_DIR",
-    "FRONTEND_DIR",
+    "FRONTEND_REACT_DIR",
     "ORCHESTRATION_DIR",
     "VALIDATORS_DIR",
     "UTILS_DIR",

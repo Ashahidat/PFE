@@ -1,6 +1,6 @@
 # React UI (PFE)
 
-Cette UI remplace progressivement l'ancienne UI statique (`pip/data_quality/app/frontend/`).
+Cette UI remplace l'ancienne UI statique et est désormais la seule interface servie par le backend.
 
 ## Dev (Vite)
 
@@ -28,5 +28,3 @@ Ensuite, lancer le backend FastAPI, et ouvrir :
 
 Notes :
 - le backend sert le build React si `pip/data_quality/app/frontend-react/dist/` existe.
-- l'ancienne UI reste accessible via `http://localhost:8000/ui`.
-

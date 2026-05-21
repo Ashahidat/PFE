@@ -10,8 +10,8 @@ from functools import lru_cache
 # - Humans should access Atlas through a read-only reverse-proxy.
 # - The application should talk directly to the internal Atlas port for write operations.
 #
-# Default internal port is 21001 (see pip/data_governance/nginx/atlas_readonly.conf).
-ATLAS_REST_ADDRESS = os.getenv("ATLAS_REST_ADDRESS", "http://127.0.0.1:21001").rstrip("/")
+# Default internal port is 21002 (see pip/data_governance/nginx/atlas_readonly.conf).
+ATLAS_REST_ADDRESS = os.getenv("ATLAS_REST_ADDRESS", "http://127.0.0.1:21002").rstrip("/")
 ATLAS_V2_BASE_URL = f"{ATLAS_REST_ADDRESS}/api/atlas/v2"
 
 ATLAS_ENTITY_BULK_URL = f"{ATLAS_V2_BASE_URL}/entity/bulk"

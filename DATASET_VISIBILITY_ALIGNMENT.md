@@ -47,21 +47,18 @@ Cela évite les incohérences côté UI quand `is_public` n'est pas envoyé (ou 
 
 ### 3) UI Upload
 
-Fichiers :
+Fichier React :
 
-- `pip/data_quality/app/frontend/upload.html`
-- `pip/data_quality/app/frontend/js/upload.js`
+- `pip/data_quality/app/frontend-react/src/pages/UploadPage.tsx`
 
 - Ajout d'un sélecteur "Visibilité du dataset"
 - Envoi du champ `dataset_visibility` dans le `FormData` vers `/upload`
 
 ### 4) UI Push Atlas (suppression du re-choix de classification dataset)
 
-Fichiers :
+Fichier React :
 
-- `pip/data_quality/app/frontend/atlas.html`
-- `pip/data_quality/app/frontend/js/atlas.js`
-- `pip/data_quality/app/frontend/js/classifications.js`
+- `pip/data_quality/app/frontend-react/src/pages/ResultsPage.tsx`
 
 Changement UX :
 
@@ -91,4 +88,3 @@ Puis refaire avec dataset_visibility = **PUBLIC** et vérifier que Atlas reçoit
 
 Avant ce changement, `Dataset.classification` était copié depuis `project.visibility` à l'upload.
 Si tu as déjà des datasets dans des projets PUBLIC qui devraient être DEPARTMENT, il faudra les corriger en base (script SQL) puis re-push (ou re-synchroniser) pour que la classification Atlas reflète la nouvelle source de vérité.
-

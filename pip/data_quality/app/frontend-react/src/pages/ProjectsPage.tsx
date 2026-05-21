@@ -120,6 +120,13 @@ export default function ProjectsPage() {
                   <Button
                     variant="outlined"
                     size="small"
+                    onClick={() => navigate(`/projects/${encodeURIComponent(p.id)}`)}
+                  >
+                    Détails
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
                     startIcon={<UploadFileOutlinedIcon />}
                     onClick={() => navigate(`/upload?project_id=${encodeURIComponent(p.id)}`)}
                   >

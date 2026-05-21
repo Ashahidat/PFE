@@ -5,9 +5,9 @@ set -euo pipefail
 #
 # Usage:
 #   ./scripts/atlas_ensure_admin_profile.sh
-#   ATLAS_URL=http://localhost:21000 ATLAS_USER=admin ATLAS_PASS=admin ./scripts/atlas_ensure_admin_profile.sh
+#   ATLAS_URL=http://localhost:21002 ATLAS_USER=admin ATLAS_PASS=admin ./scripts/atlas_ensure_admin_profile.sh
 
-ATLAS_URL="${ATLAS_URL:-http://localhost:21000}"
+ATLAS_URL="${ATLAS_URL:-http://localhost:21002}"
 ATLAS_USER="${ATLAS_USER:-admin}"
 ATLAS_PASS="${ATLAS_PASS:-admin}"
 
@@ -53,4 +53,3 @@ curl -sS -u "${ATLAS_USER}:${ATLAS_PASS}" \
   }" >/dev/null
 
 echo "[atlas] Created __AtlasUserProfile for '${ATLAS_USER}'."
-

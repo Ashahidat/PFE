@@ -17,7 +17,7 @@ import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import PageHeader from "../components/PageHeader";
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../lib/api";
-import { getLastDagRunId, getLastDatasetId } from "../lib/storage";
+import { getLastDagRunId, getLastDatasetId, setLastDatasetId } from "../lib/storage";
 
 type ResultItem = {
   rule_type?: string;
@@ -36,15 +36,21 @@ function statusColor(status?: string): "success" | "error" | "warning" | "defaul
   return "default";
 }
 
+function isTerminalState(state?: string | null) {
+  const s = String(state || "").toLowerCase();
+  return ["success", "failed", "error", "failed", "cancelled", "canceled", "skipped", "done", "finished"].includes(s);
+}
+
 export default function ResultsPage() {
   const [items, setItems] = useState<ResultItem[]>([]);
   const [state, setState] = useState<string | null>(null);
+  const [resolvedDatasetId, setResolvedDatasetId] = useState<string | null>(getLastDatasetId());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [atlasMsg, setAtlasMsg] = useState<string | null>(null);
   const [atlasLoading, setAtlasLoading] = useState(false);
+  const [atlasPushed, setAtlasPushed] = useState(false);
   const dagRunId = getLastDagRunId();
-  const datasetId = getLastDatasetId();
 
   const summary = useMemo(() => {
     let total = 0,
@@ -67,15 +73,24 @@ export default function ResultsPage() {
     setError(null);
     setLoading(true);
     try {
+      const st = (await api
+        .get<{ state: string; dataset_id?: string }>(`/dag-status/${dagRunId}`)
+        .catch(() => ({ state: null as string | null, dataset_id: undefined as string | undefined }))) as {
+        state: string | null;
+        dataset_id?: string;
+      };
+      setState(st?.state || null);
+      if (st?.dataset_id) {
+        setResolvedDatasetId(st.dataset_id);
+        setLastDatasetId(st.dataset_id);
+      }
+
       const existing = await api.get<any>(`/results/${dagRunId}`).catch(() => []);
       if (Array.isArray(existing) && existing.length > 0) {
         setItems(existing);
-        setState("success");
         return;
       }
 
-      const st = await api.get<{ state: string }>(`/dag-status/${dagRunId}`).catch(() => ({ state: null as any }));
-      setState(st?.state || null);
       if (st?.state === "success") {
         const res = await api.get<any>(`/results/${dagRunId}`).catch(() => []);
         setItems(Array.isArray(res) ? res : []);
@@ -93,22 +108,43 @@ export default function ResultsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!dagRunId) return;
+
+    const refresh = () => {
+      void loadOnce();
+    };
+
+    if (isTerminalState(state) && items.length > 0) {
+      return;
+    }
+
+    const timer = window.setInterval(refresh, 4000);
+    return () => window.clearInterval(timer);
+  }, [dagRunId, items.length, state]);
+
   async function pushAtlas() {
-    if (!datasetId) return;
+    if (!resolvedDatasetId || atlasPushed) return;
     setAtlasMsg(null);
     setAtlasLoading(true);
     try {
-      const res = await api.post<any>(`/push-atlas/${datasetId}`, {});
+      const res = await api.post<any>(`/push-atlas/${resolvedDatasetId}`, {});
+      if (res?.already_synced) {
+        setAtlasMsg("ℹ️ Dataset déjà synchronisé avec Atlas.");
+        setAtlasPushed(true);
+        return;
+      }
       const applied = typeof res?.column_classifications_applied === "number" ? res.column_classifications_applied : null;
       const errors = typeof res?.column_classifications_errors === "number" ? res.column_classifications_errors : null;
       const extra = [
         res?.dataset_guid ? "Dataset guid reçu." : null,
         applied !== null ? `Classifications colonnes appliquées: ${applied}` : null,
         errors !== null && errors > 0 ? `Erreurs classification colonnes: ${errors}` : null
-      ]
+        ]
         .filter(Boolean)
         .join(" · ");
       setAtlasMsg(`✅ Push Atlas terminé.${extra ? ` ${extra}` : ""}`);
+      setAtlasPushed(true);
     } catch (e) {
       const err = e as ApiError;
       setAtlasMsg(`❌ Push Atlas impossible. ${err.bodyText || err.message}`);
@@ -134,9 +170,17 @@ export default function ResultsPage() {
             </Button>
             <Button
               variant="contained"
-              disabled={!datasetId || atlasLoading}
+              disabled={!resolvedDatasetId || atlasLoading || atlasPushed || !isTerminalState(state)}
               onClick={pushAtlas}
-              title={!datasetId ? "Uploader un dataset d'abord" : undefined}
+              title={
+                !resolvedDatasetId
+                  ? "Dataset introuvable pour ce run"
+                  : !isTerminalState(state)
+                    ? "Le run doit être terminé avant de pousser Atlas"
+                    : atlasPushed
+                      ? "Atlas a déjà été finalisé pour ce run"
+                      : undefined
+              }
             >
               Finaliser (push Atlas)
             </Button>
@@ -146,6 +190,13 @@ export default function ResultsPage() {
 
       {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
       {!dagRunId ? <Alert severity="info">Lance des validations depuis “Valider qualité”.</Alert> : null}
+      {dagRunId ? (
+        <Alert severity={isTerminalState(state) ? "success" : "info"} sx={{ mb: 2 }}>
+          {isTerminalState(state)
+            ? "Le run est terminé. Les résultats affichés sont à jour."
+            : "Le run est en cours. La page se met à jour automatiquement toutes les 4 secondes."}
+        </Alert>
+      ) : null}
 
       {loading ? <LinearProgress sx={{ mb: 2 }} /> : null}
       {atlasMsg ? <Alert severity={atlasMsg.startsWith("✅") ? "success" : "error"} sx={{ mb: 2 }}>{atlasMsg}</Alert> : null}
@@ -157,6 +208,7 @@ export default function ResultsPage() {
           <Chip color="error" label={`Échecs: ${summary.failed}`} />
           <Chip color="warning" label={`Ignorés: ${summary.skipped}`} />
           <Chip variant="outlined" label={`State: ${state || "?"}`} />
+          {resolvedDatasetId ? <Chip variant="outlined" label={`Dataset: ${resolvedDatasetId}`} /> : null}
         </Stack>
       ) : null}
 

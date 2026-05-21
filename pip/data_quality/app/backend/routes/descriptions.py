@@ -8,11 +8,15 @@ from pydantic import BaseModel
 from db.connexion_db import get_db
 from db.datasets import Dataset
 from db.dataset_versions import DatasetVersion
+from db.dataset_signatures import DatasetSignature
+from db.crud_dataset_signatures import create_dataset_signature
+from db.crud_column_signatures import create_column_signature
 from db.column_descriptions import ColumnDescription
 from db.crud_column_descriptions import (
     bulk_create_or_update_descriptions,
     get_descriptions_by_version,
     get_description_dict_by_version,
+    copy_descriptions_from_previous_version,
     delete_descriptions_for_columns,
 )
 from db.crud_column_classification_choices import (
@@ -21,6 +25,8 @@ from db.crud_column_classification_choices import (
 )
 from jwt_dependencies import get_current_user
 from atlas.metadata import sync_dataset_metadata_to_atlas
+from atlas.signatures import calculate_dataset_signature
+from config import spark
 
 router = APIRouter()
 logger = logging.getLogger("descriptions")
@@ -63,6 +69,51 @@ def _get_latest_descriptions_by_column(db: Session, dataset_id: str) -> Dict[str
                 "last_update": row.last_update.isoformat() if row.last_update else None
             }
     return latest_by_column
+
+
+def _ensure_dataset_signature(db: Session, dataset: Dataset) -> DatasetSignature | None:
+    """
+    Retourne la signature la plus récente du dataset.
+    Si elle n'existe pas encore, la calcule et la persiste.
+    """
+    signature = db.query(DatasetSignature).filter(
+        DatasetSignature.dataset_id == dataset.id
+    ).order_by(DatasetSignature.created_at.desc()).first()
+
+    if signature and signature.signature:
+        return signature
+
+    if not dataset.file_path:
+        logger.warning(f"⚠️ Dataset {dataset.id} sans file_path, impossible de calculer la signature")
+        return None
+
+    logger.info(f"🔄 Signature absente pour {dataset.id}, calcul en cours...")
+    df = spark.read.parquet(dataset.file_path)
+    computed = calculate_dataset_signature(df, dataset.name)
+    signature = create_dataset_signature(
+        db=db,
+        dataset_id=str(dataset.id),
+        structure_hash=computed["structure_hash"],
+        signature=computed,
+        columns_count=computed.get("columns_count"),
+        rows_count=computed.get("rows_count"),
+        algo_version="v1",
+    )
+
+    for col_name, meta in computed["columns"].items():
+        create_column_signature(
+            db=db,
+            dataset_signature_id=str(signature.id),
+            column_name=col_name,
+            data_type=meta["dtype"],
+            mean=meta.get("mean"),
+            std=meta.get("std"),
+            distinct_count=meta.get("ndist"),
+            sample_hash=meta.get("sample_hash"),
+        )
+
+    logger.info(f"✅ Signature calculée et persistée pour {dataset.id}: {signature.structure_hash[:16]}...")
+    return signature
 
 # ===================== MODÈLES PYDANTIC =====================
 
@@ -210,6 +261,26 @@ async def save_descriptions(
         logger.info(f"🆕 Nouvelle version brouillon créée (pre-push): v{dataset_version.version_number} (ID: {dataset_version.id})")
     else:
         logger.info(f"✅ Version cible pour metadata: v{dataset_version.version_number} (ID: {dataset_version.id}) guid={dataset_version.atlas_guid or 'NULL'}")
+
+    # Si on vient d'ouvrir une nouvelle version brouillon vide, on hérite automatiquement
+    # des descriptions de la dernière version disponible pour garder le formulaire prérempli.
+    if not get_descriptions_by_version(db, str(dataset_version.id)):
+        previous_version = db.query(DatasetVersion).filter(
+            DatasetVersion.dataset_id == dataset_id,
+            DatasetVersion.id != dataset_version.id
+        ).order_by(DatasetVersion.version_number.desc()).first()
+        if previous_version:
+            inherited_count = copy_descriptions_from_previous_version(
+                db=db,
+                new_version_id=str(dataset_version.id),
+                previous_version_id=str(previous_version.id),
+                user_id=user["sub"],
+            )
+            if inherited_count:
+                logger.info(
+                    f"📋 {inherited_count} description(s) héritée(s) de v{previous_version.version_number} "
+                    f"vers v{dataset_version.version_number}"
+                )
 
     # 3️⃣ Convertir en dict (on garde aussi les descriptions vides pour pouvoir effacer)
     input_by_column: Dict[str, str] = {}
@@ -563,14 +634,11 @@ async def get_parent_suggestions(
     
     # 2️⃣ Importer compute_similarity_score
     from atlas.signatures import compute_similarity_score
-    from db.dataset_signatures import DatasetSignature
     from db.dataset_versions import DatasetVersion
-    
+
     # 3️⃣ Récupérer la signature courante
-    current_sig = db.query(DatasetSignature).filter(
-        DatasetSignature.dataset_id == dataset_id
-    ).order_by(DatasetSignature.created_at.desc()).first()
-    
+    current_sig = _ensure_dataset_signature(db, dataset)
+
     if not current_sig:
         logger.info("❌ Aucune signature trouvée pour le dataset courant")
         return {"has_parent": False, "suggestions": []}

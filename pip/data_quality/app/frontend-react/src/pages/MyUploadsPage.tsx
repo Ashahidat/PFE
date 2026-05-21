@@ -99,8 +99,14 @@ export default function MyUploadsPage() {
     setNotice(null);
     setLoading(true);
     try {
-      await api.put(`/api/datasets/${datasetId}/description`, { description: description.trim() || null });
-      setNotice("Description mise à jour (DB + Atlas si synchronisé).");
+      const res = await api.put<{ pending_atlas_sync?: boolean }>(`/api/datasets/${datasetId}/description`, {
+        description: description.trim() || null
+      });
+      setNotice(
+        res?.pending_atlas_sync
+          ? "Description mise à jour en base. Atlas sera synchronisé au prochain push."
+          : "Description mise à jour (DB + Atlas)."
+      );
       await load();
     } catch (e) {
       const err = e as ApiError;
@@ -142,83 +148,96 @@ export default function MyUploadsPage() {
               {projectName}
             </Typography>
             <Stack spacing={1.5}>
-              {list.map((d) => (
-                <Paper key={d.id} variant="outlined" sx={{ p: 2 }}>
-                  <Stack spacing={1}>
-                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                          {d.name}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {d.id} {d.created_at ? `· ${d.created_at}` : ""}
-                        </Typography>
-                      </Box>
-                      <Stack direction="row" spacing={1} flexWrap="wrap">
-                        <Chip size="small" label={`Visibilité: ${d.classification}`} />
-                        <Chip size="small" label={`${d.columns_count} colonnes`} variant="outlined" />
-                        <Chip
+              {list.map((d) => {
+                const currentValue = descDraft[d.id] ?? "";
+                const savedValue = d.description ?? "";
+                const isDirty = currentValue !== savedValue;
+
+                return (
+                  <Paper key={d.id} variant="outlined" sx={{ p: 2 }}>
+                    <Stack spacing={1}>
+                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                            {d.name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {d.id} {d.created_at ? `· ${d.created_at}` : ""}
+                          </Typography>
+                        </Box>
+                        <Stack direction="row" spacing={1} flexWrap="wrap">
+                          <Chip size="small" label={`Visibilité: ${d.classification}`} />
+                          <Chip size="small" label={`${d.columns_count} colonnes`} variant="outlined" />
+                          <Chip
+                            size="small"
+                            label={d.atlas_synced ? "Atlas: synced" : "Atlas: not synced"}
+                            color={d.atlas_synced ? "success" : "warning"}
+                            variant={d.atlas_synced ? "filled" : "outlined"}
+                          />
+                        </Stack>
+                      </Stack>
+
+                      <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
+                        <Button
+                          variant="outlined"
+                          onClick={() => {
+                            setLastDatasetId(d.id);
+                            navigate(`/describe?dataset_id=${encodeURIComponent(d.id)}`);
+                          }}
+                        >
+                          Ouvrir gouvernance
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          onClick={() => {
+                            setLastDatasetId(d.id);
+                            navigate("/run");
+                          }}
+                        >
+                          Valider qualité (Airflow)
+                        </Button>
+                        <Button
+                          variant="contained"
+                          onClick={() => pushAtlas(d.id)}
+                          disabled={loading || d.atlas_synced}
+                          title={
+                            d.atlas_synced
+                              ? "Déjà synchronisé avec Atlas"
+                              : !d.atlas_guid
+                                ? "1ère synchro Atlas (push) crée le guid"
+                                : undefined
+                          }
+                        >
+                          Finaliser (push Atlas)
+                        </Button>
+                      </Stack>
+
+                      <Typography variant="subtitle2" sx={{ mt: 1 }}>
+                        Description dataset (éditable par le propriétaire)
+                      </Typography>
+                      <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
+                        <TextField
+                          fullWidth
                           size="small"
-                          label={d.atlas_synced ? "Atlas: synced" : "Atlas: not synced"}
-                          color={d.atlas_synced ? "success" : "warning"}
-                          variant={d.atlas_synced ? "filled" : "outlined"}
+                          placeholder="Description…"
+                          value={currentValue}
+                          onChange={(e) => setDescDraft((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                          disabled={!d.can_edit}
+                          helperText={!d.can_edit ? "Vous n'avez pas les droits pour modifier ce dataset." : " "}
                         />
+                        <Button
+                          variant={isDirty ? "outlined" : "contained"}
+                          color={isDirty ? "primary" : "success"}
+                          disabled={!d.can_edit || loading || !isDirty}
+                          onClick={() => void saveDescription(d.id, descDraft[d.id] ?? "")}
+                        >
+                          {isDirty ? "Sauver" : "Enregistré"}
+                        </Button>
                       </Stack>
                     </Stack>
-
-                    <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
-                      <Button
-                        variant="outlined"
-                        onClick={() => {
-                          setLastDatasetId(d.id);
-                          navigate(`/describe?dataset_id=${encodeURIComponent(d.id)}`);
-                        }}
-                      >
-                        Ouvrir gouvernance
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        onClick={() => {
-                          setLastDatasetId(d.id);
-                          navigate("/run");
-                        }}
-                      >
-                        Valider qualité (Airflow)
-                      </Button>
-                      <Button
-                        variant="contained"
-                        onClick={() => pushAtlas(d.id)}
-                        disabled={loading}
-                        title={!d.atlas_guid ? "1ère synchro Atlas (push) crée le guid" : undefined}
-                      >
-                        Finaliser (push Atlas)
-                      </Button>
-                    </Stack>
-
-                    <Typography variant="subtitle2" sx={{ mt: 1 }}>
-                      Description dataset (édition directe = synchro immédiate si Atlas sync)
-                    </Typography>
-                    <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        placeholder="Description…"
-                        value={descDraft[d.id] ?? ""}
-                        onChange={(e) => setDescDraft((prev) => ({ ...prev, [d.id]: e.target.value }))}
-                        disabled={!d.can_edit}
-                        helperText={!d.can_edit ? "Pour éditer directement ici: dataset doit être Atlas synced + droits." : " "}
-                      />
-                      <Button
-                        variant="outlined"
-                        disabled={!d.can_edit || loading}
-                        onClick={() => void saveDescription(d.id, descDraft[d.id] ?? "")}
-                      >
-                        Sauver
-                      </Button>
-                    </Stack>
-                  </Stack>
-                </Paper>
-              ))}
+                  </Paper>
+                );
+              })}
             </Stack>
           </Paper>
         ))}

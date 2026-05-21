@@ -97,4 +97,7 @@ async def dag_status(dag_run_id: str, db: Session = Depends(get_db), user=Depend
     state = get_dag_status(dag_run.dag_run_id, dag_id=dag_id)
     dag_run.status = state
     db.commit()
-    return {"state": state}
+    return {
+        "state": state,
+        "dataset_id": str(dag_run.dataset_id) if dag_run.dataset_id else None,
+    }

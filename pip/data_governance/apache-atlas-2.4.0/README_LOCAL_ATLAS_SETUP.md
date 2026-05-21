@@ -85,8 +85,8 @@ You can also run it manually:
 
 ## How to validate it worked
 
-1. Atlas should be reachable on port 21000:
-   - `curl -u admin:admin http://localhost:21000/api/atlas/admin/version`
+1. Atlas should be reachable on the internal write port `21002`:
+   - `curl -u admin:admin http://localhost:21002/api/atlas/admin/version`
 
 2. Setup should have executed (first start after enabling it):
    - In `logs/application.log`, look for lines like:
@@ -97,17 +97,17 @@ You can also run it manually:
      - `Instance __AtlasUserProfile with unique attribute {name=admin} does not exist`
 
 4. If Atlas is up but you *still* see `__AtlasUserProfile(name=admin) does not exist`:
-   - Create the missing internal profile entity once:
-   - `curl -u admin:admin -H "Content-Type: application/json" -X POST http://localhost:21000/api/atlas/v2/entity -d '{"entities":[{"typeName":"__AtlasUserProfile","guid":"-1","attributes":{"name":"admin","fullName":"admin"}}]}'`
+   - Create the missing internal profile entity once via the write-capable listener:
+   - `curl -u admin:admin -H "Content-Type: application/json" -X POST http://localhost:21002/api/atlas/v2/entity -d '{"entities":[{"typeName":"__AtlasUserProfile","guid":"-1","attributes":{"name":"admin","fullName":"admin"}}]}'`
    - Then verify:
-   - `curl -u admin:admin "http://localhost:21000/api/atlas/v2/entity/uniqueAttribute/type/__AtlasUserProfile?attr:name=admin"`
+   - `curl -u admin:admin "http://localhost:21002/api/atlas/v2/entity/uniqueAttribute/type/__AtlasUserProfile?attr:name=admin"`
 
 4. Optional: verify the typedef lookup path (Atlas v2):
-   - `curl -u admin:admin "http://localhost:21000/api/atlas/v2/types/typedefs?name=__AtlasUserProfile&type=entity"`
+   - `curl -u admin:admin "http://localhost:21001/api/atlas/v2/types/typedefs?name=__AtlasUserProfile&type=entity"`
    - Note: `GET /api/atlas/v2/types/typedef/__AtlasUserProfile` can return 404 depending on Atlas version/routes.
 
 6. Then re-run the action that used to fail (example from this project):
-   - Backend calls Atlas via `PUT http://localhost:21000/api/atlas/v2/entity`
+   - Backend calls Atlas via the internal write endpoint `http://localhost:21002/api/atlas/v2/entity`
    - If Atlas is healthy, the dataset/column metadata sync should no longer return 500.
 
 ## Rollback (go back easily)

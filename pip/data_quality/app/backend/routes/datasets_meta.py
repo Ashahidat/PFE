@@ -251,7 +251,7 @@ def _build_my_dataset_item(dataset: Dataset, user: dict, db: Session) -> MyDatas
             visibility=dataset.project.visibility
         )
 
-    can_edit = can_modify_dataset(user, dataset, db) and bool(dataset.atlas_synced)
+    can_edit = can_modify_dataset(user, dataset, db)
     return MyDatasetListItem(
         id=str(dataset.id),
         name=dataset.name,
@@ -561,23 +561,30 @@ async def update_dataset_description(
     if not can_modify_dataset(user, dataset, db):
         raise HTTPException(status_code=403, detail="Droits insuffisants")
 
-    _ensure_atlas_synced(dataset)
-
-    previous_synced = bool(getattr(dataset, "atlas_synced", False))
-    dataset.atlas_synced = False
-    db.commit()
-
     dataset.description = (payload.description or "").strip() or None
+    db.commit()
+    db.refresh(dataset)
+
+    atlas_ready = bool(getattr(dataset, "atlas_guid", None)) and bool(getattr(dataset, "atlas_synced", False))
+    previous_synced = bool(getattr(dataset, "atlas_synced", False))
+    atlas_error = None
 
     try:
-        # This sync updates dataset description in Atlas and realigns glossary term assignments too.
-        sync_dataset_metadata_to_atlas(db, dataset)
+        if atlas_ready:
+            dataset.atlas_synced = False
+            db.commit()
+            # This sync updates dataset description in Atlas and realigns glossary term assignments too.
+            sync_dataset_metadata_to_atlas(db, dataset)
+            dataset.atlas_synced = True
+            db.commit()
     except Exception as exc:
+        atlas_error = str(exc)
         dataset.atlas_synced = previous_synced
         db.commit()
         raise HTTPException(status_code=500, detail=f"Erreur synchronisation Atlas: {exc}")
 
-    dataset.atlas_synced = True
-    db.commit()
-
-    return {"description": dataset.description}
+    return {
+        "description": dataset.description,
+        "pending_atlas_sync": not atlas_ready,
+        "atlas_error": atlas_error,
+    }

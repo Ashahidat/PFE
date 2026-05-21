@@ -5,8 +5,11 @@ Goal:
 - The application remains the only write-capable path into Atlas.
 
 This repo implements that by running:
-1) Atlas internally on `127.0.0.1:21001` (write-capable, reachable only locally)
-2) Nginx proxy on `:21000` (human entrypoint, read-only enforcement at the API level)
+1) Atlas internally on `127.0.0.1:21002` (write-capable, reachable only locally)
+2) Nginx proxy on `:21001` (human entrypoint, read-only enforcement at the API level)
+
+The browser UI also disables write requests when it is opened on `21001`, so
+users should only ever browse Atlas through the public proxy.
 
 ## 1) Start Atlas on the internal port
 
@@ -20,13 +23,13 @@ Option B (manual), from `pip/data_governance/apache-atlas-2.4.0/bin`:
 
 ```bash
 ./atlas_stop.py || true
-./atlas_start.py -port 21001
+./atlas_start.py -port 21002
 ```
 
 Validate:
 
 ```bash
-curl -u admin:admin http://127.0.0.1:21001/api/atlas/admin/version
+curl -u admin:admin http://127.0.0.1:21002/api/atlas/admin/version
 ```
 
 ## 2) Start Nginx with the read-only proxy config
@@ -70,16 +73,19 @@ Handy commands:
 - `atlas-internal-start` / `atlas-internal-stop`
 
 Atlas UI for humans:
-- http://<machine>:21000
+- http://<machine>:21001
+
+Do not use `21002` in a browser. That port is for the local Atlas backend and
+remains write-capable for the application.
 
 ## 3) Point the app to the internal Atlas port
 
-Backend code now uses `ATLAS_REST_ADDRESS` (default `http://127.0.0.1:21001`).
+Backend code now uses `ATLAS_REST_ADDRESS` (default `http://127.0.0.1:21002`).
 
 If needed, export:
 
 ```bash
-export ATLAS_REST_ADDRESS=http://127.0.0.1:21001
+export ATLAS_REST_ADDRESS=http://127.0.0.1:21002
 export ATLAS_USERNAME=admin
 export ATLAS_PASSWORD=admin
 ```

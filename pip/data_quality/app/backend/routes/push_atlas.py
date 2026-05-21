@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from sqlalchemy.sql import func
 import logging
 import os
@@ -27,7 +28,7 @@ from db.crud_dataset_versions import (
 )
 from db.crud_processes import create_process_record
 from db.crud_column_lineage import bulk_create_column_lineage, ColumnLineage
-from db.crud_push_history import create_push_history
+from db.push_history import PushHistory
 from atlas.client import atlas_post, atlas_put, ATLAS_TYPEDEF_URL, ATLAS_SEARCH_URL, atlas_get
 from atlas.typedefs import typedefs_payload
 from atlas.datasets import create_dataset, link_versioning
@@ -103,6 +104,15 @@ def _apply_saved_glossary_assignments(
     return results
 
 
+def _latest_push_history(db: Session, dataset_id: str) -> PushHistory | None:
+    return (
+        db.query(PushHistory)
+        .filter(PushHistory.dataset_id == dataset_id)
+        .order_by(desc(PushHistory.pushed_at), desc(PushHistory.id))
+        .first()
+    )
+
+
 def _deploy_typedef_with_retry(payload_key: str, entity_def: Dict, max_attempts: int = 4, backoff: float = 1.5):
     attempt = 0
     while attempt < max_attempts:
@@ -150,6 +160,7 @@ def push_atlas(
     processed_files = []
     security_success = False  # 👈 NOUVEAU
     security_classification = None  # PUBLIC | RESTRICTED (valeur réellement appliquée)
+    push_history_row = None
     glossary_stats = {
         "created_terms": 0,
         "existing_terms": 0,
@@ -171,6 +182,30 @@ def push_atlas(
         dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset introuvable")
+
+        latest_push = _latest_push_history(db, dataset_id)
+        if latest_push and latest_push.status == "RUNNING":
+            raise HTTPException(
+                status_code=409,
+                detail="Un push Atlas est déjà en cours pour ce dataset",
+            )
+
+        if dataset.atlas_guid and dataset.atlas_synced:
+            logger.info("ℹ️ Push ignoré: dataset déjà synchronisé avec Atlas")
+            return {
+                "message": "Dataset déjà synchronisé avec Atlas",
+                "dataset_guid": dataset.atlas_guid,
+                "already_synced": True,
+            }
+
+        push_history_row = PushHistory(
+            id=uuid.uuid4(),
+            dataset_id=dataset.id,
+            pushed_by=employee_id,
+            status="RUNNING",
+        )
+        db.add(push_history_row)
+        db.commit()
 
         file_path = dataset.file_path
         hash_value = dataset.hash
@@ -787,18 +822,15 @@ def push_atlas(
         # 9️⃣ ENREGISTRER L'HISTORIQUE DE PUSH
         # ----------------------
         execution_time = int((time.time() - start_time) * 1000)
-        create_push_history(
-            db=db,
-            dataset_id=dataset.id,
-            pushed_by=employee_id,
-            status="SUCCESS",
-            execution_time_ms=execution_time,
-            columns_count=columns_count,
-            rows_count=rows_count,
-            parent_found=(parent_guid is not None),
-            similarity_score=similarity_score if similarity_score > 0 else None,
-            propagated_columns_count=propagated
-        )
+        if push_history_row is not None:
+            push_history_row.status = "SUCCESS"
+            push_history_row.execution_time_ms = execution_time
+            push_history_row.columns_count = columns_count
+            push_history_row.rows_count = rows_count
+            push_history_row.parent_found = (parent_guid is not None)
+            push_history_row.similarity_score = similarity_score if similarity_score > 0 else None
+            push_history_row.propagated_columns_count = propagated
+            db.commit()
         logger.info(f"📊 Historique push enregistré (durée: {execution_time}ms)")
 
         return {
@@ -838,15 +870,12 @@ def push_atlas(
         
         try:
             execution_time = int((time.time() - start_time) * 1000)
-            create_push_history(
-                db=db,
-                dataset_id=dataset_id,
-                pushed_by=employee_id,
-                status="FAILED",
-                error_message=str(e)[:500],
-                execution_time_ms=execution_time
-            )
-            logger.info(f"📊 Échec enregistré dans push_history")
+            if push_history_row is not None:
+                push_history_row.status = "FAILED"
+                push_history_row.error_message = str(e)[:500]
+                push_history_row.execution_time_ms = execution_time
+                db.commit()
+                logger.info(f"📊 Échec enregistré dans push_history")
         except Exception as inner_e:
             logger.error(f"❌ Impossible d'enregistrer l'échec: {inner_e}")
         

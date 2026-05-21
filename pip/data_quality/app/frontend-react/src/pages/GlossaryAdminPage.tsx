@@ -22,7 +22,14 @@ import PageHeader from "../components/PageHeader";
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../lib/api";
 
-type Glossary = { id: number; name: string; description?: string | null; created_at?: string | null };
+type Glossary = {
+  id: number;
+  name: string;
+  description?: string | null;
+  department?: string | null;
+  created_at?: string | null;
+};
+type Department = { code: string; label: string; is_active: boolean };
 type Category = { id: number; name: string; description?: string | null; glossary_id: number; glossary_name?: string | null };
 type Term = {
   id: number;
@@ -41,12 +48,14 @@ export default function GlossaryAdminPage() {
   const [loading, setLoading] = useState(false);
 
   const [glossaries, setGlossaries] = useState<Glossary[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [terms, setTerms] = useState<Term[]>([]);
 
   // Create/edit forms
   const [gId, setGId] = useState<number | null>(null);
   const [gName, setGName] = useState("");
+  const [gDepartment, setGDepartment] = useState("");
   const [gDesc, setGDesc] = useState("");
 
   const [cId, setCId] = useState<number | null>(null);
@@ -65,19 +74,28 @@ export default function GlossaryAdminPage() {
     [categories, tGlossaryId]
   );
 
+  function slugifyGlossaryName(name: string) {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_");
+  }
+
   async function loadAll() {
     setError(null);
     setNotice(null);
     setLoading(true);
     try {
-      const [gs, cs, ts] = await Promise.all([
+      const [gs, ds, cs, ts] = await Promise.all([
         api.get<Glossary[]>("/glossary/glossaries"),
+        api.get<Department[]>("/departments/allowed"),
         api.get<Category[]>("/glossary/categories"),
         api.get<Term[]>("/glossary/terms")
       ]);
       setGlossaries(gs || []);
+      setDepartments(ds || []);
       setCategories(cs || []);
       setTerms(ts || []);
+      setGDepartment((current) => current || ds?.[0]?.code || "");
     } catch (e) {
       const err = e as ApiError;
       setError(err.bodyText || err.message);
@@ -108,6 +126,7 @@ export default function GlossaryAdminPage() {
   function resetG() {
     setGId(null);
     setGName("");
+    setGDepartment(departments[0]?.code || "");
     setGDesc("");
   }
   function resetC() {
@@ -125,15 +144,34 @@ export default function GlossaryAdminPage() {
   }
 
   async function saveGlossary() {
+    const department = gDepartment.trim();
+    const qualifiedName = slugifyGlossaryName(gName);
+    if (!department) {
+      setError("Choisis un département.");
+      return;
+    }
+    if (!qualifiedName) {
+      setError("Le nom du glossaire est obligatoire.");
+      return;
+    }
     setError(null);
     setNotice(null);
     setLoading(true);
     try {
       if (gId) {
-        await api.put(`/glossary/glossaries/${gId}`, { name: gName, description: gDesc || null });
+        await api.put(`/glossary/glossaries/${gId}`, {
+          name: gName,
+          description: gDesc || null,
+          department
+        });
         setNotice("Glossaire modifié.");
       } else {
-        await api.post("/glossary/glossaries", { name: gName, description: gDesc || null });
+        await api.post("/glossary/glossaries", {
+          name: gName,
+          qualified_name: qualifiedName,
+          description: gDesc || null,
+          department
+        });
         setNotice("Glossaire créé.");
       }
       resetG();
@@ -284,6 +322,24 @@ export default function GlossaryAdminPage() {
               <Typography variant="subtitle1">{gId ? "Modifier glossaire" : "Créer glossaire"}</Typography>
               <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
                 <TextField label="Nom" fullWidth value={gName} onChange={(e) => setGName(e.target.value)} />
+                <FormControl fullWidth>
+                  <InputLabel id="glossary-dept-label">Département</InputLabel>
+                  <Select
+                    labelId="glossary-dept-label"
+                    label="Département"
+                    value={gDepartment}
+                    onChange={(e) => setGDepartment(String(e.target.value))}
+                  >
+                    <MenuItem value="">
+                      <em>Sélectionner…</em>
+                    </MenuItem>
+                    {departments.map((d) => (
+                      <MenuItem key={d.code} value={d.code}>
+                        {d.label} ({d.code})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
                 <TextField
                   label="Description"
                   fullWidth
@@ -293,7 +349,7 @@ export default function GlossaryAdminPage() {
                 <Button
                   variant="contained"
                   startIcon={<AddOutlinedIcon />}
-                  disabled={loading || gName.trim().length < 2}
+                  disabled={loading || gName.trim().length < 2 || !gDepartment}
                   onClick={saveGlossary}
                 >
                   {gId ? "Enregistrer" : "Créer"}
@@ -314,6 +370,7 @@ export default function GlossaryAdminPage() {
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="body2">{g.name}</Typography>
                         <Typography variant="caption" color="text.secondary">
+                          {g.department ? `${g.department} · ` : ""}
                           {g.description || "—"}
                         </Typography>
                       </Box>
@@ -324,6 +381,7 @@ export default function GlossaryAdminPage() {
                         onClick={() => {
                           setGId(g.id);
                           setGName(g.name);
+                          setGDepartment(g.department || departments[0]?.code || "");
                           setGDesc(g.description || "");
                         }}
                       >

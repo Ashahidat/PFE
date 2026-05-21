@@ -2,7 +2,7 @@ import requests
 import json
 import os
 
-ATLAS_REST_ADDRESS = os.getenv("ATLAS_REST_ADDRESS", "http://127.0.0.1:21001").rstrip("/")
+ATLAS_REST_ADDRESS = os.getenv("ATLAS_REST_ADDRESS", "http://127.0.0.1:21002").rstrip("/")
 ATLAS_URL = f"{ATLAS_REST_ADDRESS}/api/atlas/v2"
 ATLAS_AUTH = (
     os.getenv("ATLAS_USERNAME", "admin"),
