@@ -31,11 +31,12 @@ UTILS_DIR = BASE_DIR / "utils"
 TMP_DIR = BASE_DIR / "tmp"
 RESULTS_DIR = BASE_DIR / "results"
 LOGS_DIR = BASE_DIR / "logs"
+ML_MODELS_DIR = BASE_DIR / "models" / "ml_profiles"
 
 # ============================================================================
 # CRÉATION AUTOMATIQUE DES DOSSIERS
 # ============================================================================
-for d in [TMP_DIR, RESULTS_DIR, LOGS_DIR]:
+for d in [TMP_DIR, RESULTS_DIR, LOGS_DIR, ML_MODELS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
@@ -78,5 +79,6 @@ __all__ = [
     "TMP_DIR",
     "RESULTS_DIR",
     "LOGS_DIR",
+    "ML_MODELS_DIR",
     "add_to_syspath",
 ]

@@ -150,13 +150,34 @@ def validate_deequ(init_data: Dict) -> List[Dict]:
     return results
 
 
+@task
+def validate_ml_profile(init_data: Dict) -> List[Dict]:
+    """Valide le risque de profil colonne via le modèle ML champion."""
+    from validators.ml_profile_validator import run as run_ml_profile
+    from pyspark.sql import SparkSession
+
+    spark = SparkSession.builder \
+        .master("local[*]") \
+        .appName("ValidateMLProfile") \
+        .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.3-spark-3.3") \
+        .getOrCreate()
+
+    file_path = init_data["file_path"]
+    df = spark.read.parquet(file_path)
+    results = run_ml_profile(spark, df, init_data.get("rules", {}).get("ml_profile", {}))
+
+    spark.stop()
+    return results
+
+
 # MODIFIER aggregate_results pour accepter deequ_results
 @task
 def aggregate_results(
     init_data: Dict,
     duplicates_results: List[Dict],
     regex_results: List[Dict],
-    deequ_results: List[Dict]  # ← NOUVEAU paramètre
+    deequ_results: List[Dict],
+    ml_profile_results: List[Dict]
 ) -> Dict:
     """Agrège tous les résultats et sauvegarde"""
     from datetime import datetime as dt
@@ -213,6 +234,17 @@ def aggregate_results(
             "ratio": check.get("ratio", "0/0"),
             "examples": check.get("exemples", [])
         })
+
+    # Standardiser les résultats ML profile
+    for check in ml_profile_results:
+        standardized["checks"].append({
+            "rule_type": check.get("type de test", "ml_profile"),
+            "column_name": check.get("colonne testée"),
+            "status": map_status(check.get("statut")),
+            "error_count": check.get("nombre", 0),
+            "ratio": check.get("ratio", "0/0"),
+            "examples": check.get("exemples", [])
+        })
     
     output_path = RESULTS_DIR / f"{init_data['dag_run_uuid']}_validation.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -253,12 +285,16 @@ with DAG(
     
     # 4. Validation Deequ (1 tâche) - NOUVEAU
     deequ = validate_deequ(init)
+
+    # 5. Validation ML profile
+    ml_profile = validate_ml_profile(init)
+
+    # 6. Agrégation
+    final = aggregate_results(init, duplicates, regex, deequ, ml_profile)
     
-    # 5. Agrégation
-    final = aggregate_results(init, duplicates, regex, deequ)
-    
-    # Dépendances : duplicates, regex et deequ s'exécutent en parallèle
-    init >> [duplicates, regex, deequ]  # ← Les 3 en parallèle
+    # Dépendances : duplicates, regex, deequ et ml_profile s'exécutent en parallèle
+    init >> [duplicates, regex, deequ, ml_profile]  # ← Les tâches en parallèle
     duplicates >> final
     regex >> final
-    deequ >> final  # ← NOUVEAU
+    deequ >> final
+    ml_profile >> final

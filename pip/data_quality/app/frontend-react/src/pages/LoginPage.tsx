@@ -12,7 +12,13 @@ import {
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
-import { setEmployeeId, setToken, setUserDepartment, setUserRole, setUsername } from "../lib/storage";
+import {
+  setEmployeeId as setStoredEmployeeId,
+  setToken,
+  setUserDepartment,
+  setUserRole,
+  setUsername as setStoredUsername
+} from "../lib/storage";
 
 type LoginResponse = {
   access_token: string;
@@ -47,10 +53,10 @@ export default function LoginPage() {
       if (department.trim()) payload.department = department.trim();
       const res = await api.post<LoginResponse>("/login", payload);
       setToken(res.access_token);
-      setUsername(res.username);
+      setStoredUsername(res.username);
       setUserRole(res.role);
       setUserDepartment(res.department);
-      setEmployeeId(res.employee_id);
+      setStoredEmployeeId(res.employee_id);
       if (res.role === "ADMIN_GLOSSAIRE") navigate("/glossary");
       else if (res.role === "SUPER_ADMIN" || res.role === "ADMIN") navigate("/users");
       else navigate("/projects");

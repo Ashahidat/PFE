@@ -1,5 +1,4 @@
-import { Box, Breadcrumbs, Link, Stack, Typography } from "@mui/material";
-import { Link as RouterLink } from "react-router-dom";
+import { Box, Link, Stack, Typography } from "@mui/material";
 
 export default function PageHeader(props: {
   title: string;
@@ -12,10 +11,10 @@ export default function PageHeader(props: {
     <Stack direction="row" alignItems="flex-start" justifyContent="space-between" sx={{ mb: 2, gap: 2 }}>
       <Box>
         {crumbs?.length ? (
-          <Breadcrumbs sx={{ mb: 0.5 }}>
+          <Stack direction="row" spacing={0.75} flexWrap="wrap" sx={{ mb: 0.5 }}>
             {crumbs.map((c, idx) =>
               c.to ? (
-                <Link key={idx} component={RouterLink} underline="hover" to={c.to} color="inherit">
+                <Link key={idx} href={c.to} underline="hover" color="inherit">
                   {c.label}
                 </Link>
               ) : (
@@ -24,7 +23,7 @@ export default function PageHeader(props: {
                 </Typography>
               )
             )}
-          </Breadcrumbs>
+          </Stack>
         ) : null}
         <Typography variant="h5">{title}</Typography>
         {subtitle ? (
@@ -37,4 +36,3 @@ export default function PageHeader(props: {
     </Stack>
   );
 }
-

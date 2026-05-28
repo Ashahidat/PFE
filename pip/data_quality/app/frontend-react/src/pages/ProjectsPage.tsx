@@ -15,9 +15,6 @@ import {
   TextField,
   Typography
 } from "@mui/material";
-import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
-import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
-import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
@@ -86,7 +83,7 @@ export default function ProjectsPage() {
         title="Projets"
         subtitle="Crée et pilote des espaces de gouvernance (visibilité, dashboards, datasets)."
         right={
-          <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setOpen(true)}>
+          <Button variant="contained" onClick={() => setOpen(true)}>
             Nouveau projet
           </Button>
         }
@@ -127,7 +124,6 @@ export default function ProjectsPage() {
                   <Button
                     variant="outlined"
                     size="small"
-                    startIcon={<UploadFileOutlinedIcon />}
                     onClick={() => navigate(`/upload?project_id=${encodeURIComponent(p.id)}`)}
                   >
                     Uploader un dataset
@@ -139,7 +135,9 @@ export default function ProjectsPage() {
                       Dashboards Grafana (read-only)
                     </Typography>
                     <IconButton size="small" component={Link} href={p.grafana_links.folder.url} target="_blank">
-                      <OpenInNewOutlinedIcon fontSize="small" />
+                      <Typography variant="caption" component="span">
+                        Ouvrir
+                      </Typography>
                     </IconButton>
                   </Stack>
                 ) : null}

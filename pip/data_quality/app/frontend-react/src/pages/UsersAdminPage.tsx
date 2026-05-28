@@ -17,10 +17,6 @@ import {
   TextField,
   Typography
 } from "@mui/material";
-import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
-import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
-import PersonOffOutlinedIcon from "@mui/icons-material/PersonOffOutlined";
-import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import PageHeader from "../components/PageHeader";
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../lib/api";
@@ -193,7 +189,7 @@ export default function UsersAdminPage() {
         title="Gestion des utilisateurs"
         subtitle="Créer et gérer les comptes (rôle, département, activation)."
         right={
-          <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setCreateOpen(true)}>
+          <Button variant="contained" onClick={() => setCreateOpen(true)}>
             Créer un utilisateur
           </Button>
         }
@@ -241,7 +237,7 @@ export default function UsersAdminPage() {
                     {u.is_protected ? <Chip size="small" label="Protégé" color="warning" variant="outlined" /> : null}
                   </Stack>
                 </Box>
-                <Button variant="outlined" startIcon={<EditOutlinedIcon />} onClick={() => openEdit(u)} disabled={loading}>
+                <Button variant="outlined" onClick={() => openEdit(u)} disabled={loading}>
                   Modifier
                 </Button>
               </Stack>
@@ -368,11 +364,7 @@ export default function UsersAdminPage() {
             <Divider />
 
             <Stack direction="row" spacing={1} alignItems="center">
-              <Chip
-                icon={editIsActive ? <PersonOutlinedIcon /> : <PersonOffOutlinedIcon />}
-                label={editIsActive ? "Actif" : "Inactif"}
-                variant="outlined"
-              />
+              <Chip label={editIsActive ? "Actif" : "Inactif"} variant="outlined" />
               <Button
                 variant="outlined"
                 color={editIsActive ? "warning" : "success"}
@@ -400,4 +392,3 @@ export default function UsersAdminPage() {
     </Box>
   );
 }
-

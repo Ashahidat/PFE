@@ -3,17 +3,20 @@ import {
   Box,
   Button,
   Chip,
+  Divider,
   LinearProgress,
   Paper,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Typography
+  Typography,
+  Accordion,
+  AccordionDetails,
+  AccordionSummary
 } from "@mui/material";
+import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
+import CheckCircleOutlineOutlinedIcon from "@mui/icons-material/CheckCircleOutlineOutlined";
+import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
+import DoDisturbOnOutlinedIcon from "@mui/icons-material/DoDisturbOnOutlined";
 import PageHeader from "../components/PageHeader";
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../lib/api";
@@ -28,7 +31,15 @@ type ResultItem = {
   examples?: any[];
 };
 
-function statusColor(status?: string): "success" | "error" | "warning" | "default" {
+type FriendlyRule = {
+  title: string;
+  explanation: string;
+  whatItChecks: string;
+};
+
+type NoticeSeverity = "success" | "info" | "warning" | "error";
+
+function normalizeStatus(status?: string): "success" | "error" | "warning" | "default" {
   const s = String(status || "").toLowerCase();
   if (["réussi", "success", "pass"].includes(s)) return "success";
   if (["échoué", "failed", "fail"].includes(s)) return "error";
@@ -36,9 +47,72 @@ function statusColor(status?: string): "success" | "error" | "warning" | "defaul
   return "default";
 }
 
+function friendlyStatus(status?: string) {
+  const tone = normalizeStatus(status);
+  if (tone === "success") return { label: "OK", tone };
+  if (tone === "error") return { label: "À vérifier", tone };
+  if (tone === "warning") return { label: "Ignoré", tone };
+  return { label: String(status || "Inconnu"), tone };
+}
+
 function isTerminalState(state?: string | null) {
   const s = String(state || "").toLowerCase();
-  return ["success", "failed", "error", "failed", "cancelled", "canceled", "skipped", "done", "finished"].includes(s);
+  return ["success", "failed", "error", "cancelled", "canceled", "skipped", "done", "finished"].includes(s);
+}
+
+function humanizeRule(ruleType?: string): FriendlyRule {
+  const raw = String(ruleType || "").trim();
+  if (!raw) {
+    return {
+      title: "Contrôle",
+      explanation: "Un contrôle de qualité a été appliqué.",
+      whatItChecks: "Ce qu'on vérifie n'est pas précisé dans ce résultat."
+    };
+  }
+
+  if (raw.startsWith("ml_profile_")) {
+    return {
+      title: "Analyse intelligente de cohérence",
+      explanation: "Le système compare cette colonne à ce qu'il s'attend à voir dans ce type de données.",
+      whatItChecks: "On cherche des colonnes qui ressemblent trop à un identifiant, une valeur atypique ou une forme différente du reste du fichier."
+    };
+  }
+
+  const directMap: Record<string, FriendlyRule> = {
+    "doublons sur ligne entière": {
+      title: "Doublons sur des lignes complètes",
+      explanation: "On vérifie si des lignes identiques se répètent dans le fichier.",
+      whatItChecks: "Deux lignes exactement identiques sont comptées comme doublons."
+    },
+    regex: {
+      title: "Contrôle de format",
+      explanation: "On vérifie si les valeurs suivent le format attendu.",
+      whatItChecks: "Exemple: email, téléphone, code postal ou autre motif précis."
+    },
+    deequ: {
+      title: "Contrôle de cohérence",
+      explanation: "On vérifie des règles de qualité sur les valeurs.",
+      whatItChecks: "Ce contrôle peut tester les valeurs manquantes, les bornes ou d'autres règles définies."
+    }
+  };
+
+  if (directMap[raw]) return directMap[raw];
+
+  const clean = raw
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return {
+    title: clean.charAt(0).toUpperCase() + clean.slice(1),
+    explanation: "Un contrôle automatique a été appliqué à cette colonne.",
+    whatItChecks: "Les détails techniques du contrôle sont disponibles plus bas."
+  };
+}
+
+function examplesToText(examples?: any[]) {
+  if (!Array.isArray(examples) || examples.length === 0) return [];
+  return examples.filter((v) => typeof v === "string" && v.trim().length > 0).slice(0, 4);
 }
 
 export default function ResultsPage() {
@@ -47,16 +121,17 @@ export default function ResultsPage() {
   const [resolvedDatasetId, setResolvedDatasetId] = useState<string | null>(getLastDatasetId());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [atlasMsg, setAtlasMsg] = useState<string | null>(null);
+  const [atlasNotice, setAtlasNotice] = useState<{ message: string; severity: NoticeSeverity } | null>(null);
   const [atlasLoading, setAtlasLoading] = useState(false);
   const [atlasPushed, setAtlasPushed] = useState(false);
   const dagRunId = getLastDagRunId();
 
   const summary = useMemo(() => {
-    let total = 0,
-      ok = 0,
-      failed = 0,
-      skipped = 0;
+    let total = 0;
+    let ok = 0;
+    let failed = 0;
+    let skipped = 0;
+
     for (const it of items) {
       if (!it?.status) continue;
       total += 1;
@@ -65,8 +140,21 @@ export default function ResultsPage() {
       else if (["échoué", "failed", "fail"].includes(s)) failed += 1;
       else if (["ignoré", "skipped"].includes(s)) skipped += 1;
     }
+
     return { total, ok, failed, skipped };
   }, [items]);
+
+  const overviewText = useMemo(() => {
+    if (!summary.total) return "Aucun contrôle à afficher pour le moment.";
+    if (summary.failed > 0) {
+      return `Sur ${summary.total} contrôles, ${summary.ok} sont rassurants et ${summary.failed} mérite${summary.failed > 1 ? "nt" : ""} une vérification humaine.`;
+    }
+    if (summary.skipped > 0) {
+      const verb = summary.skipped > 1 ? "ont été" : "a été";
+      return `Sur ${summary.total} contrôles, ${summary.ok} sont rassurants et ${summary.skipped} contrôle${summary.skipped > 1 ? "s" : ""} ${verb} ignoré${summary.skipped > 1 ? "s" : ""}.`;
+    }
+    return `Tous les ${summary.total} contrôles affichés sont rassurants.`;
+  }, [summary]);
 
   async function loadOnce() {
     if (!dagRunId) return;
@@ -125,29 +213,29 @@ export default function ResultsPage() {
 
   async function pushAtlas() {
     if (!resolvedDatasetId || atlasPushed) return;
-    setAtlasMsg(null);
+    setAtlasNotice(null);
     setAtlasLoading(true);
     try {
       const res = await api.post<any>(`/push-atlas/${resolvedDatasetId}`, {});
       if (res?.already_synced) {
-        setAtlasMsg("ℹ️ Dataset déjà synchronisé avec Atlas.");
+        setAtlasNotice({ severity: "info", message: "Le dataset a déjà été synchronisé avec Atlas." });
         setAtlasPushed(true);
         return;
       }
       const applied = typeof res?.column_classifications_applied === "number" ? res.column_classifications_applied : null;
       const errors = typeof res?.column_classifications_errors === "number" ? res.column_classifications_errors : null;
       const extra = [
-        res?.dataset_guid ? "Dataset guid reçu." : null,
-        applied !== null ? `Classifications colonnes appliquées: ${applied}` : null,
-        errors !== null && errors > 0 ? `Erreurs classification colonnes: ${errors}` : null
-        ]
+        res?.dataset_guid ? "Identifiant Atlas reçu" : null,
+        applied !== null ? `${applied} classification${applied > 1 ? "s" : ""} colonne${applied > 1 ? "s" : ""} appliquée${applied > 1 ? "s" : ""}` : null,
+        errors !== null && errors > 0 ? `${errors} erreur${errors > 1 ? "s" : ""} de classification` : null
+      ]
         .filter(Boolean)
         .join(" · ");
-      setAtlasMsg(`✅ Push Atlas terminé.${extra ? ` ${extra}` : ""}`);
+      setAtlasNotice({ severity: "success", message: `Synchronisation Atlas terminée.${extra ? ` ${extra}` : ""}` });
       setAtlasPushed(true);
     } catch (e) {
       const err = e as ApiError;
-      setAtlasMsg(`❌ Push Atlas impossible. ${err.bodyText || err.message}`);
+      setAtlasNotice({ severity: "error", message: `Synchronisation Atlas impossible. ${err.bodyText || err.message}` });
     } finally {
       setAtlasLoading(false);
     }
@@ -157,7 +245,7 @@ export default function ResultsPage() {
     <Box>
       <PageHeader
         title="Résultats"
-        subtitle={dagRunId ? `DAG run: ${dagRunId}` : "Aucun run sélectionné"}
+        subtitle={dagRunId ? `Run: ${dagRunId}` : "Aucun run sélectionné"}
         right={
           <Stack direction="row" spacing={1}>
             <Button
@@ -176,79 +264,157 @@ export default function ResultsPage() {
                 !resolvedDatasetId
                   ? "Dataset introuvable pour ce run"
                   : !isTerminalState(state)
-                    ? "Le run doit être terminé avant de pousser Atlas"
+                    ? "Le run doit être terminé avant la synchronisation Atlas"
                     : atlasPushed
                       ? "Atlas a déjà été finalisé pour ce run"
                       : undefined
               }
             >
-              Finaliser (push Atlas)
+              Finaliser Atlas
             </Button>
           </Stack>
         }
       />
 
       {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
-      {!dagRunId ? <Alert severity="info">Lance des validations depuis “Valider qualité”.</Alert> : null}
+      {!dagRunId ? <Alert severity="info">Lance une validation depuis "Valider qualité" pour voir les résultats ici.</Alert> : null}
       {dagRunId ? (
         <Alert severity={isTerminalState(state) ? "success" : "info"} sx={{ mb: 2 }}>
           {isTerminalState(state)
-            ? "Le run est terminé. Les résultats affichés sont à jour."
-            : "Le run est en cours. La page se met à jour automatiquement toutes les 4 secondes."}
+            ? "Le traitement est terminé. Les résultats ci-dessous sont à jour."
+            : "Le traitement est en cours. La page se met à jour automatiquement toutes les 4 secondes."}
         </Alert>
       ) : null}
 
       {loading ? <LinearProgress sx={{ mb: 2 }} /> : null}
-      {atlasMsg ? <Alert severity={atlasMsg.startsWith("✅") ? "success" : "error"} sx={{ mb: 2 }}>{atlasMsg}</Alert> : null}
+      {atlasNotice ? <Alert severity={atlasNotice.severity} sx={{ mb: 2 }}>{atlasNotice.message}</Alert> : null}
 
       {dagRunId ? (
-        <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap">
-          <Chip label={`Total: ${summary.total}`} />
-          <Chip color="success" label={`OK: ${summary.ok}`} />
-          <Chip color="error" label={`Échecs: ${summary.failed}`} />
-          <Chip color="warning" label={`Ignorés: ${summary.skipped}`} />
-          <Chip variant="outlined" label={`State: ${state || "?"}`} />
-          {resolvedDatasetId ? <Chip variant="outlined" label={`Dataset: ${resolvedDatasetId}`} /> : null}
-        </Stack>
+        <Paper
+          elevation={0}
+          sx={{
+            borderRadius: 3,
+            p: 2.5,
+            mb: 2,
+            background: "linear-gradient(135deg, rgba(30,64,175,0.08), rgba(15,118,110,0.08))"
+          }}
+        >
+          <Stack spacing={1.5}>
+            <Box>
+              <Typography variant="h6" sx={{ mb: 0.5 }}>
+                Lecture simple
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {overviewText} Un statut "À vérifier" ne veut pas dire qu'il y a forcément une erreur grave. Cela veut juste dire qu'une colonne mérite un regard humain.
+              </Typography>
+            </Box>
+
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              <Chip label={`Contrôles: ${summary.total}`} />
+              <Chip color="success" icon={<CheckCircleOutlineOutlinedIcon />} label={`Rassurants: ${summary.ok}`} />
+              <Chip color="error" icon={<WarningAmberOutlinedIcon />} label={`À vérifier: ${summary.failed}`} />
+              <Chip color="warning" icon={<DoDisturbOnOutlinedIcon />} label={`Ignorés: ${summary.skipped}`} />
+              <Chip variant="outlined" label={`État: ${state || "?"}`} />
+              {resolvedDatasetId ? <Chip variant="outlined" label={`Dataset: ${resolvedDatasetId}`} /> : null}
+            </Stack>
+          </Stack>
+        </Paper>
       ) : null}
 
-      <Paper elevation={0} sx={{ borderRadius: 3, overflow: "hidden" }}>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Règle</TableCell>
-              <TableCell>Colonne</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell align="right">Erreurs</TableCell>
-              <TableCell>Ratio</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {(items || []).map((it, idx) => (
-              <TableRow key={idx} hover>
-                <TableCell>
-                  <Typography variant="body2">{it.rule_type || "—"}</Typography>
-                </TableCell>
-                <TableCell>{it.column_name || "—"}</TableCell>
-                <TableCell>
-                  <Chip size="small" label={it.status || "—"} color={statusColor(it.status)} />
-                </TableCell>
-                <TableCell align="right">{it.error_count ?? "—"}</TableCell>
-                <TableCell>{it.ratio || "—"}</TableCell>
-              </TableRow>
-            ))}
-            {items.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5}>
+      <Stack spacing={1.5}>
+        {(items || []).map((it, idx) => {
+          const rule = humanizeRule(it.rule_type);
+          const columnLabel = it.column_name || "Jeu de données entier";
+          const status = friendlyStatus(it.status);
+          const examples = examplesToText(it.examples);
+
+          return (
+            <Accordion key={idx} elevation={0} sx={{ borderRadius: 2, "&:before": { display: "none" }, overflow: "hidden" }}>
+              <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+                <Stack spacing={0.5} sx={{ width: "100%" }}>
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                      {rule.title}
+                    </Typography>
+                    <Chip size="small" label={status.label} color={status.tone} />
+                    <Chip size="small" variant="outlined" label={columnLabel} />
+                  </Stack>
                   <Typography variant="body2" color="text.secondary">
-                    Aucun résultat pour le moment.
+                    {rule.explanation}
                   </Typography>
-                </TableCell>
-              </TableRow>
-            ) : null}
-          </TableBody>
-        </Table>
-      </Paper>
+                </Stack>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Stack spacing={1.5}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                      Ce que cela veut dire
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {rule.whatItChecks}
+                    </Typography>
+                  </Box>
+
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                      Interprétation
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {status.tone === "success"
+                        ? "Rien d'inquiétant n'a été détecté sur cette colonne."
+                        : status.tone === "error"
+                          ? "Cette colonne sort du profil attendu. Elle mérite d'être revue par une personne."
+                          : status.tone === "warning"
+                            ? "Le contrôle a été ignoré ou n'a pas pu être appliqué."
+                            : "Le résultat est disponible mais son statut est moins clair."}
+                    </Typography>
+                  </Box>
+
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                      Indices techniques
+                    </Typography>
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                      <Chip size="small" variant="outlined" label={`Lignes concernées: ${it.error_count ?? 0}`} />
+                      <Chip size="small" variant="outlined" label={`Ratio: ${it.ratio || "—"}`} />
+                      <Chip size="small" variant="outlined" label={`Statut brut: ${it.status || "—"}`} />
+                    </Stack>
+                  </Box>
+
+                  {examples.length > 0 ? (
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                        Exemples
+                      </Typography>
+                      <Stack spacing={0.5}>
+                        {examples.map((ex, exIdx) => (
+                          <Typography key={exIdx} variant="body2" color="text.secondary">
+                            {ex}
+                          </Typography>
+                        ))}
+                      </Stack>
+                    </Box>
+                  ) : null}
+                </Stack>
+              </AccordionDetails>
+            </Accordion>
+          );
+        })}
+
+        {items.length === 0 ? (
+          <Paper elevation={0} sx={{ borderRadius: 2, p: 3 }}>
+            <Typography variant="body2" color="text.secondary">
+              Aucun résultat pour le moment.
+            </Typography>
+          </Paper>
+        ) : null}
+      </Stack>
+
+      <Divider sx={{ my: 3 }} />
+
+      <Alert severity="info">
+        Astuce de lecture: si un contrôle est en "À vérifier", cela ne veut pas dire que le fichier est mauvais. Cela veut dire qu'une colonne attire l'attention et qu'il faut confirmer si c'est normal dans ton contexte.
+      </Alert>
     </Box>
   );
 }

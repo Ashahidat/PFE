@@ -367,4 +367,3 @@ export default function RunTestsPage() {
     </Box>
   );
 }
-
