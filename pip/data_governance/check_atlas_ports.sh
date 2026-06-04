@@ -3,6 +3,7 @@ set -euo pipefail
 
 ATLAS_PUBLIC_PORT="${ATLAS_PUBLIC_PORT:-21001}"
 ATLAS_INTERNAL_PORT="${ATLAS_INTERNAL_PORT:-21002}"
+ATLAS_LEGACY_PORT="${ATLAS_LEGACY_PORT:-21000}"
 ATLAS_HOST="${ATLAS_HOST:-127.0.0.1}"
 ATLAS_USER="${ATLAS_USER:-admin}"
 ATLAS_PASS="${ATLAS_PASS:-admin}"
@@ -62,3 +63,19 @@ check_http "${ATLAS_PUBLIC_PORT}"
 echo
 check_listener "${ATLAS_INTERNAL_PORT}"
 check_http "${ATLAS_INTERNAL_PORT}"
+echo
+check_listener "${ATLAS_LEGACY_PORT}"
+legacy_version_code="$(http_code GET "http://${ATLAS_HOST}:${ATLAS_LEGACY_PORT}/api/atlas/admin/version")"
+legacy_write_code="$(http_code POST "http://${ATLAS_HOST}:${ATLAS_LEGACY_PORT}/api/atlas/v2/entity" -H 'Content-Type: application/json' -d '{}')"
+
+if [[ "${legacy_version_code}" != "000" || "${legacy_write_code}" != "000" ]]; then
+  echo "== HTTP ${ATLAS_LEGACY_PORT} =="
+  echo "version: ${legacy_version_code}"
+  echo "write:   ${legacy_write_code}"
+  echo "result: WARNING - a legacy Atlas endpoint is still reachable on 21000"
+else
+  echo "== HTTP ${ATLAS_LEGACY_PORT} =="
+  echo "version: 000"
+  echo "write:   000"
+  echo "result: no legacy Atlas listener detected"
+fi

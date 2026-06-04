@@ -19,7 +19,11 @@ Logs Atlas :
 
 ### 2.1 API version (doit renvoyer 200)
 
-- `curl -i -u admin:admin http://localhost:21000/api/atlas/admin/version`
+- `curl -i -u admin:admin http://localhost:21001/api/atlas/admin/version`
+
+Note:
+- `21000` était l'ancien port par défaut dans de vieilles notes.
+- Dans ce dépôt, le proxy public en lecture seule est `21001` et l'Atlas interne en écriture est `21002`.
 
 Si vous avez un `503 Service Unavailable`, Atlas n’est pas prêt (ou vient de redémarrer). Attendre un peu et regarder `application.log`.
 
@@ -30,10 +34,10 @@ Symptôme typique :
 - et dans `application.log` : `Instance __AtlasUserProfile with unique attribute {name=admin} does not exist`
 
 Vérifier :
-- `curl -u admin:admin "http://localhost:21000/api/atlas/v2/entity/uniqueAttribute/type/__AtlasUserProfile?attr:name=admin"`
+- `curl -u admin:admin "http://localhost:21002/api/atlas/v2/entity/uniqueAttribute/type/__AtlasUserProfile?attr:name=admin"`
 
 Créer (si absent) :
-- `curl -u admin:admin -H "Content-Type: application/json" -X POST http://localhost:21000/api/atlas/v2/entity -d '{"entity":{"typeName":"__AtlasUserProfile","attributes":{"name":"admin","qualifiedName":"admin@atlas"}}}'`
+- `curl -u admin:admin -H "Content-Type: application/json" -X POST http://localhost:21002/api/atlas/v2/entity -d '{"entity":{"typeName":"__AtlasUserProfile","attributes":{"name":"admin","qualifiedName":"admin@atlas"}}}'`
 
 Automatique après reset (script) :
 - `./scripts/atlas_ensure_admin_profile.sh`
@@ -112,8 +116,8 @@ Correctif :
 - l’UI doit passer par le backend (route `POST /apply-classification`) qui fait un vrai “replace” (suppression `PUBLIC` + `RESTRICTED`, puis ajout de la nouvelle).
 
 Vérif rapide :
-- lister les classifications d’un dataset (remplacer `{GUID}`) :
-  - `curl -u admin:admin "http://localhost:21000/api/atlas/v2/entity/guid/{GUID}?minExtInfo=true" | rg -n \"PUBLIC|RESTRICTED\"`
+- lister les classifications d'un dataset (remplacer `{GUID}`) :
+  - `curl -u admin:admin "http://localhost:21002/api/atlas/v2/entity/guid/{GUID}?minExtInfo=true" | rg -n \"PUBLIC|RESTRICTED\"`
 
 ## 10) `GET /api/datasets/{id}/atlas-columns` en 404 (UI “My uploads”)
 
