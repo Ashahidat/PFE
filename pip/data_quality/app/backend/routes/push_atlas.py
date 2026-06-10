@@ -225,8 +225,10 @@ def push_atlas(
         # 3️⃣ DÉPLOYER TYPEDEFS (robuste pour types personnalisés)
         # ----------------------
         deploy_typedefs = os.getenv("ATLAS_DEPLOY_TYPEDEFS", "1") != "0"
-        # force_update_typedefs = os.getenv("ATLAS_FORCE_TYPEDEF_UPDATE", "0") == "1"
-        force_update_typedefs = True
+        # Updating typedefs on every push tends to collide with Atlas startup/setup
+        # lock acquisition after a reset. Keep it opt-in so normal pushes only create
+        # missing types and do not re-POST the whole schema repeatedly.
+        force_update_typedefs = os.getenv("ATLAS_FORCE_TYPEDEF_UPDATE", "0") == "1"
 
         if deploy_typedefs:
             logger.info("📦 Déploiement des typedefs Atlas...")

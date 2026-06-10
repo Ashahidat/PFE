@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import PageHeader from "../components/PageHeader";
+import AtlasUiLinkButton from "../components/AtlasUiLinkButton";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
@@ -122,9 +123,12 @@ export default function MyUploadsPage() {
         title="Mes uploads"
         subtitle="Consulte tes datasets, ouvre la gouvernance (descriptions/classifications/glossaire) et finalise vers Atlas."
         right={
-          <Button startIcon={<RefreshOutlinedIcon />} onClick={load} variant="outlined" disabled={loading}>
-            Rafraîchir
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <AtlasUiLinkButton variant="outlined" />
+            <Button startIcon={<RefreshOutlinedIcon />} onClick={load} variant="outlined" disabled={loading}>
+              Rafraîchir
+            </Button>
+          </Stack>
         }
       />
 

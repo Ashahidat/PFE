@@ -18,6 +18,7 @@ import CheckCircleOutlineOutlinedIcon from "@mui/icons-material/CheckCircleOutli
 import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
 import DoDisturbOnOutlinedIcon from "@mui/icons-material/DoDisturbOnOutlined";
 import PageHeader from "../components/PageHeader";
+import AtlasUiLinkButton from "../components/AtlasUiLinkButton";
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { getLastDagRunId, getLastDatasetId, setLastDatasetId } from "../lib/storage";
@@ -248,6 +249,7 @@ export default function ResultsPage() {
         subtitle={dagRunId ? `Run: ${dagRunId}` : "Aucun run sélectionné"}
         right={
           <Stack direction="row" spacing={1}>
+            <AtlasUiLinkButton variant="outlined" />
             <Button
               startIcon={<RefreshOutlinedIcon />}
               onClick={loadOnce}

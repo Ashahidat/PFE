@@ -26,6 +26,7 @@ import { Accordion, AccordionDetails, AccordionSummary } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
+import AtlasUiLinkButton from "../components/AtlasUiLinkButton";
 import { api, ApiError } from "../lib/api";
 import { setLastDatasetId } from "../lib/storage";
 
@@ -186,6 +187,7 @@ export default function ProjectDetailsPage() {
         crumbs={[{ label: "Projets", to: "/projects" }, { label: project?.name || "Détails" }]}
         title={project?.name || "Détails projet"}
         subtitle="Vue détaillée du projet, de ses datasets, de leurs colonnes et de leur gouvernance."
+        right={<AtlasUiLinkButton variant="outlined" />}
       />
 
       {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
@@ -252,6 +254,7 @@ export default function ProjectDetailsPage() {
                     >
                       Uploader ici
                     </Button>
+                    <AtlasUiLinkButton variant="outlined" />
                     {grafanaUrl ? (
                       <Button href={grafanaUrl} target="_blank" rel="noopener" variant="outlined" endIcon={<OpenInNewOutlinedIcon />}>
                         Grafana

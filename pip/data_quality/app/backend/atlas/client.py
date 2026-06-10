@@ -35,6 +35,8 @@ _DEFAULT_CONNECT_TIMEOUT = float(os.getenv("ATLAS_CONNECT_TIMEOUT", "3.05"))
 _DEFAULT_READ_TIMEOUT = float(os.getenv("ATLAS_READ_TIMEOUT", "120"))
 _DEFAULT_MAX_RETRIES = int(os.getenv("ATLAS_HTTP_MAX_RETRIES", "3"))
 _DEFAULT_BACKOFF_SECONDS = float(os.getenv("ATLAS_HTTP_BACKOFF_SECONDS", "0.8"))
+_DEFAULT_LOCK_MAX_RETRIES = int(os.getenv("ATLAS_HTTP_LOCK_MAX_RETRIES", "8"))
+_DEFAULT_LOCK_BACKOFF_SECONDS = float(os.getenv("ATLAS_HTTP_LOCK_BACKOFF_SECONDS", "1.5"))
 
 _DEFAULT_APPLICATION_LOG = os.getenv(
     "ATLAS_APPLICATION_LOG",
@@ -84,6 +86,22 @@ def _atlas_logged_id_is_not_found(error_id: str) -> bool:
         return False
 
 
+def _is_transient_lock_error(response_text: str) -> bool:
+    """
+    Atlas can return HTTP 500 while a background type update/setup step is holding
+    its lock. That state is usually temporary right after a reset or startup.
+    """
+    if not response_text:
+        return False
+    needles = (
+        "Failed to get the lock",
+        "setup_lock",
+        "You do not own the lock",
+        "Error running setup steps",
+    )
+    return any(needle in response_text for needle in needles)
+
+
 def atlas_request(
     method: str,
     url: str,
@@ -118,11 +136,19 @@ def atlas_request(
                 timeout=timeout,
                 verify=verify,
             )
-            if res.status_code in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
-                wait = backoff_seconds * (2**attempt)
+
+            is_lock_error = res.status_code == 500 and _is_transient_lock_error(res.text or "")
+            effective_max_retries = _DEFAULT_LOCK_MAX_RETRIES if is_lock_error else max_retries
+
+            if res.status_code in (429, 500, 502, 503, 504) and attempt < effective_max_retries - 1:
+                if is_lock_error:
+                    wait = min(_DEFAULT_LOCK_BACKOFF_SECONDS * (attempt + 1), 10.0)
+                else:
+                    wait = backoff_seconds * (2**attempt)
                 logger.warning(
                     f"[atlas_request] RETRY {method.upper()} {url} "
                     f"status={res.status_code} wait={wait:.2f}s"
+                    + (" (lock/setup transient)" if is_lock_error else "")
                 )
                 time.sleep(wait)
                 continue

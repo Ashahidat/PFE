@@ -24,6 +24,7 @@ import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import AccountCircleOutlinedIcon from "@mui/icons-material/AccountCircleOutlined";
 import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import BusinessOutlinedIcon from "@mui/icons-material/BusinessOutlined";
+import AtlasUiLinkButton from "../components/AtlasUiLinkButton";
 import { clearToken, getUserRole } from "../lib/storage";
 
 const drawerWidth = 264;
@@ -62,6 +63,12 @@ export default function Shell() {
           <Typography variant="h6" sx={{ flex: 1 }}>
             Data Quality & Governance
           </Typography>
+          <AtlasUiLinkButton
+            label="Atlas"
+            variant="outlined"
+            color="inherit"
+            sx={{ borderColor: "rgba(255,255,255,0.4)" }}
+          />
           <IconButton
             color="inherit"
             onClick={() => {
