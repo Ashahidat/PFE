@@ -1,17 +1,3 @@
-import {
-  Alert,
-  Box,
-  Button,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Paper,
-  Select,
-  Stack,
-  TextField,
-  Typography
-} from "@mui/material";
-import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
@@ -43,6 +29,14 @@ export default function UploadPage() {
   const canSubmit = useMemo(() => Boolean(file && projectId), [file, projectId]);
 
   useEffect(() => {
+    if (!success?.dataset_id) return;
+    const timer = window.setTimeout(() => {
+      navigate(`/describe?dataset_id=${encodeURIComponent(success.dataset_id)}`);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [navigate, success?.dataset_id]);
+
+  useEffect(() => {
     (async () => {
       try {
         const res = await api.get<any[]>("/projects/");
@@ -52,7 +46,7 @@ export default function UploadPage() {
         const fromProject = q.get("project_id");
         const initial = fromProject && mapped.some((p) => p.id === fromProject) ? fromProject : null;
         const pick = initial || (!projectId && mapped.length ? mapped[0].id : null);
-        if (pick) onProjectChange(pick);
+        if (pick) onProjectChange(pick, mapped);
       } catch {
         // handled on submit/load error paths
       }
@@ -60,9 +54,9 @@ export default function UploadPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
 
-  function onProjectChange(id: string) {
+  function onProjectChange(id: string, list: Project[] = projects) {
     setProjectId(id);
-    const p = projects.find((x) => x.id === id);
+    const p = list.find((x) => x.id === id);
     if (p) setDatasetVisibility(p.visibility || "DEPARTMENT");
   }
 
@@ -89,81 +83,177 @@ export default function UploadPage() {
   }
 
   return (
-    <Box>
+    <div>
       <PageHeader
         title="Upload dataset"
-        subtitle="Charge un CSV, le convertit en Parquet, et initialise la gouvernance (visibilité, descriptions)."
+        subtitle="Charge un CSV, initialise la gouvernance, puis passe automatiquement à l’étape suivante."
       />
-      <Paper elevation={0} sx={{ p: 3, borderRadius: 3 }}>
-        <Stack spacing={2}>
-          {error ? <Alert severity="error">{error}</Alert> : null}
-          {success ? (
-            <Alert
-              severity="success"
-              action={
-                <Button color="inherit" size="small" onClick={() => navigate(`/describe?dataset_id=${success.dataset_id}`)}>
-                  Renseigner descriptions
-                </Button>
-              }
+
+      <section
+        style={{
+          borderRadius: 24,
+          padding: 20,
+          marginBottom: 16,
+          background: "linear-gradient(135deg, rgba(30,64,175,0.08), rgba(15,118,110,0.08))",
+          border: "1px solid rgba(148,163,184,0.25)"
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>Parcours recommandé</div>
+        <div style={{ fontSize: 14, lineHeight: 1.7, color: "#475569" }}>
+          1. Choisis le projet et la visibilité du dataset. 2. Upload. 3. L’application t’envoie automatiquement vers
+          les descriptions. 4. Puis la qualité et Atlas.
+        </div>
+      </section>
+
+      <section
+        style={{
+          borderRadius: 24,
+          padding: 24,
+          background: "#fff",
+          border: "1px solid #e5e7eb",
+          boxShadow: "0 10px 30px rgba(15,23,42,0.05)"
+        }}
+      >
+        <div style={{ display: "grid", gap: 16 }}>
+          {error ? (
+            <div
+              style={{
+                borderRadius: 12,
+                padding: 12,
+                background: "#fef2f2",
+                color: "#991b1b",
+                border: "1px solid #fecaca"
+              }}
             >
-              Dataset uploadé. Colonnes détectées: {success.columns?.length || 0}
-            </Alert>
+              {error}
+            </div>
           ) : null}
 
-          <FormControl fullWidth>
-            <InputLabel id="project-label">Projet</InputLabel>
-            <Select
-              labelId="project-label"
-              label="Projet"
+          {success ? (
+            <div
+              style={{
+                borderRadius: 12,
+                padding: 12,
+                background: "#ecfdf5",
+                color: "#065f46",
+                border: "1px solid #a7f3d0"
+              }}
+            >
+              Dataset uploadé. Colonnes détectées: {success.columns?.length || 0}. Redirection vers les descriptions en
+              cours.
+              <div style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/describe?dataset_id=${encodeURIComponent(success.dataset_id)}`)}
+                  style={{
+                    border: "none",
+                    borderRadius: 10,
+                    padding: "10px 14px",
+                    background: "#065f46",
+                    color: "#fff",
+                    fontWeight: 700,
+                    cursor: "pointer"
+                  }}
+                >
+                  Renseigner descriptions
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <label style={{ display: "grid", gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>Projet</span>
+            <select
               value={projectId}
-              onChange={(e) => onProjectChange(String(e.target.value))}
+              onChange={(e) => onProjectChange(e.target.value)}
+              style={{
+                borderRadius: 12,
+                border: "1px solid #cbd5e1",
+                padding: "12px 14px",
+                fontSize: 14,
+                background: "#fff"
+              }}
             >
+              <option value="">Choisir un projet</option>
               {projects.map((p) => (
-                <MenuItem key={p.id} value={p.id}>
+                <option key={p.id} value={p.id}>
                   {p.name} ({p.visibility})
-                </MenuItem>
+                </option>
               ))}
-            </Select>
-          </FormControl>
+            </select>
+          </label>
 
-          <FormControl fullWidth>
-            <InputLabel id="vis-label">Visibilité dataset</InputLabel>
-            <Select
-              labelId="vis-label"
-              label="Visibilité dataset"
+          <label style={{ display: "grid", gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>Visibilité dataset</span>
+            <select
               value={datasetVisibility}
-              onChange={(e) => setDatasetVisibility(e.target.value as any)}
+              onChange={(e) => setDatasetVisibility(e.target.value as "PUBLIC" | "DEPARTMENT")}
+              style={{
+                borderRadius: 12,
+                border: "1px solid #cbd5e1",
+                padding: "12px 14px",
+                fontSize: 14,
+                background: "#fff"
+              }}
             >
-              <MenuItem value="DEPARTMENT">DEPARTMENT (restreint)</MenuItem>
-              <MenuItem value="PUBLIC">PUBLIC (entreprise)</MenuItem>
-            </Select>
-          </FormControl>
+              <option value="DEPARTMENT">DEPARTMENT (restreint)</option>
+              <option value="PUBLIC">PUBLIC (entreprise)</option>
+            </select>
+          </label>
 
-          <TextField
-            label="Description (optionnel)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            multiline
-            minRows={2}
-          />
+          <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
+            Cette visibilité détermine qui pourra voir le dataset dans l’application et quelle classification sera
+            poussée vers Atlas.
+          </div>
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
-            <Button variant="outlined" component="label" startIcon={<UploadFileOutlinedIcon />}>
-              Choisir un fichier CSV
-              <input hidden type="file" accept=".csv,text/csv" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-            </Button>
-            <Typography variant="body2" color="text.secondary">
-              {file ? file.name : "Aucun fichier sélectionné"}
-            </Typography>
-          </Stack>
+          <label style={{ display: "grid", gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>Description (optionnel)</span>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              style={{
+                borderRadius: 12,
+                border: "1px solid #cbd5e1",
+                padding: "12px 14px",
+                fontSize: 14,
+                fontFamily: "inherit",
+                resize: "vertical"
+              }}
+            />
+          </label>
 
-          <Box>
-            <Button variant="contained" onClick={submit} disabled={!canSubmit || loading}>
-              Upload
-            </Button>
-          </Box>
-        </Stack>
-      </Paper>
-    </Box>
+          <label style={{ display: "grid", gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>Fichier CSV</span>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              style={{ fontSize: 14 }}
+            />
+          </label>
+          <div style={{ fontSize: 13, color: "#64748b" }}>{file ? file.name : "Aucun fichier sélectionné"}</div>
+
+          <div>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!canSubmit || loading}
+              style={{
+                border: "none",
+                borderRadius: 12,
+                padding: "12px 16px",
+                background: !canSubmit || loading ? "#94a3b8" : "#1e40af",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: !canSubmit || loading ? "not-allowed" : "pointer"
+              }}
+            >
+              {loading ? "Upload en cours..." : "Upload"}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

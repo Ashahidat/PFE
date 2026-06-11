@@ -83,11 +83,33 @@ export default function ProjectsPage() {
         title="Projets"
         subtitle="Crée et pilote des espaces de gouvernance (visibilité, dashboards, datasets)."
         right={
-          <Button variant="contained" onClick={() => setOpen(true)}>
-            Nouveau projet
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button variant="outlined" onClick={() => navigate("/upload")}>
+              Importer un dataset
+            </Button>
+            <Button variant="contained" onClick={() => setOpen(true)}>
+              Nouveau projet
+            </Button>
+          </Stack>
         }
       />
+      <Paper
+        elevation={0}
+        sx={{
+          p: 2.5,
+          borderRadius: 3,
+          mb: 2,
+          background: "linear-gradient(135deg, rgba(30,64,175,0.08), rgba(15,118,110,0.08))"
+        }}
+      >
+        <Typography variant="subtitle1" sx={{ mb: 0.5 }}>
+          Point de départ
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Un projet regroupe des datasets et fixe une visibilité de base. Ensuite, l’application vous guide vers
+          l’import, la gouvernance, la qualité et Atlas.
+        </Typography>
+      </Paper>
       {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
 
       <Grid container spacing={2}>

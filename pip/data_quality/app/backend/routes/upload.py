@@ -11,9 +11,10 @@ import hashlib
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Form
 from sqlalchemy.orm import Session
+from py4j.protocol import Py4JError, Py4JNetworkError
 
 from settings.config_paths import TMP_DIR
-from config import spark
+from config import spark, get_spark
 from jwt_dependencies import get_current_user
 from db.connexion_db import get_db
 from db.datasets import Dataset
@@ -43,6 +44,17 @@ def _validate_dataset_visibility(value: str) -> str:
             detail=f"dataset_visibility invalide (attendu: {', '.join(sorted(allowed))})"
         )
     return value
+
+
+def _spark_unavailable_error(exc: Exception) -> HTTPException:
+    logger.error("❌ Spark indisponible pendant l'upload", exc_info=(type(exc), exc, exc.__traceback__))
+    return HTTPException(
+        status_code=503,
+        detail=(
+            "Le moteur de traitement des fichiers est temporairement indisponible. "
+            "Réessaie dans un instant ou contacte un administrateur si le problème persiste."
+        ),
+    )
 
 
 @router.post("/upload")
@@ -88,68 +100,81 @@ async def upload_csv(
         normalized_visibility = (project.visibility or "DEPARTMENT").strip().upper()
     normalized_visibility = _validate_dataset_visibility(normalized_visibility)
 
-    # 3️⃣ Sauvegarde temporaire CSV
+    # 3️⃣ Sauvegarde temporaire CSV + traitement Spark
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    csv_path = TMP_DIR / f"{file.filename}_{timestamp}.csv"
-
-    with open(csv_path, "wb") as f:
-        f.write(await file.read())
-
-    # 4️⃣ Calcul du hash SHA256
-    h = hashlib.sha256()
-    with open(csv_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            h.update(chunk)
-    hash_value = h.hexdigest()
-
-    # 5️⃣ Lecture CSV → Parquet via Spark
-    df = spark.read.option("header", True).option("inferSchema", True).csv(str(csv_path))
-
+    safe_name = Path(file.filename or "dataset").name
+    csv_path = TMP_DIR / f"{safe_name}_{timestamp}.csv"
     parquet_path = str(csv_path).replace(".csv", ".parquet")
-    df.write.mode("overwrite").parquet(parquet_path)
+    columns_list = []
+    hash_value = ""
 
-    columns_list = df.columns
-    del df
-
-    # 6️⃣ Suppression CSV temporaire
     try:
-        csv_path.unlink()  # équivalent à os.remove
-        print(f"🗑️ CSV supprimé : {csv_path}")
-    except Exception as e:
-        print("Erreur suppression CSV :", e)
+        with open(csv_path, "wb") as f:
+            f.write(await file.read())
 
-    # 7️⃣ Enregistrement PostgreSQL
-    dataset_id = str(uuid.uuid4())
+        # 4️⃣ Calcul du hash SHA256
+        h = hashlib.sha256()
+        with open(csv_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                h.update(chunk)
+        hash_value = h.hexdigest()
 
-    db_dataset = Dataset(
-        id=dataset_id,
-        name=file.filename,
-        file_path=parquet_path,
-        hash=hash_value,
-        columns_list=columns_list,
-        owner_employee_id=user["sub"],
-        atlas_guid=None,
-        project_id=project_id,
-        description=description,
-        classification=normalized_visibility,
-        atlas_synced=False
-    )
+        # 5️⃣ Lecture CSV → Parquet via Spark
+        spark_session = get_spark()
+        df = spark_session.read.option("header", True).option("inferSchema", True).csv(str(csv_path))
 
-    db.add(db_dataset)
-    db.commit()
-    db.refresh(db_dataset)
+        df.write.mode("overwrite").parquet(parquet_path)
+        columns_list = df.columns
+        del df
 
-    print("✅ Parquet créé et métadonnées enregistrées")
+        # 6️⃣ Enregistrement PostgreSQL
+        dataset_id = str(uuid.uuid4())
+        db_dataset = Dataset(
+            id=dataset_id,
+            name=file.filename,
+            file_path=parquet_path,
+            hash=hash_value,
+            columns_list=columns_list,
+            owner_employee_id=user["sub"],
+            atlas_guid=None,
+            project_id=project_id,
+            description=description,
+            classification=normalized_visibility,
+            atlas_synced=False
+        )
 
-    return {
-        "message": "Dataset chargé (converti en Parquet)",
-        "columns": columns_list,
-        "hash": hash_value,
-        "dataset_id": dataset_id,
-        "project_id": project_id,
-        "description": description,
-        "dataset_visibility": normalized_visibility
-    }
+        db.add(db_dataset)
+        db.commit()
+        db.refresh(db_dataset)
+
+        print("✅ Parquet créé et métadonnées enregistrées")
+
+        return {
+            "message": "Dataset chargé (converti en Parquet)",
+            "columns": columns_list,
+            "hash": hash_value,
+            "dataset_id": dataset_id,
+            "project_id": project_id,
+            "description": description,
+            "dataset_visibility": normalized_visibility
+        }
+    except (Py4JError, Py4JNetworkError, ConnectionError, OSError, RuntimeError) as exc:
+        db.rollback()
+        raise _spark_unavailable_error(exc) from exc
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        logger.exception("❌ Erreur inattendue pendant l'upload")
+        raise
+    finally:
+        try:
+            if csv_path.exists():
+                csv_path.unlink()
+                print(f"🗑️ CSV supprimé : {csv_path}")
+        except Exception as e:
+            print("Erreur suppression CSV :", e)
 
 
 @router.get("/preview/{dataset_id}")

@@ -1,6 +1,7 @@
 import { getUserRole } from "./storage";
 
-export const ATLAS_UI_URL = import.meta.env.VITE_ATLAS_UI_URL || "http://localhost:21001/n/index.html#!/search";
+const viteEnv = (typeof import.meta !== "undefined" && (import.meta as any).env) ? (import.meta as any).env : {};
+export const ATLAS_UI_URL = viteEnv.VITE_ATLAS_UI_URL || "http://localhost:21001/n/index.html#!/search";
 
 const ATLAS_ALLOWED_ROLES = new Set(["SUPER_ADMIN", "ADMIN", "ADMIN_GLOSSAIRE", "AUDIT"]);
 

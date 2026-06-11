@@ -420,6 +420,24 @@ export default function DescribePage() {
         }
       />
 
+      <Paper
+        elevation={0}
+        sx={{
+          p: 2.5,
+          borderRadius: 3,
+          mb: 2,
+          background: "linear-gradient(135deg, rgba(30,64,175,0.08), rgba(15,118,110,0.08))"
+        }}
+      >
+        <Typography variant="subtitle1" sx={{ mb: 0.5 }}>
+          À retenir
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          La visibilité du dataset dit qui peut le voir dans l’application. La classification des colonnes dit si une
+          colonne contient des données sensibles. Atlas reçoit ensuite ces informations pour le catalogue technique.
+        </Typography>
+      </Paper>
+
       {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
       {notice ? <Alert severity="info" sx={{ mb: 2 }}>{notice}</Alert> : null}
 

@@ -1,52 +1,44 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import {
-  AppBar,
-  Box,
-  Divider,
-  Drawer,
-  IconButton,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Toolbar,
-  Typography
-} from "@mui/material";
-import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
-import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
-import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
-import PlayCircleOutlinedIcon from "@mui/icons-material/PlayCircleOutlined";
-import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
-import LibraryBooksOutlinedIcon from "@mui/icons-material/LibraryBooksOutlined";
-import PeopleOutlinedIcon from "@mui/icons-material/PeopleOutlined";
-import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
-import AccountCircleOutlinedIcon from "@mui/icons-material/AccountCircleOutlined";
-import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
-import BusinessOutlinedIcon from "@mui/icons-material/BusinessOutlined";
-import AtlasUiLinkButton from "../components/AtlasUiLinkButton";
 import { clearToken, getUserRole } from "../lib/storage";
 
-const drawerWidth = 264;
+type NavItem = { to: string; label: string };
+type NavGroup = { title: string; items: NavItem[] };
 
-function buildNav(role: string | null) {
+function buildNav(role: string | null): NavGroup[] {
   const canUpload = role && role !== "AUDIT";
   const canManageGlossary = role && ["ADMIN", "ADMIN_GLOSSAIRE", "SUPER_ADMIN"].includes(role);
   const canManageUsers = role && ["ADMIN", "ADMIN_GLOSSAIRE", "SUPER_ADMIN"].includes(role);
   const canManageDepartments = role === "SUPER_ADMIN";
-  const items = [{ to: "/projects", label: "Projets", icon: <FolderOutlinedIcon /> }];
+
+  const workflowItems: NavItem[] = [];
   if (canUpload) {
-    items.push({ to: "/uploads", label: "Mes uploads", icon: <Inventory2OutlinedIcon /> });
-    items.push({ to: "/upload", label: "Upload dataset", icon: <UploadFileOutlinedIcon /> });
-    items.push({ to: "/describe", label: "Descriptions", icon: <DescriptionOutlinedIcon /> });
-    items.push({ to: "/run", label: "Valider qualité", icon: <PlayCircleOutlinedIcon /> });
+    workflowItems.push({ to: "/uploads", label: "Mes datasets" });
+    workflowItems.push({ to: "/upload", label: "Importer un dataset" });
+    workflowItems.push({ to: "/describe", label: "Décrire et classer" });
+    workflowItems.push({ to: "/run", label: "Lancer la qualité" });
   }
-  items.push({ to: "/results", label: "Résultats", icon: <AssessmentOutlinedIcon /> });
-  if (canManageGlossary) items.push({ to: "/glossary", label: "Glossaire", icon: <LibraryBooksOutlinedIcon /> });
-  if (canManageUsers) items.push({ to: "/users", label: "Utilisateurs", icon: <PeopleOutlinedIcon /> });
-  if (canManageDepartments) items.push({ to: "/departments", label: "Départements", icon: <BusinessOutlinedIcon /> });
-  items.push({ to: "/profile", label: "Mon profil", icon: <AccountCircleOutlinedIcon /> });
-  return items;
+  workflowItems.push({ to: "/results", label: "Voir les résultats" });
+
+  const adminItems: NavItem[] = [];
+  if (canManageGlossary) adminItems.push({ to: "/glossary", label: "Glossaire" });
+  if (canManageUsers) adminItems.push({ to: "/users", label: "Utilisateurs" });
+  if (canManageDepartments) adminItems.push({ to: "/departments", label: "Départements" });
+
+  return [
+    {
+      title: "Démarrage",
+      items: [
+        { to: "/home", label: "Accueil" },
+        { to: "/projects", label: "Projets" }
+      ]
+    },
+    ...(workflowItems.length ? [{ title: "Parcours data", items: workflowItems }] : []),
+    ...(adminItems.length ? [{ title: "Administration", items: adminItems }] : []),
+    {
+      title: "Compte",
+      items: [{ to: "/profile", label: "Mon profil" }]
+    }
+  ];
 }
 
 export default function Shell() {
@@ -56,69 +48,86 @@ export default function Shell() {
   const nav = buildNav(role);
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh" }}>
-      <AppBar position="fixed" elevation={0} sx={{ zIndex: (t) => t.zIndex.drawer + 1 }}>
-        <Toolbar sx={{ gap: 1 }}>
-          <ShieldOutlinedIcon />
-          <Typography variant="h6" sx={{ flex: 1 }}>
-            Data Quality & Governance
-          </Typography>
-          <AtlasUiLinkButton
-            label="Atlas"
-            variant="outlined"
-            color="inherit"
-            sx={{ borderColor: "rgba(255,255,255,0.4)" }}
-          />
-          <IconButton
-            color="inherit"
-            onClick={() => {
-              clearToken();
-              navigate("/login");
-            }}
-            aria-label="logout"
-          >
-            <LogoutOutlinedIcon />
-          </IconButton>
-        </Toolbar>
-      </AppBar>
-
-      <Drawer
-        variant="permanent"
-        sx={{
-          width: drawerWidth,
-          flexShrink: 0,
-          [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: "border-box" }
+    <div style={{ display: "flex", minHeight: "100vh", background: "#f6f7fb", color: "#111827" }}>
+      <aside
+        style={{
+          width: 280,
+          background: "#ffffff",
+          borderRight: "1px solid #e5e7eb",
+          padding: "20px 16px",
+          boxSizing: "border-box",
+          position: "sticky",
+          top: 0,
+          height: "100vh",
+          overflow: "auto"
         }}
       >
-        <Toolbar />
-        <Box sx={{ px: 2, py: 2 }}>
-          <Typography variant="subtitle2" color="text.secondary">
-            Navigation
-          </Typography>
-        </Box>
-        <Divider />
-        <List>
-          {nav.map((item) => {
-            const active = location.pathname === item.to || location.pathname.startsWith(item.to + "/");
-            return (
-              <ListItemButton
-                key={item.to}
-                selected={active}
-                onClick={() => navigate(item.to)}
-                sx={{ mx: 1, my: 0.5, borderRadius: 2 }}
-              >
-                <ListItemIcon>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.label} />
-              </ListItemButton>
-            );
-          })}
-        </List>
-      </Drawer>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.08 }}>
+            Commence ici
+          </div>
+          <div style={{ marginTop: 6, fontSize: 14, color: "#4b5563" }}>
+            Le menu suit le parcours recommandé pour éviter de se perdre.
+          </div>
+        </div>
 
-      <Box component="main" sx={{ flex: 1, p: 3 }}>
-        <Toolbar />
+        {nav.map((group) => (
+          <section key={group.title} style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.08, margin: "10px 0" }}>
+              {group.title}
+            </div>
+            <div style={{ display: "grid", gap: 6 }}>
+              {group.items.map((item) => {
+                const active = location.pathname === item.to || location.pathname.startsWith(item.to + "/");
+                return (
+                  <button
+                    key={item.to}
+                    type="button"
+                    onClick={() => navigate(item.to)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      border: "1px solid " + (active ? "#1e40af" : "#e5e7eb"),
+                      background: active ? "rgba(30,64,175,0.08)" : "#fff",
+                      color: "#111827",
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                      cursor: "pointer",
+                      fontSize: 14,
+                      fontWeight: active ? 700 : 500
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+
+        <button
+          type="button"
+          onClick={() => {
+            clearToken();
+            navigate("/login");
+          }}
+          style={{
+            width: "100%",
+            marginTop: 16,
+            border: "1px solid #d1d5db",
+            borderRadius: 10,
+            background: "#fff",
+            padding: "10px 12px",
+            cursor: "pointer"
+          }}
+        >
+          Se déconnecter
+        </button>
+      </aside>
+
+      <main style={{ flex: 1, padding: 24 }}>
         <Outlet />
-      </Box>
-    </Box>
+      </main>
+    </div>
   );
 }

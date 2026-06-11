@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { Alert, Box, Button, Stack, Typography } from "@mui/material";
 import Shell from "./Shell";
 import LoginPage from "../pages/LoginPage";
+import HomePage from "../pages/HomePage";
 import ProjectsPage from "../pages/ProjectsPage";
 import ProjectDetailsPage from "../pages/ProjectDetailsPage";
 import UploadPage from "../pages/UploadPage";
@@ -13,6 +15,7 @@ import DepartmentsAdminPage from "../pages/DepartmentsAdminPage";
 import MyUploadsPage from "../pages/MyUploadsPage";
 import ProfilePage from "../pages/ProfilePage";
 import { getToken, getUserRole } from "../lib/storage";
+import React from "react";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = getToken();
@@ -33,6 +36,47 @@ function RequireRole({ roles, children }: { roles: string[]; children: React.Rea
   return <>{children}</>;
 }
 
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; message: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: "" };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, message: error?.message || "Erreur d'affichage" };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error("[AppErrorBoundary]", error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Box sx={{ p: 4, maxWidth: 900, mx: "auto" }}>
+          <Alert severity="error" sx={{ mb: 2 }}>
+            Une page a planté pendant l’affichage. L’interface évite maintenant l’écran blanc.
+          </Alert>
+          <Stack spacing={2}>
+            <Typography variant="h5">Erreur d’interface</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {this.state.message || "Un composant React a levé une erreur."}
+            </Typography>
+            <Button variant="contained" onClick={() => window.location.reload()}>
+              Recharger la page
+            </Button>
+          </Stack>
+        </Box>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
     <Routes>
@@ -41,11 +85,14 @@ export default function App() {
         path="/"
         element={
           <RequireAuth>
-            <Shell />
+            <AppErrorBoundary>
+              <Shell />
+            </AppErrorBoundary>
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="projects" replace />} />
+        <Route index element={<Navigate to="home" replace />} />
+        <Route path="home" element={<HomePage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:projectId" element={<ProjectDetailsPage />} />
         <Route
@@ -106,7 +153,7 @@ export default function App() {
             </RequireRole>
           }
         />
-        <Route path="*" element={<Navigate to="projects" replace />} />
+        <Route path="*" element={<Navigate to="home" replace />} />
       </Route>
     </Routes>
   );

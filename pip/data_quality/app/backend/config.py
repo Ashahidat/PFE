@@ -1,24 +1,63 @@
-import os
-import signal
-os.environ["SPARK_VERSION"] = "3.3"
-from pyspark.sql import SparkSession
 import atexit
+import os
+import threading
+
+os.environ["SPARK_VERSION"] = "3.3"
+
+from pyspark.sql import SparkSession
 import pydeequ
 
+_spark_lock = threading.Lock()
+_spark_session = None
 
-# Spark
-spark = SparkSession.builder \
-    .appName("DataQualityApp") \
-    .config("spark.jars.packages", pydeequ.deequ_maven_coord) \
-    .config("spark.jars.excludes", pydeequ.f2j_maven_coord) \
-    .getOrCreate()
 
-# Fermeture propre
+def _build_spark():
+    return (
+        SparkSession.builder.appName("DataQualityApp")
+        .config("spark.jars.packages", pydeequ.deequ_maven_coord)
+        .config("spark.jars.excludes", pydeequ.f2j_maven_coord)
+        .getOrCreate()
+    )
+
+
+def get_spark():
+    global _spark_session
+    with _spark_lock:
+        if _spark_session is not None:
+            try:
+                jsc = _spark_session.sparkContext._jsc
+                if jsc is not None:
+                    _ = jsc.sc()
+                    return _spark_session
+            except Exception:
+                try:
+                    _spark_session.stop()
+                except Exception:
+                    pass
+                _spark_session = None
+
+        _spark_session = _build_spark()
+        return _spark_session
+
+
+class _SparkProxy:
+    def __getattr__(self, item):
+        return getattr(get_spark(), item)
+
+
+spark = _SparkProxy()
+
+
 def stop_spark():
-    try:
-        spark.stop()
-    except:
-        pass
+    global _spark_session
+    with _spark_lock:
+        if _spark_session is not None:
+            try:
+                _spark_session.stop()
+            except Exception:
+                pass
+            _spark_session = None
+
 
 atexit.register(stop_spark)
 

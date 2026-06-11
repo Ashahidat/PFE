@@ -1,21 +1,9 @@
-import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  LinearProgress,
-  Paper,
-  Stack,
-  TextField,
-  Typography
-} from "@mui/material";
-import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
-import PageHeader from "../components/PageHeader";
-import AtlasUiLinkButton from "../components/AtlasUiLinkButton";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import PageHeader from "../components/PageHeader";
+import { ATLAS_UI_URL, canOpenAtlasUi } from "../lib/externalLinks";
 import { api, ApiError } from "../lib/api";
-import { setLastDatasetId } from "../lib/storage";
+import { getUserRole, setLastDatasetId } from "../lib/storage";
 
 type DatasetItem = {
   id: string;
@@ -79,13 +67,23 @@ export default function MyUploadsPage() {
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [items, filter]);
 
+  function getNextStep(d: DatasetItem) {
+    if (!String(d.description || "").trim()) {
+      return { label: "Renseigner la gouvernance", to: `/describe?dataset_id=${encodeURIComponent(d.id)}` };
+    }
+    if (!d.atlas_synced) {
+      return { label: "Passer à la qualité", to: "/run" };
+    }
+    return { label: "Dataset finalisé", to: `/describe?dataset_id=${encodeURIComponent(d.id)}` };
+  }
+
   async function pushAtlas(datasetId: string) {
     setError(null);
     setNotice(null);
     setLoading(true);
     try {
       await api.post(`/push-atlas/${datasetId}`, {});
-      setNotice("✅ Push Atlas lancé/terminé. Rafraîchis pour voir l'état.");
+      setNotice("Push Atlas lancé/terminé. Rafraîchis pour voir l'état.");
       await load();
     } catch (e) {
       const err = e as ApiError;
@@ -118,92 +116,202 @@ export default function MyUploadsPage() {
   }
 
   return (
-    <Box>
+    <div>
       <PageHeader
         title="Mes uploads"
-        subtitle="Consulte tes datasets, ouvre la gouvernance (descriptions/classifications/glossaire) et finalise vers Atlas."
+        subtitle="Consulte tes datasets, ouvre la gouvernance et finalise vers Atlas sans te perdre."
         right={
-          <Stack direction="row" spacing={1}>
-            <AtlasUiLinkButton variant="outlined" />
-            <Button startIcon={<RefreshOutlinedIcon />} onClick={load} variant="outlined" disabled={loading}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {canOpenAtlasUi(getUserRole()) ? (
+              <a
+                href={ATLAS_UI_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 12,
+                  padding: "10px 14px",
+                  color: "#0f172a",
+                  textDecoration: "none",
+                  fontWeight: 700,
+                  background: "#fff"
+                }}
+              >
+                Ouvrir Atlas
+              </a>
+            ) : null}
+            <button
+              type="button"
+              onClick={load}
+              disabled={loading}
+              style={{
+                border: "1px solid #cbd5e1",
+                borderRadius: 12,
+                padding: "10px 14px",
+                color: "#0f172a",
+                background: "#fff",
+                fontWeight: 700,
+                cursor: "pointer"
+              }}
+            >
               Rafraîchir
-            </Button>
-          </Stack>
+            </button>
+          </div>
         }
       />
 
-      {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
-      {notice ? <Alert severity="info" sx={{ mb: 2 }}>{notice}</Alert> : null}
-      {loading ? <LinearProgress sx={{ mb: 2 }} /> : null}
+      <section
+        style={{
+          borderRadius: 24,
+          padding: 20,
+          marginBottom: 16,
+          background: "linear-gradient(135deg, rgba(15,118,110,0.08), rgba(30,64,175,0.08))",
+          border: "1px solid rgba(148,163,184,0.25)"
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
+          Ce que vous devez faire ensuite
+        </div>
+        <div style={{ fontSize: 14, lineHeight: 1.7, color: "#475569" }}>
+          Chaque dataset indique sa prochaine étape recommandée pour éviter les allers-retours inutiles.
+        </div>
+      </section>
 
-      <Paper elevation={0} sx={{ p: 3, borderRadius: 3, mb: 2 }}>
-        <TextField
-          label="Filtrer (projet / dataset / id)"
-          fullWidth
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
-      </Paper>
+      {error ? (
+        <div
+          style={{
+            borderRadius: 12,
+            padding: 12,
+            marginBottom: 16,
+            background: "#fef2f2",
+            color: "#991b1b",
+            border: "1px solid #fecaca"
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
 
-      <Stack spacing={2}>
+      {notice ? (
+        <div
+          style={{
+            borderRadius: 12,
+            padding: 12,
+            marginBottom: 16,
+            background: "#eff6ff",
+            color: "#1d4ed8",
+            border: "1px solid #bfdbfe"
+          }}
+        >
+          {notice}
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div style={{ height: 4, borderRadius: 999, background: "linear-gradient(90deg, #1e40af, #0f766e)", marginBottom: 16 }} />
+      ) : null}
+
+      <section
+        style={{
+          borderRadius: 24,
+          padding: 20,
+          marginBottom: 16,
+          background: "#fff",
+          border: "1px solid #e5e7eb"
+        }}
+      >
+        <label style={{ display: "grid", gap: 8 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>Filtrer (projet / dataset / id)</span>
+          <input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            style={{
+              borderRadius: 12,
+              border: "1px solid #cbd5e1",
+              padding: "12px 14px",
+              fontSize: 14
+            }}
+          />
+        </label>
+      </section>
+
+      <div style={{ display: "grid", gap: 16 }}>
         {grouped.map(([projectName, list]) => (
-          <Paper key={projectName} elevation={0} sx={{ p: 2.5, borderRadius: 3 }}>
-            <Typography variant="subtitle1" sx={{ mb: 1 }}>
-              {projectName}
-            </Typography>
-            <Stack spacing={1.5}>
+          <section
+            key={projectName}
+            style={{
+              borderRadius: 24,
+              padding: 20,
+              background: "#fff",
+              border: "1px solid #e5e7eb"
+            }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", marginBottom: 12 }}>{projectName}</div>
+
+            <div style={{ display: "grid", gap: 12 }}>
               {list.map((d) => {
                 const currentValue = descDraft[d.id] ?? "";
                 const savedValue = d.description ?? "";
                 const isDirty = currentValue !== savedValue;
 
                 return (
-                  <Paper key={d.id} variant="outlined" sx={{ p: 2 }}>
-                    <Stack spacing={1}>
-                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                            {d.name}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
+                  <article
+                    key={d.id}
+                    style={{
+                      borderRadius: 18,
+                      border: "1px solid #e5e7eb",
+                      padding: 16,
+                      background: "#fff"
+                    }}
+                  >
+                    <div style={{ display: "grid", gap: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>{d.name}</div>
+                          <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
                             {d.id} {d.created_at ? `· ${d.created_at}` : ""}
-                          </Typography>
-                        </Box>
-                        <Stack direction="row" spacing={1} flexWrap="wrap">
-                          <Chip size="small" label={`Visibilité: ${d.classification}`} />
-                          <Chip size="small" label={`${d.columns_count} colonnes`} variant="outlined" />
-                          <Chip
-                            size="small"
-                            label={d.atlas_synced ? "Atlas: synced" : "Atlas: not synced"}
-                            color={d.atlas_synced ? "success" : "warning"}
-                            variant={d.atlas_synced ? "filled" : "outlined"}
-                          />
-                        </Stack>
-                      </Stack>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <span style={chipStyle}>{`Visibilité: ${d.classification}`}</span>
+                          <span style={chipStyle}>{`${d.columns_count} colonnes`}</span>
+                          <span style={chipStyle}>{d.atlas_synced ? "Atlas: synced" : "Atlas: not synced"}</span>
+                        </div>
+                      </div>
 
-                      <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
-                        <Button
-                          variant="outlined"
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = getNextStep(d);
+                            setLastDatasetId(d.id);
+                            navigate(next.to);
+                          }}
+                          style={primaryButton}
+                        >
+                          {getNextStep(d).label}
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => {
                             setLastDatasetId(d.id);
                             navigate(`/describe?dataset_id=${encodeURIComponent(d.id)}`);
                           }}
+                          style={secondaryButton}
                         >
                           Ouvrir gouvernance
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          onClick={() => {
-                            setLastDatasetId(d.id);
-                            navigate("/run");
-                          }}
-                        >
-                          Valider qualité (Airflow)
-                        </Button>
-                        <Button
-                          variant="contained"
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => pushAtlas(d.id)}
                           disabled={loading || d.atlas_synced}
+                          style={{
+                            ...secondaryButton,
+                            opacity: loading || d.atlas_synced ? 0.6 : 1,
+                            cursor: loading || d.atlas_synced ? "not-allowed" : "pointer"
+                          }}
                           title={
                             d.atlas_synced
                               ? "Déjà synchronisé avec Atlas"
@@ -212,43 +320,87 @@ export default function MyUploadsPage() {
                                 : undefined
                           }
                         >
-                          Finaliser (push Atlas)
-                        </Button>
-                      </Stack>
+                          Finaliser Atlas
+                        </button>
+                      </div>
 
-                      <Typography variant="subtitle2" sx={{ mt: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>
                         Description dataset (éditable par le propriétaire)
-                      </Typography>
-                      <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          placeholder="Description…"
+                      </div>
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <textarea
                           value={currentValue}
                           onChange={(e) => setDescDraft((prev) => ({ ...prev, [d.id]: e.target.value }))}
                           disabled={!d.can_edit}
-                          helperText={!d.can_edit ? "Vous n'avez pas les droits pour modifier ce dataset." : " "}
+                          rows={3}
+                          placeholder="Description…"
+                          style={{
+                            borderRadius: 12,
+                            border: "1px solid #cbd5e1",
+                            padding: "12px 14px",
+                            fontSize: 14,
+                            fontFamily: "inherit",
+                            resize: "vertical"
+                          }}
                         />
-                        <Button
-                          variant={isDirty ? "outlined" : "contained"}
-                          color={isDirty ? "primary" : "success"}
-                          disabled={!d.can_edit || loading || !isDirty}
-                          onClick={() => void saveDescription(d.id, descDraft[d.id] ?? "")}
-                        >
-                          {isDirty ? "Sauver" : "Enregistré"}
-                        </Button>
-                      </Stack>
-                    </Stack>
-                  </Paper>
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            onClick={() => saveDescription(d.id, currentValue)}
+                            disabled={!d.can_edit || !isDirty || loading}
+                            style={{
+                              ...primaryButton,
+                              opacity: !d.can_edit || !isDirty || loading ? 0.6 : 1,
+                              cursor: !d.can_edit || !isDirty || loading ? "not-allowed" : "pointer"
+                            }}
+                          >
+                            Sauvegarder
+                          </button>
+                          {!d.can_edit ? (
+                            <span style={{ fontSize: 13, color: "#64748b", alignSelf: "center" }}>
+                              Vous n'avez pas les droits pour modifier ce dataset.
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </article>
                 );
               })}
-            </Stack>
-          </Paper>
+            </div>
+          </section>
         ))}
-        {items.length === 0 && !loading ? (
-          <Alert severity="info">Aucun dataset visible. Uploade un dataset puis reviens ici.</Alert>
-        ) : null}
-      </Stack>
-    </Box>
+      </div>
+    </div>
   );
 }
+
+const chipStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  borderRadius: 999,
+  padding: "6px 10px",
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  color: "#334155",
+  fontSize: 12,
+  fontWeight: 600
+};
+
+const primaryButton: React.CSSProperties = {
+  border: "none",
+  borderRadius: 12,
+  padding: "12px 14px",
+  background: "#1e40af",
+  color: "#fff",
+  fontWeight: 700
+};
+
+const secondaryButton: React.CSSProperties = {
+  border: "1px solid #cbd5e1",
+  borderRadius: 12,
+  padding: "12px 14px",
+  background: "#fff",
+  color: "#0f172a",
+  fontWeight: 700
+};

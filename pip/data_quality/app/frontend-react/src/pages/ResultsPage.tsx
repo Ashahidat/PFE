@@ -20,6 +20,7 @@ import DoDisturbOnOutlinedIcon from "@mui/icons-material/DoDisturbOnOutlined";
 import PageHeader from "../components/PageHeader";
 import AtlasUiLinkButton from "../components/AtlasUiLinkButton";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
 import { getLastDagRunId, getLastDatasetId, setLastDatasetId } from "../lib/storage";
 
@@ -117,6 +118,7 @@ function examplesToText(examples?: any[]) {
 }
 
 export default function ResultsPage() {
+  const navigate = useNavigate();
   const [items, setItems] = useState<ResultItem[]>([]);
   const [state, setState] = useState<string | null>(null);
   const [resolvedDatasetId, setResolvedDatasetId] = useState<string | null>(getLastDatasetId());
@@ -126,6 +128,14 @@ export default function ResultsPage() {
   const [atlasLoading, setAtlasLoading] = useState(false);
   const [atlasPushed, setAtlasPushed] = useState(false);
   const dagRunId = getLastDagRunId();
+
+  useEffect(() => {
+    if (!atlasPushed) return;
+    const timer = window.setTimeout(() => {
+      navigate("/uploads");
+    }, 1400);
+    return () => window.clearTimeout(timer);
+  }, [atlasPushed, navigate]);
 
   const summary = useMemo(() => {
     let total = 0;
@@ -232,7 +242,10 @@ export default function ResultsPage() {
       ]
         .filter(Boolean)
         .join(" · ");
-      setAtlasNotice({ severity: "success", message: `Synchronisation Atlas terminée.${extra ? ` ${extra}` : ""}` });
+      setAtlasNotice({
+        severity: "success",
+        message: `Synchronisation Atlas terminée.${extra ? ` ${extra}` : ""}. Retour aux datasets en cours.`
+      });
       setAtlasPushed(true);
     } catch (e) {
       const err = e as ApiError;
@@ -249,7 +262,7 @@ export default function ResultsPage() {
         subtitle={dagRunId ? `Run: ${dagRunId}` : "Aucun run sélectionné"}
         right={
           <Stack direction="row" spacing={1}>
-            <AtlasUiLinkButton variant="outlined" />
+            <AtlasUiLinkButton label="Ouvrir Atlas" variant="outlined" />
             <Button
               startIcon={<RefreshOutlinedIcon />}
               onClick={loadOnce}
@@ -307,7 +320,8 @@ export default function ResultsPage() {
                 Lecture simple
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {overviewText} Un statut "À vérifier" ne veut pas dire qu'il y a forcément une erreur grave. Cela veut juste dire qu'une colonne mérite un regard humain.
+                {overviewText} Un statut "À vérifier" ne veut pas dire qu'il y a forcément une erreur grave. Cela veut
+                juste dire qu'une colonne mérite un regard humain avant la publication.
               </Typography>
             </Box>
 

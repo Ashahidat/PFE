@@ -1,10 +1,11 @@
 import { Box, Link, Stack, Typography } from "@mui/material";
+import type { ReactNode } from "react";
 
 export default function PageHeader(props: {
   title: string;
   subtitle?: string;
   crumbs?: Array<{ label: string; to?: string }>;
-  right?: React.ReactNode;
+  right?: ReactNode;
 }) {
   const { title, subtitle, crumbs, right } = props;
   return (
