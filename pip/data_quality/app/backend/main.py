@@ -91,17 +91,13 @@ app.include_router(grafana_proxy.router)
 
 # React SPA (build output under app/frontend-react/dist)
 if os.path.isdir(REACT_DIST_DIR):
-    app.mount("/app/assets", StaticFiles(directory=os.path.join(REACT_DIST_DIR, "assets")), name="react-assets")
+    app.mount("/assets", StaticFiles(directory=os.path.join(REACT_DIST_DIR, "assets")), name="react-assets")
 
     @app.get("/")
     def get_root():
         return FileResponse(os.path.join(REACT_DIST_DIR, "index.html"))
 
-    @app.get("/app")
-    def get_react_root():
-        return FileResponse(os.path.join(REACT_DIST_DIR, "index.html"))
-
-    @app.get("/app/{full_path:path}")
+    @app.get("/{full_path:path}")
     def get_react_spa(full_path: str):
         candidate = os.path.join(REACT_DIST_DIR, full_path)
         if full_path and os.path.isfile(candidate):
