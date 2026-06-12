@@ -71,22 +71,27 @@ app.add_middleware(
 
 
 # Routes
-app.include_router(upload.router)
-app.include_router(dag.router)
-app.include_router(results.router)
-app.include_router(push_atlas.router)
-app.include_router(login.router)
-app.include_router(classifications.router)
-app.include_router(classifications_col.router)
-app.include_router(projects.router)
-app.include_router(descriptions.router)
-app.include_router(versionning.router)
-app.include_router(profile.router)
-app.include_router(glossary.router)
-app.include_router(datasets_meta.router)
-app.include_router(departments.router)
-app.include_router(grafana_auth.router)
-app.include_router(grafana_proxy.router)
+API_PREFIX = "/api"
+
+# Register API routers under a common prefix so SPA routes (/) don't collide with
+# API endpoints like `/users`. This ensures direct navigation to client routes
+# returns the React `index.html` while API requests are available under `/api/...`.
+app.include_router(upload.router, prefix=API_PREFIX)
+app.include_router(dag.router, prefix=API_PREFIX)
+app.include_router(results.router, prefix=API_PREFIX)
+app.include_router(push_atlas.router, prefix=API_PREFIX)
+app.include_router(login.router, prefix=API_PREFIX)
+app.include_router(classifications.router, prefix=API_PREFIX)
+app.include_router(classifications_col.router, prefix=API_PREFIX)
+app.include_router(projects.router, prefix=API_PREFIX)
+app.include_router(descriptions.router, prefix=API_PREFIX)
+app.include_router(versionning.router, prefix=API_PREFIX)
+app.include_router(profile.router, prefix=API_PREFIX)
+app.include_router(glossary.router, prefix=API_PREFIX)
+app.include_router(datasets_meta.router, prefix=API_PREFIX)
+app.include_router(departments.router, prefix=API_PREFIX)
+app.include_router(grafana_auth.router, prefix=API_PREFIX)
+app.include_router(grafana_proxy.router, prefix=API_PREFIX)
 
 
 # React SPA (build output under app/frontend-react/dist)

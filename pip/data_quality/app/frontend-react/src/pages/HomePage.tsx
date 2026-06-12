@@ -10,11 +10,11 @@ type HomeAction = {
   tone?: "primary" | "muted";
 };
 
-function ActionTile({ title, description, actionLabel, to, tone = "muted" }: HomeAction) {
+function ActionTile({ title, description, actionLabel, to, tone = "muted", navigate }: HomeAction & { navigate: (to: string) => void }) {
   return (
     <button
       type="button"
-      onClick={() => window.location.assign(to)}
+      onClick={() => navigate(to)}
       style={{
         width: "100%",
         textAlign: "left",
@@ -208,13 +208,13 @@ export default function HomePage() {
       >
         {canWorkOnData
           ? dataActions.map((action) => (
-              <ActionTile key={action.to} {...action} />
+              <ActionTile key={action.to} {...action} navigate={navigate} />
             ))
           : null}
 
-        {canManageAdmins ? adminActions.map((action) => <ActionTile key={action.to} {...action} />) : null}
+        {canManageAdmins ? adminActions.map((action) => <ActionTile key={action.to} {...action} navigate={navigate} />) : null}
 
-        {isSuperAdmin ? superAdminActions.map((action) => <ActionTile key={action.to} {...action} />) : null}
+        {isSuperAdmin ? superAdminActions.map((action) => <ActionTile key={action.to} {...action} navigate={navigate} />) : null}
       </div>
     </div>
   );

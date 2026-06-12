@@ -10,7 +10,8 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE = "";
+// API requests are served from the backend under the `/api` prefix.
+const API_BASE = "/api";
 
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
