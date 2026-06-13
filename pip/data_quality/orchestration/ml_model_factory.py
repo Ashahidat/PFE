@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,10 +15,6 @@ from sklearn.impute import SimpleImputer
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import OneClassSVM
-
-NOTEBOOKS_DIR = Path(__file__).resolve().parents[1] / "notebooks"
-if NOTEBOOKS_DIR.exists() and str(NOTEBOOKS_DIR) not in sys.path:
-    sys.path.insert(0, str(NOTEBOOKS_DIR))
 
 from ml_profile_eval_utils import inject_anomalies, profile_dataset
 
