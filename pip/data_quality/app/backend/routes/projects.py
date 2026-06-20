@@ -291,7 +291,7 @@ def get_project_grafana_links(
 ):
     """
     Returns the Grafana folder + 4 dashboards URLs for this project.
-    URLs are meant to be opened through the backend reverse-proxy `/grafana/...`.
+    URLs are meant to be opened through the backend reverse-proxy `/api/grafana/...`.
     """
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -300,7 +300,7 @@ def get_project_grafana_links(
         raise HTTPException(status_code=403, detail="Vous n'avez pas les droits pour voir ce projet")
 
     # Best-effort: if provisioning was skipped/failed at creation time, try again on-demand
-    # so users don't end up with broken `/grafana/dashboards/f/...` links.
+    # so users don't end up with broken `/api/grafana/dashboards/f/...` links.
     settings = get_grafana_settings()
     try:
         folder_uid = build_project_grafana_links(

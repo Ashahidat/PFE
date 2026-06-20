@@ -1,7 +1,8 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { clearToken, getUserRole } from "../lib/storage";
+import { GRAFANA_DASHBOARDS_URL } from "../lib/externalLinks";
 
-type NavItem = { to: string; label: string };
+type NavItem = { to?: string; label: string; href?: string };
 type NavGroup = { title: string; items: NavItem[] };
 
 function buildNav(role: string | null): NavGroup[] {
@@ -29,7 +30,8 @@ function buildNav(role: string | null): NavGroup[] {
       title: "Démarrage",
       items: [
         { to: "/home", label: "Accueil" },
-        { to: "/projects", label: "Projets" }
+        { to: "/projects", label: "Projets" },
+        { href: GRAFANA_DASHBOARDS_URL, label: "Dashboards Grafana (read-only)" }
       ]
     },
     ...(workflowItems.length ? [{ title: "Parcours data", items: workflowItems }] : []),
@@ -78,24 +80,39 @@ export default function Shell() {
             </div>
             <div style={{ display: "grid", gap: 6 }}>
               {group.items.map((item) => {
-                const active = location.pathname === item.to || location.pathname.startsWith(item.to + "/");
+                const active = item.to ? (location.pathname === item.to || location.pathname.startsWith(item.to + "/")) : false;
+                const sharedStyle = {
+                  width: "100%",
+                  textAlign: "left" as const,
+                  border: "1px solid " + (active ? "#1e40af" : "#e5e7eb"),
+                  background: active ? "rgba(30,64,175,0.08)" : "#fff",
+                  color: "#111827",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontWeight: active ? 700 : 500,
+                  textDecoration: "none"
+                };
+                if (item.href) {
+                  return (
+                    <a
+                      key={item.label}
+                      href={item.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={sharedStyle}
+                    >
+                      {item.label}
+                    </a>
+                  );
+                }
                 return (
                   <button
                     key={item.to}
                     type="button"
-                    onClick={() => navigate(item.to)}
-                    style={{
-                      width: "100%",
-                      textAlign: "left",
-                      border: "1px solid " + (active ? "#1e40af" : "#e5e7eb"),
-                      background: active ? "rgba(30,64,175,0.08)" : "#fff",
-                      color: "#111827",
-                      borderRadius: 10,
-                      padding: "10px 12px",
-                      cursor: "pointer",
-                      fontSize: 14,
-                      fontWeight: active ? 700 : 500
-                    }}
+                    onClick={() => navigate(item.to ?? "/home")}
+                    style={sharedStyle}
                   >
                     {item.label}
                   </button>

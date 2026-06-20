@@ -19,13 +19,13 @@ def dashboard_uid_for_project(code: str, project_id: str) -> str:
 
 
 def build_project_grafana_links(
-    *, project_id: str, project_name: str, base_path: str = "/grafana", org_id: int | None = None
+    *, project_id: str, project_name: str, base_path: str = "/api/grafana", org_id: int | None = None
 ) -> dict:
     """
     Build URLs that must be opened through the app reverse-proxy (base_path),
     not directly on the Grafana port.
     """
-    base = (base_path or "/grafana").rstrip("/")
+    base = (base_path or "/api/grafana").rstrip("/")
     folder_uid = folder_uid_for_project(project_id)
     folder_slug = _slug(f"pfe-{project_name}")
     folder_url = f"{base}/dashboards/f/{folder_uid}/{folder_slug}"

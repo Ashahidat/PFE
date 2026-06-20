@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import re
 from pathlib import Path
 from typing import Iterable
 
@@ -47,6 +48,10 @@ FEATURE_COLS = [
     "alpha_ratio",
     "entropy",
 ]
+
+_ID_NAME_RE = re.compile(r"(^|[^a-z0-9])(id|uuid|guid|key)([^a-z0-9]|$)")
+_TIMESTAMP_NAME_RE = re.compile(r"(^|[^a-z0-9])(date|datetime|timestamp|time|created_at|updated_at)([^a-z0-9]|$)")
+_TARGET_NAME_RE = re.compile(r"(^|[^a-z0-9])(target|label|class|churn|status|outcome)([^a-z0-9]|$)")
 
 
 @dataclass(frozen=True)
@@ -96,19 +101,15 @@ class ColumnAnomalyDetector:
 
     def predict(self, profile_df: pd.DataFrame) -> np.ndarray:
         x = self._prepare_features(profile_df)
+        scores = self.anomaly_scores(profile_df)
 
-        if self.model_name == "kmeans":
-            scores = self.anomaly_scores(profile_df)
-            threshold = self.threshold
-            if threshold is None:
-                threshold = float(np.percentile(scores, 90))
-            return np.where(scores > threshold, -1, 1)
+        if self.threshold is not None:
+            return np.where(scores > self.threshold, -1, 1)
 
         if hasattr(self.estimator, "predict"):
             return np.asarray(self.estimator.predict(x))
 
-        scores = self.anomaly_scores(profile_df)
-        threshold = self.threshold if self.threshold is not None else float(np.percentile(scores, 90))
+        threshold = float(np.percentile(scores, 90))
         return np.where(scores > threshold, -1, 1)
 
     def to_payload(self) -> dict:
@@ -133,13 +134,67 @@ def drop_protected_columns(df: pd.DataFrame, protected_columns: Iterable[str]) -
     return df.drop(columns=protected)
 
 
-def infer_family(df: pd.DataFrame) -> str:
-    numeric_ratio = sum(pd.api.types.is_numeric_dtype(df[c]) for c in df.columns) / max(len(df.columns), 1)
-    object_ratio = sum(not pd.api.types.is_numeric_dtype(df[c]) for c in df.columns) / max(len(df.columns), 1)
+def detect_protected_columns(df: pd.DataFrame) -> dict[str, str]:
+    """
+    Heuristically identify columns that should be excluded before ML profiling.
 
-    if numeric_ratio >= 0.8:
+    We keep the rules conservative so we only remove columns that are very likely
+    to act as identifiers, timestamps, targets, or constant placeholders.
+    """
+    protected: dict[str, str] = {}
+
+    for col in df.columns:
+        series = df[col]
+        normalized_name = re.sub(r"[^a-z0-9]+", "_", str(col).strip().lower())
+        reasons: list[str] = []
+
+        if series.isna().all():
+            reasons.append("all_null")
+        elif series.nunique(dropna=False) <= 1:
+            reasons.append("constant")
+
+        if pd.api.types.is_datetime64_any_dtype(series) or _TIMESTAMP_NAME_RE.search(normalized_name):
+            reasons.append("timestamp_like")
+
+        if _TARGET_NAME_RE.search(normalized_name):
+            reasons.append("target_like")
+
+        if _ID_NAME_RE.search(normalized_name):
+            reasons.append("identifier_like")
+        else:
+            non_null = series.dropna()
+            if len(non_null) >= 10:
+                uniqueness_ratio = non_null.nunique(dropna=True) / max(len(non_null), 1)
+                if uniqueness_ratio >= 0.98 and (
+                    normalized_name.endswith("_id")
+                    or normalized_name.endswith("id")
+                    or normalized_name.endswith("_key")
+                    or normalized_name.endswith("key")
+                ):
+                    reasons.append("high_cardinality_identifier")
+
+        if reasons:
+            protected[col] = ", ".join(dict.fromkeys(reasons))
+
+    return protected
+
+
+def infer_family(df: pd.DataFrame) -> str:
+    if df.empty or not len(df.columns):
+        return "mixed_structured"
+
+    numeric_count = sum(pd.api.types.is_numeric_dtype(df[c]) for c in df.columns)
+    datetime_count = sum(pd.api.types.is_datetime64_any_dtype(df[c]) for c in df.columns)
+    object_count = len(df.columns) - numeric_count - datetime_count
+    total = max(len(df.columns), 1)
+
+    numeric_ratio = numeric_count / total
+    datetime_ratio = datetime_count / total
+    text_ratio = object_count / total
+
+    if numeric_ratio >= 0.8 and datetime_ratio <= 0.1:
         return "numeric"
-    if object_ratio >= 0.6 and numeric_ratio <= 0.4:
+    if text_ratio >= 0.6 and numeric_ratio <= 0.4 and datetime_ratio <= 0.2:
         return "categorical_text"
     return "mixed"
 
@@ -168,6 +223,37 @@ def build_feature_matrix(profile_df: pd.DataFrame, feature_cols: list[str] | Non
     return x_scaled, imputer, scaler, feature_cols
 
 
+def _model_scores(estimator: object, model_name: str, X: np.ndarray) -> np.ndarray:
+    if model_name == "kmeans":
+        centers = estimator.cluster_centers_
+        return np.min(np.linalg.norm(X[:, None] - centers[None, :], axis=2), axis=1)
+
+    if hasattr(estimator, "decision_function"):
+        return -np.asarray(estimator.decision_function(X))
+
+    if hasattr(estimator, "score_samples"):
+        return -np.asarray(estimator.score_samples(X))
+
+    preds = estimator.predict(X)
+    return np.where(preds == -1, 1.0, 0.0)
+
+
+def _dynamic_threshold(scores: np.ndarray, contamination: float) -> float:
+    finite_scores = np.asarray(scores, dtype=float)
+    finite_scores = finite_scores[np.isfinite(finite_scores)]
+    if len(finite_scores) == 0:
+        return 0.0
+    if len(finite_scores) == 1:
+        return float(finite_scores[0])
+
+    contamination = float(np.clip(contamination, 0.01, 0.49))
+    percentile_threshold = float(np.percentile(finite_scores, (1.0 - contamination) * 100.0))
+    q1, q3 = np.percentile(finite_scores, [25.0, 75.0])
+    iqr = float(q3 - q1)
+    robust_threshold = float(q3 + 1.5 * iqr) if iqr > 0 else percentile_threshold
+    return max(percentile_threshold, robust_threshold)
+
+
 def _fit_candidate(X: np.ndarray, model_name: str, contamination: float, seed: int = 42):
     n_samples = len(X)
     if model_name == "isolation_forest":
@@ -177,7 +263,8 @@ def _fit_candidate(X: np.ndarray, model_name: str, contamination: float, seed: i
             n_estimators=300,
         )
         model.fit(X)
-        return model, None
+        scores = _model_scores(model, model_name, X)
+        return model, _dynamic_threshold(scores, contamination)
 
     if model_name == "local_outlier_factor":
         n_neighbors = min(20, max(2, n_samples - 1))
@@ -187,12 +274,14 @@ def _fit_candidate(X: np.ndarray, model_name: str, contamination: float, seed: i
             n_neighbors=n_neighbors,
         )
         model.fit(X)
-        return model, None
+        scores = _model_scores(model, model_name, X)
+        return model, _dynamic_threshold(scores, contamination)
 
     if model_name == "one_class_svm":
         model = OneClassSVM(nu=max(0.01, min(0.25, contamination)), gamma="scale")
         model.fit(X)
-        return model, None
+        scores = _model_scores(model, model_name, X)
+        return model, _dynamic_threshold(scores, contamination)
 
     if model_name == "elliptic_envelope":
         support_fraction = min(0.95, max(0.5, 1.0 - contamination))
@@ -202,7 +291,8 @@ def _fit_candidate(X: np.ndarray, model_name: str, contamination: float, seed: i
             random_state=seed,
         )
         model.fit(X)
-        return model, None
+        scores = _model_scores(model, model_name, X)
+        return model, _dynamic_threshold(scores, contamination)
 
     if model_name == "kmeans":
         if n_samples < 2:
@@ -211,8 +301,8 @@ def _fit_candidate(X: np.ndarray, model_name: str, contamination: float, seed: i
             n_clusters = min(max(2, int(np.sqrt(n_samples))), n_samples)
         model = KMeans(n_clusters=n_clusters, random_state=seed, n_init=10)
         model.fit(X)
-        distances = np.min(np.linalg.norm(X[:, None] - model.cluster_centers_[None, :], axis=2), axis=1)
-        threshold = float(np.percentile(distances, (1.0 - contamination) * 100.0))
+        distances = _model_scores(model, model_name, X)
+        threshold = _dynamic_threshold(distances, contamination)
         return model, threshold
 
     raise ValueError(f"Unsupported model: {model_name}")
@@ -273,6 +363,7 @@ def benchmark_spec(
             df,
             anomaly_rate=spec.anomaly_rate,
             seed=seed,
+            family=spec.family,
         )
         profile_df = build_profile_frame(corrupted_df, f"{spec.name}_seed_{seed}")
         X, imputer, scaler, feature_cols = build_feature_matrix(profile_df)

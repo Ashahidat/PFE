@@ -18,3 +18,7 @@ alias atlas-check='(cd /home/ashahi/PFE && ./pip/data_governance/check_atlas_por
 # Convenience: start/stop the whole stack
 alias atlas-ro-start='(cd /home/ashahi/PFE && ./pip/data_governance/start_atlas_readonly_stack.sh)'
 alias atlas-ro-stop='(cd /home/ashahi/PFE && ./pip/data_governance/stop_atlas_readonly_stack.sh)'
+
+# Grafana read-only proxy
+alias grafana-ui-start='(cd /home/ashahi/PFE && ./pip/data_governance/run_nginx_grafana_readonly.sh)'
+alias grafana-ui-stop='(cd /home/ashahi/PFE && ./pip/data_governance/stop_nginx_grafana_readonly.sh)'

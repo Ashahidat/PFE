@@ -9,8 +9,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 DATA_QUALITY_DIR = ROOT / "pip" / "data_quality"
 ORCHESTRATION_DIR = DATA_QUALITY_DIR / "orchestration"
+VALIDATORS_DIR = ORCHESTRATION_DIR / "validators"
 
-for path in (str(DATA_QUALITY_DIR), str(ORCHESTRATION_DIR)):
+for path in (str(DATA_QUALITY_DIR), str(ORCHESTRATION_DIR), str(VALIDATORS_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
@@ -44,6 +45,7 @@ def _install_import_stubs() -> None:
     if "ml_model_factory" not in sys.modules:
         factory_module = types.ModuleType("ml_model_factory")
         factory_module.build_profile_frame = lambda *args, **kwargs: None
+        factory_module.detect_protected_columns = lambda *args, **kwargs: {}
         factory_module.drop_protected_columns = lambda *args, **kwargs: None
         factory_module.infer_family = lambda *args, **kwargs: "mixed"
         sys.modules["ml_model_factory"] = factory_module

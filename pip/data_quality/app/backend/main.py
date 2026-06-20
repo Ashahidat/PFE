@@ -55,7 +55,7 @@ from fastapi.responses import FileResponse
 import os
 
 from config import REACT_DIST_DIR
-from routes import upload, dag, results, push_atlas, login, classifications, classifications_col, projects, descriptions, versionning, profile, glossary, datasets_meta, departments, grafana_auth, grafana_proxy
+from routes import upload, dag, results, push_atlas, login, classifications, classifications_col, projects, descriptions, versionning, profile, glossary, datasets_meta, departments, grafana_auth, grafana_proxy, atlas_proxy
 
 app = FastAPI()
 
@@ -92,6 +92,7 @@ app.include_router(datasets_meta.router, prefix=API_PREFIX)
 app.include_router(departments.router, prefix=API_PREFIX)
 app.include_router(grafana_auth.router, prefix=API_PREFIX)
 app.include_router(grafana_proxy.router, prefix=API_PREFIX)
+app.include_router(atlas_proxy.router, prefix=API_PREFIX)
 
 
 # React SPA (build output under app/frontend-react/dist)

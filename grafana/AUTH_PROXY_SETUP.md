@@ -5,7 +5,7 @@ Objectif : accès **lecture seule** pour tous les humains, visibilité selon rô
 ## 1) Pré-requis
 
 - Grafana OSS installé via APT (comme ton alias `grafana-start`)
-- URL Grafana : `http://localhost:3000`
+- URL Grafana interne : `http://127.0.0.1:3000`
 - Backend FastAPI qui délivre un JWT (`Authorization: Bearer ...`)
 
 ## 2) Config Grafana (`/etc/grafana/grafana.ini`)
@@ -43,10 +43,10 @@ Exemple (simplifié) :
 
 ```nginx
 server {
-  listen 8080;
+  listen 8081;
 
-  location /grafana/ {
-    proxy_pass http://127.0.0.1:3000/;
+  location /api/grafana/ {
+    proxy_pass http://127.0.0.1:3000/grafana/;
 
     # Auth : appel backend (doit retourner 200 si token OK)
     auth_request /_auth_grafana;
@@ -61,13 +61,13 @@ server {
 
   location = /_auth_grafana {
     internal;
-    proxy_pass http://127.0.0.1:8000/grafana/auth;
+    proxy_pass http://127.0.0.1:8000/api/grafana/auth;
     proxy_set_header Authorization $http_authorization;
   }
 }
 ```
 
-Tu accèdes ensuite à Grafana via : `http://localhost:8080/grafana/`
+Tu accèdes ensuite à Grafana via : `http://localhost:8081/api/grafana/`
 
 ## 3bis) Alternative sans Nginx : reverse-proxy dans le backend FastAPI
 
@@ -75,31 +75,31 @@ Si tu ne veux pas de Nginx, le backend peut exposer un reverse-proxy `GET/POST/.
 
 Implémentation :
 - le `/login` met maintenant le JWT dans un cookie httpOnly `access_token` (en plus du JSON `access_token`)
-- `/grafana/*` valide le JWT (header `Authorization: Bearer ...` **ou** cookie `access_token`)
+- `/api/grafana/*` valide le JWT (header `Authorization: Bearer ...` **ou** cookie `access_token`)
 - puis forwarde vers Grafana en injectant `X-WEBAUTH-USER` / `X-WEBAUTH-NAME` / `X-WEBAUTH-ROLE`
 
 Accès navigateur :
 - login via `http://localhost:8000/ui` (cookie posé par le backend)
-- Grafana via `http://localhost:8000/grafana/`
+- Grafana via `http://localhost:8000/api/grafana/`
 
 Important (Grafana derrière un sous-chemin) : dans `/etc/grafana/grafana.ini`, ajoute aussi :
 
 ```ini
 [server]
-root_url = http://localhost:8000/grafana/
+root_url = http://localhost:8000/api/grafana/
 serve_from_sub_path = true
 ```
 
 Astuce (fix automatique du reload loop) :
-- `sudo bash scripts/grafana_fix_reload_loop.sh --base-url http://localhost:8000/grafana/`
-- Si tu passes par Nginx : `sudo bash scripts/grafana_fix_reload_loop.sh --base-url http://localhost:8080/grafana/`
+- `sudo bash scripts/grafana_fix_reload_loop.sh --base-url http://localhost:8000/api/grafana/`
+- Si tu passes par Nginx : `sudo bash scripts/grafana_fix_reload_loop.sh --base-url http://localhost:8081/api/grafana/`
 
 ## 4) Backend : variables d’environnement (provisioning)
 
 Le backend provisionne folders/permissions/dashboards via l’API Grafana.
 
 Variables :
-- `GRAFANA_URL=http://localhost:3000`
+- `GRAFANA_URL=http://127.0.0.1:3000`
 - `GRAFANA_PROVISIONING_ENABLED=true`
 - `GRAFANA_DASHBOARD_TEMPLATES_DIR=grafana/dashboard_templates`
 

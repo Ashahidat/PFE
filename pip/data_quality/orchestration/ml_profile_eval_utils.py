@@ -146,10 +146,244 @@ def profile_dataset(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _infer_family_from_frame(df: pd.DataFrame) -> str:
+    if df.empty or not len(df.columns):
+        return "mixed_structured"
+
+    numeric_count = sum(pd.api.types.is_numeric_dtype(df[c]) for c in df.columns)
+    datetime_count = sum(pd.api.types.is_datetime64_any_dtype(df[c]) for c in df.columns)
+    object_count = len(df.columns) - numeric_count - datetime_count
+    total = max(len(df.columns), 1)
+
+    numeric_ratio = numeric_count / total
+    datetime_ratio = datetime_count / total
+    text_ratio = object_count / total
+
+    if numeric_ratio >= 0.8 and datetime_ratio <= 0.1:
+        return "numeric"
+    if text_ratio >= 0.6 and numeric_ratio <= 0.4 and datetime_ratio <= 0.2:
+        return "categorical_text"
+    return "mixed_structured"
+
+
+def _select_target_columns(
+    cols: list[str],
+    numeric_cols: list[str],
+    categorical_cols: list[str],
+    *,
+    family: str,
+    n_anomalies: int,
+    rng: np.random.Generator,
+) -> list[str]:
+    if n_anomalies <= 0:
+        return []
+
+    if family == "numeric":
+        pool = numeric_cols or cols
+        return list(rng.choice(pool, size=min(n_anomalies, len(pool)), replace=False))
+
+    if family == "categorical_text":
+        pool = categorical_cols or cols
+        return list(rng.choice(pool, size=min(n_anomalies, len(pool)), replace=False))
+
+    targets: list[str] = []
+    if numeric_cols:
+        numeric_share = max(1, int(round(n_anomalies * 0.4)))
+        numeric_share = min(numeric_share, len(numeric_cols), n_anomalies)
+        targets.extend(rng.choice(numeric_cols, size=numeric_share, replace=False).tolist())
+    if categorical_cols and len(targets) < n_anomalies:
+        remaining = n_anomalies - len(targets)
+        categorical_share = min(remaining, len(categorical_cols))
+        targets.extend(rng.choice(categorical_cols, size=categorical_share, replace=False).tolist())
+
+    if len(targets) < n_anomalies:
+        fallback_pool = [col for col in cols if col not in targets]
+        if fallback_pool:
+            remaining = min(n_anomalies - len(targets), len(fallback_pool))
+            targets.extend(rng.choice(fallback_pool, size=remaining, replace=False).tolist())
+    return targets
+
+
+def _mutate_numeric_column(df_corrupted: pd.DataFrame, col: str, idx: np.ndarray, rng: np.random.Generator) -> dict[str, object]:
+    series = pd.to_numeric(df_corrupted[col], errors="coerce").astype(float)
+    df_corrupted[col] = series
+    anomaly_type = rng.choice(
+        ["missing", "duplicate", "outlier", "drift", "noise", "constant", "scale_shift", "sign_flip"],
+        p=[0.14, 0.16, 0.18, 0.16, 0.12, 0.10, 0.12, 0.02],
+    )
+
+    if anomaly_type == "missing":
+        df_corrupted.loc[df_corrupted.index[idx], col] = np.nan
+    elif anomaly_type == "duplicate":
+        mode = series.mode(dropna=True)
+        if len(mode) > 0:
+            df_corrupted.loc[df_corrupted.index[idx], col] = float(mode.iloc[0])
+    elif anomaly_type == "outlier":
+        col_std = float(series.std(ddof=0) or 1.0)
+        col_mean = float(series.mean())
+        scale = rng.uniform(6.0, 12.0)
+        direction = rng.choice([-1.0, 1.0])
+        df_corrupted.loc[df_corrupted.index[idx], col] = col_mean + direction * scale * col_std
+    elif anomaly_type == "drift":
+        factor = rng.uniform(1.2, 3.5)
+        offset = rng.uniform(-0.5, 0.5) * float(series.std(ddof=0) or 1.0)
+        df_corrupted[col] = series * factor + offset
+    elif anomaly_type == "noise":
+        sigma = float(series.std(ddof=0) or 1.0) * rng.uniform(0.8, 2.5)
+        noise = rng.normal(0, sigma, size=len(series))
+        df_corrupted[col] = series + noise
+    elif anomaly_type == "constant":
+        replacement = float(series.median()) if pd.notna(series.median()) else 0.0
+        df_corrupted.loc[df_corrupted.index[idx], col] = replacement
+    elif anomaly_type == "scale_shift":
+        factor = rng.uniform(0.4, 2.2)
+        offset = rng.uniform(-2.0, 2.0) * float(series.std(ddof=0) or 1.0)
+        df_corrupted[col] = series * factor + offset
+    elif anomaly_type == "sign_flip":
+        df_corrupted.loc[df_corrupted.index[idx], col] = -series.iloc[idx].to_numpy()
+
+    return {
+        "type": anomaly_type,
+        "is_numeric": True,
+    }
+
+
+def _mutate_categorical_column(df_corrupted: pd.DataFrame, col: str, idx: np.ndarray, rng: np.random.Generator) -> dict[str, object]:
+    series = df_corrupted[col].astype("string")
+    anomaly_type = rng.choice(
+        ["missing", "duplicate", "rare_category", "shuffle", "corrupt_text", "case_shift", "whitespace", "merge_categories"],
+        p=[0.14, 0.16, 0.18, 0.12, 0.12, 0.10, 0.08, 0.10],
+    )
+
+    if anomaly_type == "missing":
+        df_corrupted.loc[df_corrupted.index[idx], col] = pd.NA
+    elif anomaly_type == "duplicate":
+        mode = series.mode(dropna=True)
+        if len(mode) > 0:
+            df_corrupted.loc[df_corrupted.index[idx], col] = mode.iloc[0]
+    elif anomaly_type == "rare_category":
+        df_corrupted.loc[df_corrupted.index[idx], col] = f"__rare__{col}"
+    elif anomaly_type == "shuffle":
+        shuffled = series.sample(frac=1.0, random_state=int(rng.integers(0, 1_000_000))).to_numpy()
+        df_corrupted[col] = shuffled
+    elif anomaly_type == "corrupt_text":
+        corrupted = series.iloc[idx].fillna("").astype(str) + "_corrupt"
+        df_corrupted.loc[df_corrupted.index[idx], col] = corrupted.to_numpy()
+    elif anomaly_type == "case_shift":
+        values = series.iloc[idx].fillna("").astype(str)
+        transformed = []
+        for value in values:
+            mode = rng.choice(["lower", "upper", "title"])
+            transformed.append(getattr(value, mode)())
+        df_corrupted.loc[df_corrupted.index[idx], col] = transformed
+    elif anomaly_type == "whitespace":
+        values = series.iloc[idx].fillna("").astype(str)
+        df_corrupted.loc[df_corrupted.index[idx], col] = ["  " + value.strip() + "  " for value in values]
+    elif anomaly_type == "merge_categories":
+        mode = series.mode(dropna=True)
+        if len(mode) > 0:
+            replacement = mode.iloc[0]
+        else:
+            replacement = "__merged__"
+        df_corrupted.loc[df_corrupted.index[idx], col] = replacement
+
+    return {
+        "type": anomaly_type,
+        "is_numeric": False,
+    }
+
+
+def _apply_mixed_relationship_breaks(
+    df_corrupted: pd.DataFrame,
+    numeric_targets: list[str],
+    categorical_targets: list[str],
+    rng: np.random.Generator,
+) -> list[dict[str, object]]:
+    """
+    Add a small amount of cross-field corruption for mixed datasets.
+
+    The goal is to break row-level consistency between numeric and categorical
+    columns without relying on synthetic labels that are too obvious.
+    """
+    anomaly_records: list[dict[str, object]] = []
+    if not numeric_targets or not categorical_targets or len(df_corrupted) < 3:
+        return anomaly_records
+
+    n_pairs = min(len(numeric_targets), len(categorical_targets), max(1, round(len(df_corrupted.columns) * 0.15)))
+    paired_numeric = numeric_targets[:n_pairs]
+    paired_categorical = categorical_targets[:n_pairs]
+
+    for num_col, cat_col in zip(paired_numeric, paired_categorical):
+        row_count = len(df_corrupted)
+        affected = max(2, int(round(row_count * rng.uniform(0.08, 0.22))))
+        affected = min(affected, row_count)
+        idx = rng.choice(row_count, size=min(affected, row_count), replace=False)
+
+        num_values = pd.to_numeric(df_corrupted[num_col], errors="coerce").astype(float)
+        cat_values = df_corrupted[cat_col].astype("string")
+        donor_rows = rng.choice(row_count, size=len(idx), replace=False)
+
+        # Keep the corruption plausible by moving values between unrelated rows,
+        # then apply a small drift on top of the swap.
+        swapped_num = num_values.iloc[donor_rows].to_numpy()
+        df_corrupted.loc[df_corrupted.index[idx], num_col] = swapped_num
+
+        drift_scale = rng.uniform(0.7, 1.5)
+        drift_shift = rng.uniform(-0.35, 0.35) * float(num_values.std(ddof=0) or 1.0)
+        df_corrupted.loc[df_corrupted.index[idx], num_col] = pd.to_numeric(
+            df_corrupted.loc[df_corrupted.index[idx], num_col], errors="coerce"
+        ).astype(float) * drift_scale + drift_shift
+
+        # Local record corruption: a handful of rows become incomplete, which is
+        # common in real mixed schemas where a single record is partially broken.
+        missing_count = max(1, len(idx) // 4)
+        missing_idx = idx[:missing_count]
+        if len(missing_idx) > 0:
+            df_corrupted.loc[df_corrupted.index[missing_idx], num_col] = np.nan
+
+        swapped_cat = cat_values.iloc[donor_rows].fillna("").astype(str).to_numpy()
+        alias_style = rng.choice(["case", "space", "suffix", "rare"], p=[0.35, 0.25, 0.25, 0.15])
+        if alias_style == "case":
+            mutated_cat = [value.upper() if i % 2 == 0 else value.lower() for i, value in enumerate(swapped_cat)]
+        elif alias_style == "space":
+            mutated_cat = [f" {value.strip()} " for value in swapped_cat]
+        elif alias_style == "suffix":
+            mutated_cat = [f"{value}_mix" for value in swapped_cat]
+        else:
+            mode = cat_values.mode(dropna=True)
+            rare_value = mode.iloc[0] if len(mode) > 0 else f"__mixed__{cat_col}"
+            mutated_cat = [rare_value for _ in range(len(swapped_cat))]
+        df_corrupted.loc[df_corrupted.index[idx], cat_col] = mutated_cat
+
+        anomaly_records.extend(
+            [
+                {
+                    "column": num_col,
+                    "paired_column": cat_col,
+                    "type": "mixed_relationship_break",
+                    "is_numeric": True,
+                    "severity": float(rng.uniform(0.2, 0.45)),
+                    "rows_affected": len(idx),
+                },
+                {
+                    "column": cat_col,
+                    "paired_column": num_col,
+                    "type": "mixed_relationship_break",
+                    "is_numeric": False,
+                    "severity": float(rng.uniform(0.2, 0.45)),
+                    "rows_affected": len(idx),
+                },
+            ]
+        )
+
+    return anomaly_records
+
+
 def inject_anomalies(
     df: pd.DataFrame,
     anomaly_rate: float = 0.2,
     seed: int = 42,
+    family: str | None = None,
 ) -> tuple[pd.DataFrame, dict[str, bool], pd.DataFrame]:
     rng = np.random.default_rng(seed)
     df_corrupted = df.copy()
@@ -159,9 +393,17 @@ def inject_anomalies(
     numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
     categorical_cols = [col for col in df.columns if col not in numeric_cols]
     cols = list(df.columns)
+    family = family or _infer_family_from_frame(df)
 
     n_anomalies = max(1, int(round(len(cols) * anomaly_rate)))
-    target_cols = list(rng.choice(cols, size=min(n_anomalies, len(cols)), replace=False))
+    target_cols = _select_target_columns(
+        cols,
+        numeric_cols,
+        categorical_cols,
+        family=family,
+        n_anomalies=min(n_anomalies, len(cols)),
+        rng=rng,
+    )
 
     for col in cols:
         anomaly_mask[col] = col in target_cols
@@ -169,61 +411,36 @@ def inject_anomalies(
     for col in target_cols:
         is_numeric = col in numeric_cols
         if is_numeric:
-            anomaly_type = rng.choice(
-                ["missing", "duplicate", "outlier", "drift", "noise", "constant"],
-                p=[0.16, 0.18, 0.26, 0.2, 0.12, 0.08],
-            )
-        else:
-            anomaly_type = rng.choice(
-                ["missing", "duplicate", "rare_category", "shuffle", "corrupt_text"],
-                p=[0.2, 0.25, 0.2, 0.2, 0.15],
-            )
+            # Cast once so injected float anomalies do not trigger dtype warnings on int columns.
+            df_corrupted[col] = pd.to_numeric(df_corrupted[col], errors="coerce").astype(float)
 
         severity = float(rng.uniform(0.15, 0.6))
         n_rows = len(df_corrupted)
-        affected = max(1, int(round(n_rows * severity * 0.15)))
+        if family == "mixed_structured":
+            severity = float(rng.uniform(0.12, 0.5))
+        affected = max(1, int(round(n_rows * severity * 0.12)))
         idx = rng.choice(n_rows, size=min(affected, n_rows), replace=False)
 
-        if anomaly_type == "missing":
-            df_corrupted.loc[df_corrupted.index[idx], col] = np.nan
-        elif anomaly_type == "duplicate":
-            mode = df_corrupted[col].mode(dropna=True)
-            if len(mode) > 0:
-                df_corrupted.loc[df_corrupted.index[idx], col] = mode.iloc[0]
-        elif anomaly_type == "outlier" and is_numeric:
-            col_std = float(df_corrupted[col].std(ddof=0) or 1.0)
-            col_mean = float(df_corrupted[col].mean())
-            scale = rng.uniform(8.0, 16.0)
-            direction = rng.choice([-1.0, 1.0])
-            df_corrupted.loc[df_corrupted.index[idx], col] = col_mean + direction * scale * col_std
-        elif anomaly_type == "drift" and is_numeric:
-            factor = rng.uniform(1.8, 8.0)
-            offset = rng.uniform(50.0, 500.0)
-            df_corrupted[col] = df_corrupted[col] * factor + offset
-        elif anomaly_type == "noise" and is_numeric:
-            noise = rng.normal(0, float(df_corrupted[col].std(ddof=0) or 1.0) * rng.uniform(2.0, 5.0), size=n_rows)
-            df_corrupted[col] = df_corrupted[col] + noise
-        elif anomaly_type == "constant" and is_numeric:
-            replacement = float(df_corrupted[col].median()) if pd.notna(df_corrupted[col].median()) else 0.0
-            df_corrupted.loc[df_corrupted.index[idx], col] = replacement
-        elif anomaly_type == "rare_category" and not is_numeric:
-            df_corrupted.loc[df_corrupted.index[idx], col] = f"__rare__{col}"
-        elif anomaly_type == "shuffle" and not is_numeric:
-            shuffled = df_corrupted[col].sample(frac=1.0, random_state=seed).to_numpy()
-            df_corrupted[col] = shuffled
-        elif anomaly_type == "corrupt_text" and not is_numeric:
-            df_corrupted.loc[df_corrupted.index[idx], col] = df_corrupted.loc[df_corrupted.index[idx], col].astype(str) + "_corrupt"
+        if is_numeric:
+            mutation = _mutate_numeric_column(df_corrupted, col, idx, rng)
         else:
-            df_corrupted.loc[df_corrupted.index[idx], col] = np.nan
+            mutation = _mutate_categorical_column(df_corrupted, col, idx, rng)
 
         anomaly_records.append(
             {
                 "column": col,
-                "type": anomaly_type,
-                "is_numeric": is_numeric,
+                "type": mutation["type"],
+                "is_numeric": mutation["is_numeric"],
                 "severity": severity,
                 "rows_affected": len(idx),
             }
+        )
+
+    if family == "mixed_structured":
+        target_numeric_cols = [col for col in target_cols if col in numeric_cols]
+        target_categorical_cols = [col for col in target_cols if col in categorical_cols]
+        anomaly_records.extend(
+            _apply_mixed_relationship_breaks(df_corrupted, target_numeric_cols, target_categorical_cols, rng)
         )
 
     anomaly_details = pd.DataFrame(anomaly_records)

@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Response
 
-from core.roles import ADMINISTRATORS
 from jwt_dependencies import get_current_user
 
 router = APIRouter(prefix="/grafana", tags=["grafana"])
@@ -15,15 +14,14 @@ def grafana_auth(user=Depends(get_current_user)):
     """
     employee_id = user.get("employee_id") or user.get("sub") or ""
     username = user.get("username") or employee_id
-    app_role = user.get("role") or "UNKNOWN"
     department = user.get("department") or ""
 
-    grafana_role = "Admin" if str(app_role).upper() in ADMINISTRATORS else "Viewer"
     headers = {
         "X-WEBAUTH-USER": employee_id,
         "X-WEBAUTH-NAME": username,
-        "X-WEBAUTH-ROLE": grafana_role,
-        "X-PFE-ROLE": str(app_role),
+        # Humans only get Viewer in Grafana; provisioning/admin actions stay server-side.
+        "X-WEBAUTH-ROLE": "Viewer",
+        "X-PFE-ROLE": str(user.get("role") or "UNKNOWN"),
     }
     if department:
         headers["X-PFE-DEPARTMENT"] = str(department)

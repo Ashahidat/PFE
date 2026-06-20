@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import MutableHeaders
 
-from core.roles import ADMINISTRATORS
 from db.connexion_db import get_db
 from db.projects import Project
 from grafana.provisioning import provision_project_dashboards
@@ -21,6 +20,8 @@ from jwt_dependencies import get_current_user
 
 router = APIRouter(prefix="/grafana", tags=["grafana"])
 logger = logging.getLogger("grafana-proxy")
+PUBLIC_PREFIX = "/api/grafana"
+UPSTREAM_PREFIX = "/grafana"
 
 
 _HOP_BY_HOP_HEADERS = {
@@ -215,7 +216,7 @@ async def grafana_reverse_proxy(
 
     Browser flow:
     - user logs in via `/login` (JWT stored in httpOnly cookie `access_token`)
-    - user navigates to `/grafana/...`
+    - user navigates to `/api/grafana/...`
     - backend validates JWT then forwards the request to Grafana with `X-WEBAUTH-*` headers
     """
 
@@ -232,19 +233,16 @@ async def grafana_reverse_proxy(
     if request.method == "POST" and normalized_path == "api/user/auth-tokens/rotate":
         return Response(status_code=204)
 
-    # Grafana is configured to be served under `/grafana/` (see grafana/AUTH_PROXY_SETUP.md),
-    # so the upstream expects requests to include that prefix.
-    #
-    # If we proxy `/grafana/login` to upstream `/login`, Grafana will redirect to `/grafana/login`
-    # (because `serve_from_sub_path = true`), causing an infinite 301/302 loop through this proxy.
-    upstream_path = f"/grafana/{path.lstrip('/')}"
+    # Grafana itself is exposed internally under `/grafana/`.
+    # The browser-facing path stays `/api/grafana/`, but the upstream request must use
+    # Grafana's own subpath so asset URLs and redirects resolve correctly.
+    upstream_path = f"{UPSTREAM_PREFIX}/{path.lstrip('/')}"
     upstream_url = f"{upstream_base}{upstream_path}"
     if request.url.query:
         upstream_url = f"{upstream_url}?{request.url.query}"
 
     employee_id = user.get("employee_id") or user.get("sub") or ""
     username = user.get("username") or employee_id
-    app_role = user.get("role") or "UNKNOWN"
     department = user.get("department") or ""
 
     upstream_headers: dict[str, str] = {}
@@ -266,34 +264,38 @@ async def grafana_reverse_proxy(
         if filtered:
             upstream_headers["Cookie"] = filtered
 
-    grafana_role = "Admin" if str(app_role).upper() in ADMINISTRATORS else "Viewer"
-
     upstream_headers["X-WEBAUTH-USER"] = employee_id
     upstream_headers["X-WEBAUTH-NAME"] = username
-    # Grafana expects org role values like "Viewer"/"Editor"/"Admin".
-    # Default to Viewer; allow app administrators to become Grafana org Admin
-    # to avoid "can't see folders" when team sync isn't configured.
-    upstream_headers["X-WEBAUTH-ROLE"] = grafana_role
+    # Humans only get Viewer in Grafana; provisioning/admin actions stay server-side.
+    upstream_headers["X-WEBAUTH-ROLE"] = "Viewer"
     # Extra context (not interpreted by Grafana core, but useful for logs/proxies/plugins).
-    upstream_headers["X-PFE-ROLE"] = str(app_role)
+    upstream_headers["X-PFE-ROLE"] = str(user.get("role") or "UNKNOWN")
     if department:
         upstream_headers["X-PFE-DEPARTMENT"] = str(department)
-    upstream_headers["X-Forwarded-Prefix"] = "/grafana"
+    upstream_headers["X-Forwarded-Prefix"] = PUBLIC_PREFIX
     upstream_headers.setdefault("X-Forwarded-Proto", request.url.scheme)
     upstream_headers.setdefault("X-Forwarded-Host", request.headers.get("host", "localhost"))
 
     data = await request.body() if request.method not in {"GET", "HEAD"} else None
 
-    upstream_resp: requests.Response = await run_in_threadpool(
-        requests.request,
-        method=request.method,
-        url=upstream_url,
-        headers=upstream_headers,
-        data=data,
-        allow_redirects=False,
-        stream=True,
-        timeout=30,
-    )
+    try:
+        upstream_resp: requests.Response = await run_in_threadpool(
+            requests.request,
+            method=request.method,
+            url=upstream_url,
+            headers=upstream_headers,
+            data=data,
+            allow_redirects=False,
+            stream=True,
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        logger.exception("⚠️ [Grafana] upstream request failed url=%s", upstream_url)
+        return Response(
+            status_code=502,
+            content=f"Grafana upstream unreachable: {exc}",
+            media_type="text/plain; charset=utf-8",
+        )
 
     # If a project folder does not exist yet (provisioning skipped/failed),
     # Grafana returns 404 for its folder API and the UI shows "folders not found".
@@ -326,7 +328,7 @@ async def grafana_reverse_proxy(
             identity_headers = None
             # If no Grafana API creds are configured, we can still provision using Grafana auth-proxy
             # (trusted X-WEBAUTH-* headers) but only for app administrators.
-            if str(user.get("role") or "").upper() in ADMINISTRATORS:
+            if str(user.get("role") or "").upper() in {"SUPER_ADMIN", "ADMIN", "ADMIN_GLOSSAIRE"}:
                 identity_headers = {
                     "X-WEBAUTH-USER": str(employee_id),
                     "X-WEBAUTH-NAME": str(username),
@@ -365,15 +367,18 @@ async def grafana_reverse_proxy(
                 )
 
     location = upstream_resp.headers.get("location")
-    if location and location.startswith("/") and not location.startswith("/grafana/"):
-        location = f"/grafana{location}"
+    if location and location.startswith("/"):
+        if location.startswith(f"{UPSTREAM_PREFIX}/"):
+            location = f"{PUBLIC_PREFIX}{location[len(UPSTREAM_PREFIX):]}"
+        elif not location.startswith(f"{PUBLIC_PREFIX}/"):
+            location = f"{PUBLIC_PREFIX}{location}"
 
     media_type = upstream_resp.headers.get("content-type")
 
     # If Grafana isn't configured for subpath serving, rewrite the HTML entrypoint.
     if media_type and "text/html" in media_type.lower():
         text = await run_in_threadpool(lambda: upstream_resp.text)
-        rewritten = _rewrite_html_for_subpath(text, "/grafana")
+        rewritten = _rewrite_html_for_subpath(text, PUBLIC_PREFIX)
         resp = Response(
             content=rewritten,
             status_code=upstream_resp.status_code,

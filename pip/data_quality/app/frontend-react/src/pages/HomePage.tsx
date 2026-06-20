@@ -1,39 +1,54 @@
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
+import { GRAFANA_DASHBOARDS_URL } from "../lib/externalLinks";
 import { getLastDatasetId, getUserRole } from "../lib/storage";
 
 type HomeAction = {
   title: string;
   description: string;
   actionLabel: string;
-  to: string;
+  to?: string;
+  href?: string;
   tone?: "primary" | "muted";
 };
 
-function ActionTile({ title, description, actionLabel, to, tone = "muted", navigate }: HomeAction & { navigate: (to: string) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => navigate(to)}
-      style={{
-        width: "100%",
-        textAlign: "left",
-        borderRadius: 18,
-        border: tone === "primary" ? "1px solid rgba(30,64,175,0.24)" : "1px solid #e5e7eb",
-        background:
-          tone === "primary"
-            ? "linear-gradient(180deg, rgba(30,64,175,0.08), rgba(15,118,110,0.05))"
-            : "#fff",
-        boxShadow: "0 10px 30px rgba(15,23,42,0.06)",
-        padding: 20,
-        cursor: "pointer"
-      }}
-    >
+function ActionTile({ title, description, actionLabel, to, href, tone = "muted", navigate }: HomeAction & { navigate: (to: string) => void }) {
+  const cardStyle = {
+    width: "100%",
+    textAlign: "left" as const,
+    borderRadius: 18,
+    border: tone === "primary" ? "1px solid rgba(30,64,175,0.24)" : "1px solid #e5e7eb",
+    background:
+      tone === "primary"
+        ? "linear-gradient(180deg, rgba(30,64,175,0.08), rgba(15,118,110,0.05))"
+        : "#fff",
+    boxShadow: "0 10px 30px rgba(15,23,42,0.06)",
+    padding: 20,
+    cursor: "pointer",
+    textDecoration: "none"
+  };
+
+  const content = (
+    <>
       <div style={{ fontSize: 12, letterSpacing: 0.08, textTransform: "uppercase", color: "#6b7280", marginBottom: 8 }}>
         {actionLabel}
       </div>
       <div style={{ fontSize: 18, fontWeight: 700, color: "#111827", marginBottom: 8 }}>{title}</div>
       <div style={{ fontSize: 14, lineHeight: 1.6, color: "#4b5563" }}>{description}</div>
+    </>
+  );
+
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" style={cardStyle}>
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <button type="button" onClick={() => navigate(to || "/home")} style={cardStyle}>
+      {content}
     </button>
   );
 }
@@ -197,6 +212,17 @@ export default function HomePage() {
             </div>
           ) : null}
         </div>
+      </section>
+
+      <section style={{ marginBottom: 24 }}>
+        <ActionTile
+          title="Dashboards Grafana (read-only)"
+          description="Ouvre les tableaux de bord Grafana en lecture seule. Les utilisateurs n’ont pas les droits d’édition."
+          actionLabel="Consulter"
+          href={GRAFANA_DASHBOARDS_URL}
+          tone="primary"
+          navigate={navigate}
+        />
       </section>
 
       <div

@@ -57,9 +57,7 @@ export default function LoginPage() {
       setUserRole(res.role);
       setUserDepartment(res.department);
       setStoredEmployeeId(res.employee_id);
-      if (res.role === "ADMIN_GLOSSAIRE") navigate("/glossary");
-      else if (res.role === "SUPER_ADMIN" || res.role === "ADMIN") navigate("/users");
-      else navigate("/projects");
+      navigate("/home");
     } catch (err) {
       const e2 = err as ApiError;
       if (e2 instanceof ApiError) {

@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Fix Grafana infinite reload loop when served under /grafana/ (subpath).
+Fix Grafana infinite reload loop when served behind a subpath proxy.
 
 This script updates /etc/grafana/grafana.ini:
   [server]
@@ -18,11 +18,11 @@ It can also enable AuthProxy login cookies (recommended for Grafana 10+ UI stabi
 Then restarts Grafana (grafana-server) if possible.
 
 Usage:
-  sudo bash scripts/grafana_fix_reload_loop.sh --base-url http://localhost:8000/grafana/
+  sudo bash scripts/grafana_fix_reload_loop.sh --base-url http://localhost:8000/api/grafana/
 
 Notes:
-  - base-url must end with /grafana/
-  - If you access via Nginx, use http://localhost:8080/grafana/
+  - base-url must be the public URL users will open, usually ending with /api/grafana/
+  - If you access via Nginx, use http://localhost:8081/api/grafana/
 EOF
 }
 
@@ -57,8 +57,8 @@ if [[ -z "${BASE_URL}" ]]; then
   exit 2
 fi
 
-if [[ "${BASE_URL}" != */grafana/ ]]; then
-  echo "Invalid --base-url: must end with /grafana/ (got: ${BASE_URL})" >&2
+if [[ "${BASE_URL}" != */grafana/ && "${BASE_URL}" != */api/grafana/ ]]; then
+  echo "Invalid --base-url: must end with /grafana/ or /api/grafana/ (got: ${BASE_URL})" >&2
   exit 2
 fi
 
@@ -79,7 +79,7 @@ cp -a "${INI}" "${bak}"
 
 tmp="$(mktemp)"
 
-python3 - <<'PY' "${INI}" "${tmp}" "${BASE_URL}"
+python3 - <<'PY' "${INI}" "${tmp}" "${BASE_URL}" "${ENABLE_LOGIN_TOKEN}"
 import re
 import sys
 from pathlib import Path
