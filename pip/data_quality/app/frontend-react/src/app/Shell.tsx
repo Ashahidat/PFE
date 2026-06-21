@@ -1,6 +1,6 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { clearToken, getUserRole } from "../lib/storage";
-import { GRAFANA_DASHBOARDS_URL } from "../lib/externalLinks";
+import { ATLAS_UI_URL, GRAFANA_DASHBOARDS_URL, canOpenAtlasUi } from "../lib/externalLinks";
 
 type NavItem = { to?: string; label: string; href?: string };
 type NavGroup = { title: string; items: NavItem[] };
@@ -31,6 +31,7 @@ function buildNav(role: string | null): NavGroup[] {
       items: [
         { to: "/home", label: "Accueil" },
         { to: "/projects", label: "Projets" },
+        ...(canOpenAtlasUi(role) ? [{ href: ATLAS_UI_URL, label: "Atlas BETA UI" }] : []),
         { href: GRAFANA_DASHBOARDS_URL, label: "Dashboards Grafana (read-only)" }
       ]
     },

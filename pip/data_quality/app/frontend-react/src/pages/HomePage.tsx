@@ -1,4 +1,6 @@
 import { useNavigate } from "react-router-dom";
+import AtlasReadOnlyCard from "../components/AtlasReadOnlyCard";
+import GrafanaReadOnlyCard from "../components/GrafanaReadOnlyCard";
 import PageHeader from "../components/PageHeader";
 import { GRAFANA_DASHBOARDS_URL } from "../lib/externalLinks";
 import { getLastDatasetId, getUserRole } from "../lib/storage";
@@ -237,15 +239,12 @@ export default function HomePage() {
         </div>
       </section>
 
+      <section style={{ marginBottom: 16 }}>
+        <AtlasReadOnlyCard />
+      </section>
+
       <section style={{ marginBottom: 24 }}>
-        <ActionTile
-          title="Dashboards Grafana (read-only)"
-          description="Ouvre les tableaux de bord Grafana en lecture seule. Les utilisateurs n’ont pas les droits d’édition."
-          actionLabel="Consulter"
-          href={GRAFANA_DASHBOARDS_URL}
-          tone="primary"
-          navigate={navigate}
-        />
+        <GrafanaReadOnlyCard href={GRAFANA_DASHBOARDS_URL} />
       </section>
 
       <div

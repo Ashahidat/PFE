@@ -8,8 +8,6 @@ import {
   DialogContent,
   DialogTitle,
   Grid,
-  IconButton,
-  Link,
   Paper,
   Stack,
   TextField,
@@ -19,7 +17,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import { api, ApiError } from "../lib/api";
-import { toGrafanaBackendHref } from "../lib/externalLinks";
 
 type Project = {
   id: string;
@@ -152,24 +149,6 @@ export default function ProjectsPage() {
                     Uploader un dataset
                   </Button>
                 </Stack>
-                {p.grafana_links?.folder?.url ? (
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: 1 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      Dashboards Grafana (read-only)
-                    </Typography>
-                    <IconButton
-                      size="small"
-                      component={Link}
-                      href={toGrafanaBackendHref(p.grafana_links.folder.url) || p.grafana_links.folder.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Typography variant="caption" component="span">
-                        Ouvrir
-                      </Typography>
-                    </IconButton>
-                  </Stack>
-                ) : null}
               </Stack>
             </Paper>
           </Grid>

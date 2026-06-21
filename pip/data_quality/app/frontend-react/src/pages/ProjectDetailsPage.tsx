@@ -17,7 +17,6 @@ import {
   Typography
 } from "@mui/material";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
-import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import StorageOutlinedIcon from "@mui/icons-material/StorageOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
@@ -25,10 +24,10 @@ import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
 import { Accordion, AccordionDetails, AccordionSummary } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import GrafanaReadOnlyCard from "../components/GrafanaReadOnlyCard";
 import PageHeader from "../components/PageHeader";
 import AtlasUiLinkButton from "../components/AtlasUiLinkButton";
 import { api, ApiError } from "../lib/api";
-import { toGrafanaBackendHref } from "../lib/externalLinks";
 import { setLastDatasetId } from "../lib/storage";
 
 type Project = {
@@ -249,27 +248,19 @@ export default function ProjectDetailsPage() {
                     Accès rapides
                   </Typography>
                   <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap">
-                    <Button
-                      variant="outlined"
-                      onClick={() => navigate(`/upload?project_id=${encodeURIComponent(project.id)}`)}
-                    >
-                      Uploader ici
-                    </Button>
-                    <AtlasUiLinkButton variant="outlined" />
-                    {grafanaUrl ? (
                       <Button
-                        href={toGrafanaBackendHref(grafanaUrl) || grafanaUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
                         variant="outlined"
-                        endIcon={<OpenInNewOutlinedIcon />}
+                        onClick={() => navigate(`/upload?project_id=${encodeURIComponent(project.id)}`)}
                       >
-                        Grafana
+                        Uploader ici
                       </Button>
-                    ) : null}
-                  </Stack>
-                </Paper>
-              </Grid>
+                      <AtlasUiLinkButton variant="outlined" />
+                      {grafanaUrl ? (
+                        <GrafanaReadOnlyCard href={grafanaUrl} sx={{ minWidth: 280 }} />
+                      ) : null}
+                    </Stack>
+                  </Paper>
+                </Grid>
             </Grid>
           </Stack>
         </Paper>
