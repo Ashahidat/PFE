@@ -5,6 +5,7 @@
 #   source /home/ashahi/PFE/pip/data_governance/aliases.sh
 
 alias atlas-reset='(cd /home/ashahi/PFE/pip/data_governance && ./reset_atlas.sh)'
+alias grafana-reset='(cd /home/ashahi/PFE/pip/data_governance && ./reset_grafana.sh)'
 
 # Internal Atlas (write-capable, localhost only)
 alias atlas-internal-start='(cd /home/ashahi/PFE && ./pip/data_governance/run_atlas_internal.sh)'
