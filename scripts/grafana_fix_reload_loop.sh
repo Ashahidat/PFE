@@ -28,6 +28,7 @@ EOF
 
 BASE_URL=""
 ENABLE_LOGIN_TOKEN="true"
+RESTART_GRAFANA="true"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -38,6 +39,10 @@ while [[ $# -gt 0 ]]; do
     --enable-login-token)
       ENABLE_LOGIN_TOKEN="${2:-true}"
       shift 2
+      ;;
+    --no-restart)
+      RESTART_GRAFANA="false"
+      shift
       ;;
     -h|--help)
       usage
@@ -190,15 +195,27 @@ echo "Backup: ${bak}"
 echo "Set [server] root_url=${BASE_URL} serve_from_sub_path=true enforce_domain=false"
 
 if command -v systemctl >/dev/null 2>&1; then
-  systemctl restart grafana-server || systemctl restart grafana || true
-  if systemctl is-active --quiet grafana-server 2>/dev/null; then
-    echo "Grafana restarted: grafana-server is active"
+  if [[ "${RESTART_GRAFANA}" == "true" ]]; then
+    systemctl restart grafana-server || systemctl restart grafana || true
+    if systemctl is-active --quiet grafana-server 2>/dev/null; then
+      echo "Grafana restarted: grafana-server is active"
+    else
+      echo "Grafana restart attempted. Check status with: systemctl status grafana-server" >&2
+    fi
   else
-    echo "Grafana restart attempted. Check status with: systemctl status grafana-server" >&2
+    echo "Grafana config updated; restart skipped (--no-restart)."
   fi
 elif command -v service >/dev/null 2>&1; then
-  service grafana-server restart || true
-  echo "Grafana restart attempted via service."
+  if [[ "${RESTART_GRAFANA}" == "true" ]]; then
+    service grafana-server restart || true
+    echo "Grafana restart attempted via service."
+  else
+    echo "Grafana config updated; restart skipped (--no-restart)."
+  fi
 else
-  echo "Couldn't auto-restart Grafana. Please restart it manually." >&2
+  if [[ "${RESTART_GRAFANA}" == "true" ]]; then
+    echo "Couldn't auto-restart Grafana. Please restart it manually." >&2
+  else
+    echo "Grafana config updated; restart skipped (--no-restart)." >&2
+  fi
 fi

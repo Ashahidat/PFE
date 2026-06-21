@@ -21,7 +21,10 @@ from jwt_dependencies import get_current_user
 router = APIRouter(prefix="/grafana", tags=["grafana"])
 logger = logging.getLogger("grafana-proxy")
 PUBLIC_PREFIX = "/api/grafana"
-UPSTREAM_PREFIX = "/grafana"
+# Keep the upstream path aligned with the Grafana subpath configured in grafana.ini.
+# The backend still exposes `/api/grafana/` to the browser, but Grafana itself is
+# contacted under the same subpath so redirects and asset URLs stay consistent.
+UPSTREAM_PREFIX = "/api/grafana"
 
 
 _HOP_BY_HOP_HEADERS = {
@@ -85,9 +88,18 @@ def _rewrite_html_for_subpath(html: str, subpath: str) -> str:
     # Some Grafana builds embed unquoted keys in bootstrapped JS.
     html = re.sub(r'(\bappSubUrl\s*:\s*)""', rf'\1"{prefix}"', html)
 
-    # Rewrite only attribute values that start at the root.
-    # Keep it conservative to avoid mangling protocol-relative URLs (//...).
-    html = re.sub(r'(\s(?:src|href)=)"/(?!grafana/)(?!/)', rf'\1"{prefix}/', html)
+    # Grafana may emit absolute `/grafana/...` URLs in some older responses.
+    # Normalize those too, otherwise the browser resolves them as nested paths.
+    html = re.sub(r'(\s(?:src|href)=)"/grafana/', rf'\1"{prefix}/', html)
+
+    # Some responses contain relative `grafana/...` URLs. Rewrite those as well
+    # so they cannot be resolved under the current page path and stack prefixes.
+    html = re.sub(r'(\s(?:src|href)=)"grafana/', rf'\1"{prefix}/', html)
+
+    # Rewrite other root-relative attribute values.
+    # Keep it conservative to avoid mangling protocol-relative URLs (//...)
+    # or URLs we already normalized above.
+    html = re.sub(r'(\s(?:src|href)=)"/(?!api/grafana/)(?!grafana/)(?!/)', rf'\1"{prefix}/', html)
     return html
 
 
@@ -233,9 +245,8 @@ async def grafana_reverse_proxy(
     if request.method == "POST" and normalized_path == "api/user/auth-tokens/rotate":
         return Response(status_code=204)
 
-    # Grafana itself is exposed internally under `/grafana/`.
-    # The browser-facing path stays `/api/grafana/`, but the upstream request must use
-    # Grafana's own subpath so asset URLs and redirects resolve correctly.
+    # The browser-facing path stays `/api/grafana/`, and the upstream request uses
+    # the same Grafana subpath so asset URLs and redirects resolve consistently.
     upstream_path = f"{UPSTREAM_PREFIX}/{path.lstrip('/')}"
     upstream_url = f"{upstream_base}{upstream_path}"
     if request.url.query:
@@ -278,24 +289,16 @@ async def grafana_reverse_proxy(
 
     data = await request.body() if request.method not in {"GET", "HEAD"} else None
 
-    try:
-        upstream_resp: requests.Response = await run_in_threadpool(
-            requests.request,
-            method=request.method,
-            url=upstream_url,
-            headers=upstream_headers,
-            data=data,
-            allow_redirects=False,
-            stream=True,
-            timeout=30,
-        )
-    except requests.RequestException as exc:
-        logger.exception("⚠️ [Grafana] upstream request failed url=%s", upstream_url)
-        return Response(
-            status_code=502,
-            content=f"Grafana upstream unreachable: {exc}",
-            media_type="text/plain; charset=utf-8",
-        )
+    upstream_resp: requests.Response = await run_in_threadpool(
+        requests.request,
+        method=request.method,
+        url=upstream_url,
+        headers=upstream_headers,
+        data=data,
+        allow_redirects=False,
+        stream=True,
+        timeout=30,
+    )
 
     # If a project folder does not exist yet (provisioning skipped/failed),
     # Grafana returns 404 for its folder API and the UI shows "folders not found".

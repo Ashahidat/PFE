@@ -16,10 +16,10 @@ Puis ouvrir :
 - `http://localhost:5173/app/login` (proxy vers le backend via `/api`)
 
 Liens externes:
-- Atlas pointe par défaut vers `http://<host>:21001/login.jsp`
-- Grafana pointe par défaut vers le proxy Nginx `http://<host>:8081/api/grafana/`
+- Atlas pointe par défaut vers `http://<host>:21001/n/index.html` pour ouvrir la BETA UI
+- Grafana pointe par défaut vers le proxy backend `http://<host>/api/grafana/`
 - tu peux surcharger ces URL avec `VITE_ATLAS_UI_URL` et `VITE_GRAFANA_DASHBOARDS_URL` avant `npm run build`
-- si tu veux utiliser le proxy backend FastAPI à la place, définis explicitement `VITE_GRAFANA_DASHBOARDS_URL=/api/grafana/`
+- si tu veux utiliser le proxy backend FastAPI pour Grafana, définis explicitement `VITE_GRAFANA_DASHBOARDS_URL=/api/grafana/`
 
 ## Build + Serve via FastAPI
 

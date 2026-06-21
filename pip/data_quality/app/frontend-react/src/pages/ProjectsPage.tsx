@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import { api, ApiError } from "../lib/api";
+import { toGrafanaBackendHref } from "../lib/externalLinks";
 
 type Project = {
   id: string;
@@ -156,7 +157,13 @@ export default function ProjectsPage() {
                     <Typography variant="caption" color="text.secondary">
                       Dashboards Grafana (read-only)
                     </Typography>
-                    <IconButton size="small" component={Link} href={p.grafana_links.folder.url} target="_blank">
+                    <IconButton
+                      size="small"
+                      component={Link}
+                      href={toGrafanaBackendHref(p.grafana_links.folder.url) || p.grafana_links.folder.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       <Typography variant="caption" component="span">
                         Ouvrir
                       </Typography>

@@ -24,8 +24,7 @@ function ActionTile({ title, description, actionLabel, to, href, tone = "muted",
         : "#fff",
     boxShadow: "0 10px 30px rgba(15,23,42,0.06)",
     padding: 20,
-    cursor: "pointer",
-    textDecoration: "none"
+    cursor: "default"
   };
 
   const content = (
@@ -40,14 +39,38 @@ function ActionTile({ title, description, actionLabel, to, href, tone = "muted",
 
   if (href) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" style={cardStyle}>
+      <div style={cardStyle}>
         {content}
-      </a>
+        <div style={{ marginTop: 16 }}>
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              borderRadius: 12,
+              border: "1px solid rgba(30,64,175,0.24)",
+              padding: "10px 14px",
+              background: "#fff",
+              color: "#1e40af",
+              fontWeight: 700,
+              textDecoration: "none"
+            }}
+          >
+            Ouvrir Grafana
+          </a>
+        </div>
+      </div>
     );
   }
 
   return (
-    <button type="button" onClick={() => navigate(to || "/home")} style={cardStyle}>
+    <button
+      type="button"
+      onClick={() => navigate(to || "/home")}
+      style={{ ...cardStyle, cursor: "pointer" }}
+    >
       {content}
     </button>
   );

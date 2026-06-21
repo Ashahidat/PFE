@@ -28,6 +28,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import AtlasUiLinkButton from "../components/AtlasUiLinkButton";
 import { api, ApiError } from "../lib/api";
+import { toGrafanaBackendHref } from "../lib/externalLinks";
 import { setLastDatasetId } from "../lib/storage";
 
 type Project = {
@@ -256,7 +257,13 @@ export default function ProjectDetailsPage() {
                     </Button>
                     <AtlasUiLinkButton variant="outlined" />
                     {grafanaUrl ? (
-                      <Button href={grafanaUrl} target="_blank" rel="noopener" variant="outlined" endIcon={<OpenInNewOutlinedIcon />}>
+                      <Button
+                        href={toGrafanaBackendHref(grafanaUrl) || grafanaUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        variant="outlined"
+                        endIcon={<OpenInNewOutlinedIcon />}
+                      >
                         Grafana
                       </Button>
                     ) : null}
