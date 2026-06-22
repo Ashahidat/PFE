@@ -113,6 +113,22 @@ def _latest_push_history(db: Session, dataset_id: str) -> PushHistory | None:
     )
 
 
+def _atlas_entity_exists(entity_guid: str) -> bool:
+    """
+    Best-effort existence check used to ignore stale Atlas GUIDs after a reset.
+    If Atlas says the entity is missing, we treat the GUID as invalid and fall back
+    to a root push instead of trying to reuse broken relationships.
+    """
+    if not entity_guid:
+        return False
+    base_url = ATLAS_SEARCH_URL.split("/search")[0]
+    try:
+        atlas_get(f"{base_url}/entity/guid/{entity_guid}")
+        return True
+    except Exception:
+        return False
+
+
 def _deploy_typedef_with_retry(payload_key: str, entity_def: Dict, max_attempts: int = 4, backoff: float = 1.5):
     attempt = 0
     while attempt < max_attempts:
@@ -191,12 +207,21 @@ def push_atlas(
             )
 
         if dataset.atlas_guid and dataset.atlas_synced:
-            logger.info("ℹ️ Push ignoré: dataset déjà synchronisé avec Atlas")
-            return {
-                "message": "Dataset déjà synchronisé avec Atlas",
-                "dataset_guid": dataset.atlas_guid,
-                "already_synced": True,
-            }
+            if _atlas_entity_exists(dataset.atlas_guid):
+                logger.info("ℹ️ Push ignoré: dataset déjà synchronisé avec Atlas")
+                return {
+                    "message": "Dataset déjà synchronisé avec Atlas",
+                    "dataset_guid": dataset.atlas_guid,
+                    "already_synced": True,
+                }
+            logger.warning(
+                f"⚠️ Dataset marqué synchronisé mais GUID Atlas introuvable: {dataset.atlas_guid}. "
+                f"Reprise en mode création."
+            )
+            dataset.atlas_guid = None
+            dataset.atlas_qualified_name = None
+            dataset.atlas_synced = False
+            db.commit()
 
         push_history_row = PushHistory(
             id=uuid.uuid4(),
@@ -378,6 +403,21 @@ def push_atlas(
                 logger.info(f"✅ {len(parent_column_mapping)} mappings colonnes disponibles")
             else:
                 logger.info(f"ℹ️ Aucun parent trouvé, création d'un nouveau dataset racine")
+
+        # Atlas reset-friendly guard:
+        # if the DB still points to an Atlas GUID that was wiped, do not try to reuse it.
+        if parent_guid and not _atlas_entity_exists(parent_guid):
+            logger.warning(
+                f"⚠️ Parent Atlas GUID obsolète détecté après reset: {parent_guid}. "
+                f"Le push continue sans parent."
+            )
+            parent_guid = None
+            parent_qn = None
+            parent_columns = []
+            parent_column_mapping = {}
+            parent_version_id = None
+            parent_version_number = 0
+            similarity_score = 0
 
         # ============================================================
         # 5.5️⃣ CRÉER LA VERSION EN BASE AVANT LE DATASET ATLAS
