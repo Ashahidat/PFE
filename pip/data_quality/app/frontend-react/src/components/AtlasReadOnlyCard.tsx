@@ -26,7 +26,7 @@ export default function AtlasReadOnlyCard({ sx }: AtlasReadOnlyCardProps) {
           Consulter
         </Typography>
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-          Atlas BETA UI
+          Catalogue
         </Typography>
         <Typography variant="body2" color="text.secondary">
           Ouvre l’interface Atlas en lecture seule pour consulter le catalogue et naviguer dans les métadonnées.
@@ -41,7 +41,7 @@ export default function AtlasReadOnlyCard({ sx }: AtlasReadOnlyCardProps) {
             rel="noopener noreferrer"
             endIcon={<OpenInNewOutlinedIcon />}
           >
-            Ouvrir Atlas BETA UI
+            Consulter le catalogue
           </Button>
         </Box>
       </Stack>

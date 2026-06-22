@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Literal
 import logging
 import uuid
 import os
@@ -37,7 +37,7 @@ logger = logging.getLogger("projects")
 class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    visibility: str = "DEPARTMENT"  # PUBLIC ou DEPARTMENT, DEFAULT DEPARTMENT
+    visibility: Literal["PUBLIC", "DEPARTMENT"] = "DEPARTMENT"
 
 class ProjectResponse(BaseModel):
     id: str

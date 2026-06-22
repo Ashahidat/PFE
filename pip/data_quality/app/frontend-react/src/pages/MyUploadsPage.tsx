@@ -139,7 +139,7 @@ export default function MyUploadsPage() {
                   background: "#fff"
                 }}
               >
-                Ouvrir Atlas BETA UI
+                Consulter le catalogue
               </a>
             ) : null}
             <button

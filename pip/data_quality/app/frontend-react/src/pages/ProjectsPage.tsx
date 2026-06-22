@@ -3,11 +3,15 @@ import {
   Box,
   Button,
   Chip,
+  FormControl,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  InputLabel,
   Grid,
+  MenuItem,
+  Select,
   Paper,
   Stack,
   TextField,
@@ -168,12 +172,21 @@ export default function ProjectsPage() {
               multiline
               minRows={2}
             />
-            <TextField
-              label="Visibilité (PUBLIC ou DEPARTMENT)"
-              value={visibility}
-              onChange={(e) => setVisibility((e.target.value as any) || "DEPARTMENT")}
-              helperText="DEPARTMENT = restreint au département ; PUBLIC = visible entreprise."
-            />
+            <FormControl fullWidth>
+              <InputLabel id="project-visibility-label">Visibilité</InputLabel>
+              <Select
+                labelId="project-visibility-label"
+                label="Visibilité"
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value as "PUBLIC" | "DEPARTMENT")}
+              >
+                <MenuItem value="DEPARTMENT">Département</MenuItem>
+                <MenuItem value="PUBLIC">Public</MenuItem>
+              </Select>
+            </FormControl>
+            <Typography variant="caption" color="text.secondary">
+              DEPARTMENT = restreint au département ; PUBLIC = visible entreprise.
+            </Typography>
           </Stack>
         </DialogContent>
         <DialogActions>

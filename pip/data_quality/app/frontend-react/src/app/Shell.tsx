@@ -31,8 +31,8 @@ function buildNav(role: string | null): NavGroup[] {
       items: [
         { to: "/home", label: "Accueil" },
         { to: "/projects", label: "Projets" },
-        ...(canOpenAtlasUi(role) ? [{ href: ATLAS_UI_URL, label: "Atlas BETA UI" }] : []),
-        { href: GRAFANA_DASHBOARDS_URL, label: "Dashboards Grafana (read-only)" }
+        ...(canOpenAtlasUi(role) ? [{ href: ATLAS_UI_URL, label: "Catalogue" }] : []),
+        { href: GRAFANA_DASHBOARDS_URL, label: "Centre de supervision" }
       ]
     },
     ...(workflowItems.length ? [{ title: "Parcours data", items: workflowItems }] : []),

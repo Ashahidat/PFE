@@ -26,7 +26,7 @@ export default function GrafanaReadOnlyCard({ href, sx }: GrafanaReadOnlyCardPro
           Consulter
         </Typography>
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-          Dashboards Grafana (read-only)
+          Centre de supervision
         </Typography>
         <Typography variant="body2" color="text.secondary">
           Ouvre les tableaux de bord Grafana en lecture seule. Les utilisateurs n’ont pas les droits d’édition.
@@ -40,7 +40,7 @@ export default function GrafanaReadOnlyCard({ href, sx }: GrafanaReadOnlyCardPro
             target="_blank"
             rel="noopener noreferrer"
           >
-            Ouvrir Grafana
+            Ouvrir le centre de supervision
           </Button>
         </Box>
       </Stack>

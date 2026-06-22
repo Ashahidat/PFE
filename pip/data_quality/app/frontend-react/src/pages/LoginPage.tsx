@@ -77,7 +77,7 @@ export default function LoginPage() {
           <Stack spacing={2}>
             <Typography variant="h5">Connexion</Typography>
             <Typography variant="body2" color="text.secondary">
-              Accède à la plateforme Qualité & Gouvernance (Atlas + DQ + Grafana).
+              Accedez plateforme Qualité & Gouvernance des donnéesI. Entrez votre Employee ID et mot de passe pour vous connecter. 
             </Typography>
             {error ? <Alert severity="error">{error}</Alert> : null}
 
@@ -98,16 +98,16 @@ export default function LoginPage() {
                   autoComplete="current-password"
                   required
                 />
-                <TextField
+                {/* <TextField
                   label="Username (optionnel au bootstrap)"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                 />
                 <TextField
-                  label="Département (optionnel au bootstrap)"
+                  label="Département "
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
-                />
+                /> */}
                 <LoadingButton loading={loading} variant="contained" type="submit" disabled={!canSubmit}>
                   Se connecter
                 </LoadingButton>
@@ -117,9 +117,9 @@ export default function LoginPage() {
             <Typography variant="caption" color="text.secondary">
               Astuce: au premier lancement, le 1er utilisateur devient SUPER_ADMIN (voir backend `/login`).
             </Typography>
-            <Link href="/app" underline="hover" sx={{ fontSize: 13 }}>
+            {/* <Link href="/app" underline="hover" sx={{ fontSize: 13 }}>
               Ouvrir l'application React
-            </Link>
+            </Link> */}
           </Stack>
         </Paper>
       </Container>

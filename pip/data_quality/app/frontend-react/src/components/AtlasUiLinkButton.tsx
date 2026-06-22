@@ -7,7 +7,7 @@ type AtlasUiLinkButtonProps = ButtonProps<"a"> & {
   label?: string;
 };
 
-export default function AtlasUiLinkButton({ label = "Ouvrir Atlas BETA UI", ...props }: AtlasUiLinkButtonProps) {
+export default function AtlasUiLinkButton({ label = "Consulter le catalogue", ...props }: AtlasUiLinkButtonProps) {
   if (!canOpenAtlasUi(getUserRole())) return null;
 
   return (
