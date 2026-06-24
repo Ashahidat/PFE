@@ -7,7 +7,7 @@
   "links": [],
   "panels": [
     {
-      "datasource": { "type": "postgres", "uid": "PFE Postgres" },
+      "datasource": { "type": "postgres", "uid": "pfe-postgres" },
       "description": "Pushs Atlas par jour (SUCCESS/FAILED).",
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "gridPos": { "h": 9, "w": 12, "x": 0, "y": 0 },
@@ -25,7 +25,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "postgres", "uid": "PFE Postgres" },
+      "datasource": { "type": "postgres", "uid": "pfe-postgres" },
       "description": "Temps d'execution (ms) sur les derniers pushs.",
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 },
@@ -48,7 +48,7 @@
   "style": "dark",
   "tags": ["pfe", "atlas"],
   "templating": { "list": [] },
-  "time": { "from": "now-7d", "to": "now" },
+  "time": { "from": "now-30d", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
   "title": "PFE - Push Atlas",

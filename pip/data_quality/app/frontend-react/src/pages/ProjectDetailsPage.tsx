@@ -38,9 +38,11 @@ type Project = {
   visibility: "PUBLIC" | "DEPARTMENT";
   created_at: string;
   datasets_count: number;
-  grafana_links?: {
-    folder?: { url?: string | null } | null;
-  } | null;
+};
+
+type GrafanaLinks = {
+  folder?: { uid?: string | null; url?: string | null } | null;
+  dashboards?: Record<string, { uid?: string | null; url?: string | null }>;
 };
 
 type ProjectDataset = {
@@ -113,8 +115,9 @@ export default function ProjectDetailsPage() {
   const [previewById, setPreviewById] = useState<Record<string, PreviewRow[]>>({});
   const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({});
   const [detailError, setDetailError] = useState<Record<string, string | null>>({});
+  const [grafanaLinks, setGrafanaLinks] = useState<GrafanaLinks | null>(null);
 
-  const grafanaUrl = project?.grafana_links?.folder?.url || null;
+  const grafanaUrl = grafanaLinks?.folder?.url || null;
 
   async function loadProject() {
     if (!projectId) return;
@@ -127,6 +130,7 @@ export default function ProjectDetailsPage() {
     setPreviewById({});
     setDetailLoading({});
     setDetailError({});
+    setGrafanaLinks(null);
     try {
       const [projectRes, datasetsRes] = await Promise.all([
         api.get<Project>(`/projects/${projectId}`),
@@ -134,6 +138,17 @@ export default function ProjectDetailsPage() {
       ]);
       setProject(projectRes);
       setDatasets(datasetsRes || []);
+      try {
+        const links = await api.get<GrafanaLinks>(`/projects/${projectId}/grafana-links`);
+        setGrafanaLinks(links || null);
+      } catch (e) {
+        const err = e as ApiError;
+        setGrafanaLinks(null);
+        setDetailError((prev) => ({
+          ...prev,
+          grafana: err.bodyText || err.message
+        }));
+      }
       if (datasetsRes?.length) {
         setExpandedId(datasetsRes[0].id);
       }

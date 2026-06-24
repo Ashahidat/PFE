@@ -7,7 +7,7 @@
   "links": [],
   "panels": [
     {
-      "datasource": { "type": "postgres", "uid": "PFE Postgres" },
+      "datasource": { "type": "postgres", "uid": "pfe-postgres" },
       "description": "Nombre de checks par statut (daily).",
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
@@ -29,10 +29,9 @@
   "schemaVersion": 39,
   "tags": ["pfe", "data-quality"],
   "templating": { "list": [] },
-  "time": { "from": "now-7d", "to": "now" },
+  "time": { "from": "now-30d", "to": "now" },
   "timezone": "browser",
   "title": "PFE - Data Quality",
   "uid": "pfe-data-quality",
   "version": 1
 }
-

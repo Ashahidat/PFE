@@ -7,7 +7,7 @@
   "links": [],
   "panels": [
     {
-      "datasource": { "type": "postgres", "uid": "PFE Postgres" },
+      "datasource": { "type": "postgres", "uid": "pfe-postgres" },
       "description": "Runs Airflow/DAG par etat (daily).",
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
@@ -25,7 +25,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "postgres", "uid": "PFE Postgres" },
+      "datasource": { "type": "postgres", "uid": "pfe-postgres" },
       "description": "Duree des runs (ms) si tu as un champ duration, sinon adapte la requete.",
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "gridPos": { "h": 9, "w": 24, "x": 0, "y": 9 },
@@ -47,7 +47,7 @@
   "schemaVersion": 39,
   "tags": ["pfe", "pipeline"],
   "templating": { "list": [] },
-  "time": { "from": "now-7d", "to": "now" },
+  "time": { "from": "now-30d", "to": "now" },
   "timezone": "browser",
   "title": "PFE - Pipeline Health",
   "uid": "pfe-pipeline-health",

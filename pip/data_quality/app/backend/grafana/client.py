@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from typing import Any
 
 import requests
 from requests import exceptions as requests_exceptions
 
+from db.connexion_db import DATABASE_URL
 from grafana.settings import GrafanaSettings
 
 logger = logging.getLogger("grafana")
@@ -62,6 +64,81 @@ class GrafanaClient:
         if resp.text:
             return resp.json()
         return None
+
+    def _postgres_datasource_payload(self) -> dict[str, Any]:
+        """
+        Build a Grafana PostgreSQL datasource payload from the application's DATABASE_URL.
+        The dashboard JSONs reference this datasource by a stable UID.
+        """
+        parsed = urlparse(DATABASE_URL)
+        if parsed.scheme not in {"postgresql", "postgres"}:
+            raise RuntimeError(f"Unsupported DATABASE_URL scheme for Grafana datasource: {parsed.scheme}")
+
+        if not parsed.hostname:
+            raise RuntimeError("DATABASE_URL is missing a hostname")
+
+        db_name = (parsed.path or "").lstrip("/")
+        if not db_name:
+            raise RuntimeError("DATABASE_URL is missing a database name")
+
+        username = parsed.username or ""
+        password = parsed.password or ""
+        host = parsed.hostname
+        port = parsed.port or 5432
+
+        return {
+            "name": "PFE Postgres",
+            "uid": "pfe-postgres",
+            "type": "postgres",
+            "access": "proxy",
+            "url": f"{host}:{port}",
+            "user": username,
+            "jsonData": {
+                "database": db_name,
+                "postgresVersion": 1500,
+                "sslmode": "disable",
+            },
+            "secureJsonData": {"password": password},
+        }
+
+    def get_datasource_by_uid(self, uid: str) -> dict[str, Any] | None:
+        return self._request("GET", f"/api/datasources/uid/{requests.utils.quote(uid)}", allow_404=True)
+
+    def create_datasource(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/api/datasources", json=payload)
+
+    def update_datasource_by_uid(self, uid: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("PUT", f"/api/datasources/uid/{requests.utils.quote(uid)}", json=payload)
+
+    def delete_datasource_by_uid(self, uid: str) -> dict[str, Any] | None:
+        return self._request("DELETE", f"/api/datasources/uid/{requests.utils.quote(uid)}", allow_404=True)
+
+    def ensure_postgres_datasource(self) -> dict[str, Any]:
+        payload = self._postgres_datasource_payload()
+        uid = payload["uid"]
+        existing = self.get_datasource_by_uid(uid)
+        if existing:
+            existing_database = (existing.get("database") or "").strip()
+            existing_url = (existing.get("url") or "").strip()
+            existing_json_database = ((existing.get("jsonData") or {}).get("database") or "").strip()
+            desired_url = (payload.get("url") or "").strip()
+            desired_json_database = ((payload.get("jsonData") or {}).get("database") or "").strip()
+            if existing_url == desired_url and (existing_database or existing_json_database):
+                logger.info("🗄️ [Grafana] update datasource uid=%s name=%s", uid, payload["name"])
+                return self.update_datasource_by_uid(uid, payload)
+
+            logger.warning(
+                "🗄️ [Grafana] datasource uid=%s is stale (database=%r jsonData.database=%r url=%r desired_jsonData.database=%r); recreating",
+                uid,
+                existing_database,
+                existing_json_database,
+                existing_url,
+                desired_json_database,
+            )
+            self.delete_datasource_by_uid(uid)
+
+        logger.info("🗄️ [Grafana] create datasource uid=%s name=%s", uid, payload["name"])
+        return self.create_datasource(payload)
 
     # -------------------------
     # Folders

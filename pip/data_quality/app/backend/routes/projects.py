@@ -218,6 +218,28 @@ def get_project_details(
         raise HTTPException(status_code=403, detail="Vous n'avez pas les droits pour voir ce projet")
     
     datasets_count = db.query(func.count(Dataset.id)).filter(Dataset.project_id == project_id).scalar() or 0
+
+    # Best-effort: keep the dashboard links aligned with the current project state.
+    try:
+        settings = get_grafana_settings()
+        identity_headers = None
+        if str(user.get("role") or "").upper() in PROJECT_CREATORS:
+            identity_headers = {
+                "X-WEBAUTH-USER": str(user.get("employee_id") or user.get("sub") or ""),
+                "X-WEBAUTH-NAME": str(user.get("username") or ""),
+                "X-WEBAUTH-ROLE": "Admin",
+            }
+        if settings.enabled:
+            provision_project_dashboards(
+                settings,
+                project_id=str(project.id),
+                project_name=project.name,
+                project_visibility=project.visibility,
+                owner_department=user.get("department") or "UNKNOWN",
+                identity_headers=identity_headers,
+            )
+    except Exception:
+        pass
     
     return {
         "id": str(project.id),
@@ -321,14 +343,17 @@ def get_project_grafana_links(
             client = GrafanaClient(settings, extra_headers=identity_headers)
             existing = client.get_folder_by_uid(folder_uid)
             if not existing:
-                provision_project_dashboards(
-                    settings,
-                    project_id=str(project.id),
-                    project_name=project.name,
-                    project_visibility=project.visibility,
-                    owner_department=user.get("department") or "UNKNOWN",
-                    identity_headers=identity_headers,
-                )
+                logger.info("🛠️ Grafana folder missing for project %s; provisioning", project.id)
+            else:
+                logger.info("🛠️ Grafana folder exists for project %s; refreshing provisioning", project.id)
+            provision_project_dashboards(
+                settings,
+                project_id=str(project.id),
+                project_name=project.name,
+                project_visibility=project.visibility,
+                owner_department=user.get("department") or "UNKNOWN",
+                identity_headers=identity_headers,
+            )
     except Exception:
         # Do not fail link retrieval when provisioning fails.
         pass

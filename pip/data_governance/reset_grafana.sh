@@ -4,12 +4,7 @@ set -euo pipefail
 
 GRAFANA_DB_DIR="/var/lib/grafana"
 GRAFANA_DB="${GRAFANA_DB_DIR}/grafana.db"
-STATE_FILES=(
-  "${GRAFANA_DB}"
-  "${GRAFANA_DB}.shm"
-  "${GRAFANA_DB}.wal"
-  "${GRAFANA_DB}-journal"
-)
+BACKUP_DIR="${GRAFANA_RESET_BACKUP_DIR:-/tmp/grafana-reset-backups}"
 
 if [[ "${EUID}" -ne 0 ]]; then
   if command -v sudo >/dev/null 2>&1; then
@@ -40,22 +35,24 @@ stop_grafana
 
 if [[ -f "${GRAFANA_DB}" ]]; then
   ts="$(date +%Y%m%d-%H%M%S)"
-  backup="${GRAFANA_DB}.bak-${ts}"
+  mkdir -p "${BACKUP_DIR}"
+  backup="${BACKUP_DIR}/grafana.db.bak-${ts}"
   echo "➡️  [1/3] Sauvegarde de la base Grafana vers ${backup}..."
   cp -a "${GRAFANA_DB}" "${backup}"
 else
   echo "➡️  [1/3] Base Grafana introuvable, pas de sauvegarde à faire."
 fi
 
-echo "➡️  [2/3] Suppression de l'état local Grafana (dashboards/folders/users) ..."
+echo "➡️  [2/3] Suppression de l'état local Grafana (dashboards/folders/users/cache) ..."
 mkdir -p "${GRAFANA_DB_DIR}"
-for path in "${STATE_FILES[@]}"; do
-  rm -f "${path}"
-done
+
+# Wipe every local state artifact so stale folders, dashboards, caches and sessions disappear.
+# This is a reset command, so we intentionally prefer a full local cleanup over a partial one.
+find "${GRAFANA_DB_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
 echo "➡️  [3/3] Redémarrage de Grafana..."
 start_grafana
 
 echo "✅ Réinitialisation Grafana terminée"
-echo "   - La base SQLite locale a été supprimée"
+echo "   - L'état local Grafana a été supprimé"
 echo "   - Les dashboards et folders provisionnés seront recréés à la demande"

@@ -114,6 +114,7 @@ def provision_project_dashboards(
         return {"enabled": True, "skipped": True, "reason": "no-auth"}
 
     client = GrafanaClient(settings, extra_headers=identity_headers)
+    client.ensure_postgres_datasource()
     templates = load_dashboard_templates(settings)
 
     folder_title = f"PFE - {project_name}"
