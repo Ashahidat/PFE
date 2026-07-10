@@ -3,8 +3,21 @@ import logging
 import os
 import time
 import re
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from functools import lru_cache
+
+
+def _find_repo_root(start: Path) -> Path:
+    current = start.resolve()
+    for _ in range(10):
+        if (current / "AGENTS.md").exists() or (current / ".git").exists():
+            return current
+        if current.parent == current:
+            break
+        current = current.parent
+    return start.resolve()
+
 
 # IMPORTANT:
 # - Humans should access Atlas through a read-only reverse-proxy.
@@ -40,7 +53,7 @@ _DEFAULT_LOCK_BACKOFF_SECONDS = float(os.getenv("ATLAS_HTTP_LOCK_BACKOFF_SECONDS
 
 _DEFAULT_APPLICATION_LOG = os.getenv(
     "ATLAS_APPLICATION_LOG",
-    "/home/ashahi/PFE/pip/data_governance/apache-atlas-2.4.0/logs/application.log",
+    str(_find_repo_root(Path(__file__).resolve()) / "pip" / "data_governance" / "apache-atlas-2.4.0" / "logs" / "application.log"),
 )
 
 

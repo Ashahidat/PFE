@@ -1,7 +1,8 @@
+import os
 from datetime import datetime, timedelta
 from jose import jwt
 
-SECRET_KEY = "23HnfK4lP9zQeW8yXv7aBcD" # clé random que j'ai écrite moi-même
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "23HnfK4lP9zQeW8yXv7aBcD")  # fallback conservé pour compatibilité locale
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 180  # en minutes 
 
@@ -18,6 +19,5 @@ def verify_token(token: str):
         return payload   # le contenu du token : {"sub": employee_id, "username":} c'est ce que moi je vais y mettre
     except Exception:
         return None
-
 
 

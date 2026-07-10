@@ -9,8 +9,6 @@ from typing import Iterable
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.covariance import EllipticEnvelope
-from sklearn.cluster import KMeans
 from sklearn.ensemble import IsolationForest
 from sklearn.impute import SimpleImputer
 from sklearn.neighbors import LocalOutlierFactor
@@ -58,14 +56,13 @@ _TARGET_NAME_RE = re.compile(r"(^|[^a-z0-9])(target|label|class|churn|status|out
 class DatasetSpec:
     name: str
     path: Path
-    family: str
     anomaly_rate: float
     protected_columns: tuple[str, ...] = field(default_factory=tuple)
+    tags: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass
 class ColumnAnomalyDetector:
-    family: str
     model_name: str
     feature_cols: list[str]
     imputer: SimpleImputer
@@ -82,11 +79,6 @@ class ColumnAnomalyDetector:
 
     def anomaly_scores(self, profile_df: pd.DataFrame) -> np.ndarray:
         x = self._prepare_features(profile_df)
-
-        if self.model_name == "kmeans":
-            centers = self.estimator.cluster_centers_
-            distances = np.min(np.linalg.norm(x[:, None] - centers[None, :], axis=2), axis=1)
-            return distances
 
         if hasattr(self.estimator, "decision_function"):
             scores = self.estimator.decision_function(x)
@@ -112,15 +104,78 @@ class ColumnAnomalyDetector:
         threshold = float(np.percentile(scores, 90))
         return np.where(scores > threshold, -1, 1)
 
+    def explain_profile_row(self, profile_row: pd.Series | dict[str, object], score: float | None = None) -> list[str]:
+        row = profile_row.to_dict() if isinstance(profile_row, pd.Series) else dict(profile_row)
+
+        def as_float(key: str) -> float:
+            value = row.get(key)
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return float("nan")
+
+        reasons: list[str] = []
+
+        missing_rate = as_float("missing_rate")
+        cardinality_ratio = as_float("cardinality_ratio")
+        non_null_cardinality_ratio = as_float("non_null_cardinality_ratio")
+        duplication_rate = as_float("duplication_rate")
+        top_value_share = as_float("top_value_share")
+        avg_string_length = as_float("avg_string_length")
+        digit_ratio = as_float("digit_ratio")
+        alpha_ratio = as_float("alpha_ratio")
+        outlier_share = as_float("outlier_share")
+        is_numeric = int(row.get("is_numeric", 0) or 0) == 1
+
+        if np.isfinite(missing_rate) and missing_rate >= 0.25:
+            reasons.append("beaucoup de valeurs manquantes")
+
+        if np.isfinite(duplication_rate) and duplication_rate >= 0.75:
+            reasons.append("valeurs très répétitives")
+
+        if np.isfinite(non_null_cardinality_ratio) and non_null_cardinality_ratio >= 0.95:
+            if np.isfinite(top_value_share) and top_value_share <= 0.2:
+                reasons.append("forte unicité, ressemble à un identifiant")
+            else:
+                reasons.append("quasi toutes les valeurs sont distinctes")
+        elif np.isfinite(cardinality_ratio) and cardinality_ratio <= 0.05:
+            reasons.append("faible diversité, proche d'une colonne constante")
+
+        if is_numeric:
+            if np.isfinite(outlier_share) and outlier_share >= 0.2:
+                reasons.append("présence d'outliers marqués")
+        else:
+            if np.isfinite(digit_ratio) and digit_ratio >= 0.6:
+                reasons.append("texte fortement numérique")
+            elif np.isfinite(alpha_ratio) and alpha_ratio >= 0.8 and np.isfinite(avg_string_length) and avg_string_length >= 40:
+                reasons.append("texte long et peu structuré")
+
+        if score is not None and self.threshold is not None:
+            if score > self.threshold * 1.5:
+                reasons.append("score nettement au-dessus du seuil")
+            elif score > self.threshold:
+                reasons.append("score au-dessus du seuil")
+
+        if not reasons:
+            reasons.append("profil globalement cohérent")
+
+        deduped: list[str] = []
+        for reason in reasons:
+            if reason not in deduped:
+                deduped.append(reason)
+        return deduped[:3]
+
     def to_payload(self) -> dict:
-        return {
-            "family": self.family,
+        payload = {
             "model_name": self.model_name,
             "feature_cols": self.feature_cols,
             "contamination": self.contamination,
             "threshold": self.threshold,
             "metadata": self.metadata or {},
         }
+        if self.metadata and self.metadata.get("scope"):
+            payload["scope"] = self.metadata["scope"]
+        return payload
 
 
 def load_dataset(path: Path) -> pd.DataFrame:
@@ -179,26 +234,6 @@ def detect_protected_columns(df: pd.DataFrame) -> dict[str, str]:
     return protected
 
 
-def infer_family(df: pd.DataFrame) -> str:
-    if df.empty or not len(df.columns):
-        return "mixed_structured"
-
-    numeric_count = sum(pd.api.types.is_numeric_dtype(df[c]) for c in df.columns)
-    datetime_count = sum(pd.api.types.is_datetime64_any_dtype(df[c]) for c in df.columns)
-    object_count = len(df.columns) - numeric_count - datetime_count
-    total = max(len(df.columns), 1)
-
-    numeric_ratio = numeric_count / total
-    datetime_ratio = datetime_count / total
-    text_ratio = object_count / total
-
-    if numeric_ratio >= 0.8 and datetime_ratio <= 0.1:
-        return "numeric"
-    if text_ratio >= 0.6 and numeric_ratio <= 0.4 and datetime_ratio <= 0.2:
-        return "categorical_text"
-    return "mixed"
-
-
 def build_profile_frame(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
     return profile_dataset(df, dataset_name)
 
@@ -224,10 +259,6 @@ def build_feature_matrix(profile_df: pd.DataFrame, feature_cols: list[str] | Non
 
 
 def _model_scores(estimator: object, model_name: str, X: np.ndarray) -> np.ndarray:
-    if model_name == "kmeans":
-        centers = estimator.cluster_centers_
-        return np.min(np.linalg.norm(X[:, None] - centers[None, :], axis=2), axis=1)
-
     if hasattr(estimator, "decision_function"):
         return -np.asarray(estimator.decision_function(X))
 
@@ -283,28 +314,6 @@ def _fit_candidate(X: np.ndarray, model_name: str, contamination: float, seed: i
         scores = _model_scores(model, model_name, X)
         return model, _dynamic_threshold(scores, contamination)
 
-    if model_name == "elliptic_envelope":
-        support_fraction = min(0.95, max(0.5, 1.0 - contamination))
-        model = EllipticEnvelope(
-            contamination=contamination,
-            support_fraction=support_fraction,
-            random_state=seed,
-        )
-        model.fit(X)
-        scores = _model_scores(model, model_name, X)
-        return model, _dynamic_threshold(scores, contamination)
-
-    if model_name == "kmeans":
-        if n_samples < 2:
-            n_clusters = 1
-        else:
-            n_clusters = min(max(2, int(np.sqrt(n_samples))), n_samples)
-        model = KMeans(n_clusters=n_clusters, random_state=seed, n_init=10)
-        model.fit(X)
-        distances = _model_scores(model, model_name, X)
-        threshold = _dynamic_threshold(distances, contamination)
-        return model, threshold
-
     raise ValueError(f"Unsupported model: {model_name}")
 
 
@@ -325,7 +334,6 @@ def evaluate_predictions(ground_truth: dict[str, bool], predictions, cols: list[
 
 def train_detector(
     profile_df: pd.DataFrame,
-    family: str,
     model_name: str,
     contamination: float,
     seed: int = 42,
@@ -333,7 +341,6 @@ def train_detector(
     X, imputer, scaler, feature_cols = build_feature_matrix(profile_df)
     estimator, threshold = _fit_candidate(X, model_name, contamination, seed=seed)
     return ColumnAnomalyDetector(
-        family=family,
         model_name=model_name,
         feature_cols=feature_cols,
         imputer=imputer,
@@ -341,7 +348,7 @@ def train_detector(
         estimator=estimator,
         contamination=contamination,
         threshold=threshold,
-        metadata={"trained_at": datetime.now(timezone.utc).isoformat()},
+        metadata={"trained_at": datetime.now(timezone.utc).isoformat(), "scope": "global"},
     )
 
 
@@ -359,12 +366,7 @@ def benchmark_spec(
     benchmark_rows: list[dict] = []
 
     for seed in seeds:
-        corrupted_df, anomaly_mask, anomaly_details = inject_anomalies(
-            df,
-            anomaly_rate=spec.anomaly_rate,
-            seed=seed,
-            family=spec.family,
-        )
+        corrupted_df, anomaly_mask, _ = inject_anomalies(df, anomaly_rate=spec.anomaly_rate, seed=seed)
         profile_df = build_profile_frame(corrupted_df, f"{spec.name}_seed_{seed}")
         X, imputer, scaler, feature_cols = build_feature_matrix(profile_df)
         column_names = profile_df["column_name"].tolist()
@@ -372,7 +374,6 @@ def benchmark_spec(
         benchmark_rows.append(
             {
                 "dataset_name": spec.name,
-                "family": spec.family,
                 "seed": seed,
                 "anomaly_rate": spec.anomaly_rate,
                 "n_columns": len(df.columns),
@@ -384,7 +385,6 @@ def benchmark_spec(
         for model_name in candidate_models:
             estimator, threshold = _fit_candidate(X, model_name, contamination=spec.anomaly_rate, seed=seed)
             detector = ColumnAnomalyDetector(
-                family=spec.family,
                 model_name=model_name,
                 feature_cols=feature_cols,
                 imputer=imputer,
@@ -398,7 +398,6 @@ def benchmark_spec(
             metrics.update(
                 {
                     "dataset_name": spec.name,
-                    "family": spec.family,
                     "seed": seed,
                     "anomaly_rate": spec.anomaly_rate,
                     "feature_count": len(feature_cols),
@@ -411,14 +410,13 @@ def benchmark_spec(
         clean_result_rows.append(
             {
                 "dataset_name": spec.name,
-                "family": spec.family,
                 "columns_profiled": len(clean_profile),
             }
         )
 
     detail = pd.DataFrame(detail_rows)
     summary = (
-        detail.groupby(["family", "model"], as_index=False)
+        detail.groupby(["model"], as_index=False)
         .agg(
             precision_mean=("precision", "mean"),
             precision_std=("precision", "std"),
@@ -429,7 +427,7 @@ def benchmark_spec(
             detected_mean=("detected_anomalies", "mean"),
             true_anomalies_mean=("true_anomalies", "mean"),
         )
-        .sort_values(["family", "f1_mean", "precision_mean", "recall_mean"], ascending=[True, False, False, False])
+        .sort_values(["f1_mean", "precision_mean", "recall_mean"], ascending=[False, False, False])
         .reset_index(drop=True)
     )
 
@@ -438,16 +436,25 @@ def benchmark_spec(
     return summary, detail, benchmark
 
 
-def select_family_champions(summary: pd.DataFrame) -> pd.DataFrame:
-    return (
-        summary.sort_values(
-            ["family", "f1_mean", "f1_std", "precision_mean"],
-            ascending=[True, False, True, False],
+def select_global_champion(detail: pd.DataFrame) -> pd.Series:
+    summary = (
+        detail.groupby("model", as_index=False)
+        .agg(
+            precision_mean=("precision", "mean"),
+            precision_std=("precision", "std"),
+            recall_mean=("recall", "mean"),
+            recall_std=("recall", "std"),
+            f1_mean=("f1", "mean"),
+            f1_std=("f1", "std"),
+            detected_mean=("detected_anomalies", "mean"),
+            true_anomalies_mean=("true_anomalies", "mean"),
         )
-        .groupby("family", as_index=False)
-        .head(1)
+        .sort_values(["f1_mean", "precision_mean", "recall_mean"], ascending=[False, False, False])
         .reset_index(drop=True)
     )
+    if summary.empty:
+        raise ValueError("Cannot select a global champion from an empty benchmark")
+    return summary.iloc[0]
 
 
 def save_detector(detector: ColumnAnomalyDetector, output_dir: Path, dataset_name: str) -> Path:

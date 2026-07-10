@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import math
-import random
-import warnings
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Iterable
@@ -10,12 +7,10 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 from scipy.stats import entropy
-from sklearn.cluster import DBSCAN, KMeans
-from sklearn.covariance import EllipticEnvelope
 from sklearn.ensemble import IsolationForest
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import f1_score, precision_score, recall_score
-from sklearn.neighbors import LocalOutlierFactor, NearestNeighbors
+from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import OneClassSVM
 
@@ -146,45 +141,15 @@ def profile_dataset(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _infer_family_from_frame(df: pd.DataFrame) -> str:
-    if df.empty or not len(df.columns):
-        return "mixed_structured"
-
-    numeric_count = sum(pd.api.types.is_numeric_dtype(df[c]) for c in df.columns)
-    datetime_count = sum(pd.api.types.is_datetime64_any_dtype(df[c]) for c in df.columns)
-    object_count = len(df.columns) - numeric_count - datetime_count
-    total = max(len(df.columns), 1)
-
-    numeric_ratio = numeric_count / total
-    datetime_ratio = datetime_count / total
-    text_ratio = object_count / total
-
-    if numeric_ratio >= 0.8 and datetime_ratio <= 0.1:
-        return "numeric"
-    if text_ratio >= 0.6 and numeric_ratio <= 0.4 and datetime_ratio <= 0.2:
-        return "categorical_text"
-    return "mixed_structured"
-
-
 def _select_target_columns(
     cols: list[str],
     numeric_cols: list[str],
     categorical_cols: list[str],
-    *,
-    family: str,
     n_anomalies: int,
     rng: np.random.Generator,
 ) -> list[str]:
     if n_anomalies <= 0:
         return []
-
-    if family == "numeric":
-        pool = numeric_cols or cols
-        return list(rng.choice(pool, size=min(n_anomalies, len(pool)), replace=False))
-
-    if family == "categorical_text":
-        pool = categorical_cols or cols
-        return list(rng.choice(pool, size=min(n_anomalies, len(pool)), replace=False))
 
     targets: list[str] = []
     if numeric_cols:
@@ -293,14 +258,15 @@ def _mutate_categorical_column(df_corrupted: pd.DataFrame, col: str, idx: np.nda
     }
 
 
-def _apply_mixed_relationship_breaks(
+def _apply_cross_field_breaks(
     df_corrupted: pd.DataFrame,
     numeric_targets: list[str],
     categorical_targets: list[str],
     rng: np.random.Generator,
 ) -> list[dict[str, object]]:
     """
-    Add a small amount of cross-field corruption for mixed datasets.
+    Add a small amount of cross-field corruption when both numeric and categorical
+    columns are present.
 
     The goal is to break row-level consistency between numeric and categorical
     columns without relying on synthetic labels that are too obvious.
@@ -360,7 +326,7 @@ def _apply_mixed_relationship_breaks(
                 {
                     "column": num_col,
                     "paired_column": cat_col,
-                    "type": "mixed_relationship_break",
+                    "type": "cross_field_break",
                     "is_numeric": True,
                     "severity": float(rng.uniform(0.2, 0.45)),
                     "rows_affected": len(idx),
@@ -368,7 +334,7 @@ def _apply_mixed_relationship_breaks(
                 {
                     "column": cat_col,
                     "paired_column": num_col,
-                    "type": "mixed_relationship_break",
+                    "type": "cross_field_break",
                     "is_numeric": False,
                     "severity": float(rng.uniform(0.2, 0.45)),
                     "rows_affected": len(idx),
@@ -383,7 +349,6 @@ def inject_anomalies(
     df: pd.DataFrame,
     anomaly_rate: float = 0.2,
     seed: int = 42,
-    family: str | None = None,
 ) -> tuple[pd.DataFrame, dict[str, bool], pd.DataFrame]:
     rng = np.random.default_rng(seed)
     df_corrupted = df.copy()
@@ -393,14 +358,12 @@ def inject_anomalies(
     numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
     categorical_cols = [col for col in df.columns if col not in numeric_cols]
     cols = list(df.columns)
-    family = family or _infer_family_from_frame(df)
 
     n_anomalies = max(1, int(round(len(cols) * anomaly_rate)))
     target_cols = _select_target_columns(
         cols,
         numeric_cols,
         categorical_cols,
-        family=family,
         n_anomalies=min(n_anomalies, len(cols)),
         rng=rng,
     )
@@ -416,8 +379,6 @@ def inject_anomalies(
 
         severity = float(rng.uniform(0.15, 0.6))
         n_rows = len(df_corrupted)
-        if family == "mixed_structured":
-            severity = float(rng.uniform(0.12, 0.5))
         affected = max(1, int(round(n_rows * severity * 0.12)))
         idx = rng.choice(n_rows, size=min(affected, n_rows), replace=False)
 
@@ -436,11 +397,11 @@ def inject_anomalies(
             }
         )
 
-    if family == "mixed_structured":
+    if numeric_cols and categorical_cols:
         target_numeric_cols = [col for col in target_cols if col in numeric_cols]
         target_categorical_cols = [col for col in target_cols if col in categorical_cols]
         anomaly_records.extend(
-            _apply_mixed_relationship_breaks(df_corrupted, target_numeric_cols, target_categorical_cols, rng)
+            _apply_cross_field_breaks(df_corrupted, target_numeric_cols, target_categorical_cols, rng)
         )
 
     anomaly_details = pd.DataFrame(anomaly_records)
@@ -476,34 +437,6 @@ def _run_isolation_forest(X, contamination: float):
     return model, labels, scores
 
 
-def _run_kmeans(X, contamination: float):
-    n_samples = len(X)
-    n_clusters = max(2, min(int(math.sqrt(max(n_samples, 2))), n_samples))
-    model = KMeans(n_clusters=n_clusters, random_state=42, n_init=20)
-    labels_fit = model.fit_predict(X)
-    distances = np.min(np.linalg.norm(X[:, None] - model.cluster_centers_[None, :], axis=2), axis=1)
-    threshold = np.percentile(distances, (1 - contamination) * 100)
-    labels = np.where(distances > threshold, -1, 1)
-    return model, labels, distances
-
-
-def _run_dbscan(X, contamination: float):
-    n_neighbors = min(4, max(2, len(X) - 1))
-    if len(X) <= 2:
-        model = DBSCAN(eps=0.5, min_samples=2)
-    else:
-        nn = NearestNeighbors(n_neighbors=n_neighbors)
-        nn.fit(X)
-        kth_dist = nn.kneighbors(X)[0][:, -1]
-        eps = float(np.clip(np.quantile(kth_dist, 0.85), 0.35, 2.5))
-        min_samples = max(2, min(4, len(X) // 2))
-        model = DBSCAN(eps=eps, min_samples=min_samples)
-    labels_fit = model.fit_predict(X)
-    scores = np.where(labels_fit == -1, 1.0, 0.0)
-    labels = np.where(labels_fit == -1, -1, 1)
-    return model, labels, scores
-
-
 def _run_lof(X, contamination: float):
     n_neighbors = max(2, min(10, len(X) - 1))
     model = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=contamination)
@@ -519,25 +452,12 @@ def _run_one_class_svm(X, contamination: float):
     return model, labels, scores
 
 
-def _run_elliptic_envelope(X, contamination: float):
-    support_fraction = min(0.95, max(0.5, 1 - contamination))
-    model = EllipticEnvelope(contamination=contamination, support_fraction=support_fraction, random_state=42)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        labels = model.fit_predict(X)
-        scores = -model.decision_function(X)
-    return model, labels, scores
-
-
 def run_model_suite(X, contamination: float = 0.2):
     return OrderedDict(
         [
             ("IsolationForest", _run_isolation_forest(X, contamination)),
             ("LocalOutlierFactor", _run_lof(X, contamination)),
-            ("KMeans", _run_kmeans(X, contamination)),
-            ("DBSCAN", _run_dbscan(X, contamination)),
             ("OneClassSVM", _run_one_class_svm(X, contamination)),
-            ("EllipticEnvelope", _run_elliptic_envelope(X, contamination)),
         ]
     )
 

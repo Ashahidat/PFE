@@ -16,7 +16,7 @@ for path in (str(DATA_QUALITY_DIR), str(ORCHESTRATION_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from ml_model_factory import detect_protected_columns, drop_protected_columns, infer_family, _fit_candidate
+from ml_model_factory import detect_protected_columns, drop_protected_columns, _fit_candidate, select_global_champion
 
 
 class DetectProtectedColumnsTest(unittest.TestCase):
@@ -48,44 +48,31 @@ class DetectProtectedColumnsTest(unittest.TestCase):
         self.assertListEqual(list(cleaned.columns), ["keep"])
 
 
-class InferFamilyTest(unittest.TestCase):
-    def test_infers_numeric_family_for_numeric_heavy_schema(self) -> None:
-        df = pd.DataFrame(
-            {
-                "a": [1, 2, 3],
-                "b": [4.0, 5.5, 6.2],
-                "c": [7, 8, 9],
-                "d": [10, 11, 12],
-                "label": ["x", "y", "z"],
-            }
-        )
-
-        self.assertEqual(infer_family(df), "numeric")
-
-    def test_infers_categorical_text_family_for_text_heavy_schema(self) -> None:
-        df = pd.DataFrame(
-            {
-                "name": ["alice", "bob", "carol"],
-                "city": ["paris", "lyon", "nice"],
-                "segment": ["a", "b", "a"],
-                "score": [1, 2, 3],
-            }
-        )
-
-        self.assertEqual(infer_family(df), "categorical_text")
-
-
 class DynamicThresholdTest(unittest.TestCase):
-    def test_threshold_changes_with_dataset_scale(self) -> None:
-        x_small = np.array([[0.0], [0.1], [0.2], [0.3], [0.4]])
-        x_large = np.array([[0.0], [5.0], [10.0], [15.0], [20.0]])
+    def test_threshold_changes_with_contamination(self) -> None:
+        x = np.array([[0.0], [0.1], [0.2], [0.3], [1.8], [2.0], [2.2], [2.4]])
 
-        _, threshold_small = _fit_candidate(x_small, "kmeans", contamination=0.2, seed=42)
-        _, threshold_large = _fit_candidate(x_large, "kmeans", contamination=0.2, seed=42)
+        _, threshold_small = _fit_candidate(x, "isolation_forest", contamination=0.1, seed=42)
+        _, threshold_large = _fit_candidate(x, "isolation_forest", contamination=0.3, seed=42)
 
         self.assertIsNotNone(threshold_small)
         self.assertIsNotNone(threshold_large)
         self.assertNotEqual(threshold_small, threshold_large)
+
+
+class GlobalChampionTest(unittest.TestCase):
+    def test_selects_best_model_from_detail_table(self) -> None:
+        detail = pd.DataFrame(
+            [
+                {"model": "lof", "precision": 0.55, "recall": 0.66, "f1": 0.60, "detected_anomalies": 3, "true_anomalies": 4},
+                {"model": "if", "precision": 0.70, "recall": 0.69, "f1": 0.74, "detected_anomalies": 4, "true_anomalies": 4},
+            ]
+        )
+
+        champion = select_global_champion(detail)
+
+        self.assertEqual(champion["model"], "if")
+        self.assertAlmostEqual(float(champion["f1_mean"]), 0.74, places=2)
 
 
 if __name__ == "__main__":

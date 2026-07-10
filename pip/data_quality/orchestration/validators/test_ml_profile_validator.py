@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 import unittest
 
+import pandas as pd
+
 
 ROOT = Path(__file__).resolve().parents[3]
 DATA_QUALITY_DIR = ROOT / "pip" / "data_quality"
@@ -47,53 +49,75 @@ def _install_import_stubs() -> None:
         factory_module.build_profile_frame = lambda *args, **kwargs: None
         factory_module.detect_protected_columns = lambda *args, **kwargs: {}
         factory_module.drop_protected_columns = lambda *args, **kwargs: None
-        factory_module.infer_family = lambda *args, **kwargs: "mixed"
         sys.modules["ml_model_factory"] = factory_module
 
 
 _install_import_stubs()
 
-from ml_profile_validator import _normalize_family_name, _pick_family_entry
+from validators.ml_profile_validator import _build_profile_explanations, _resolve_model_entry
 
 
-class PickFamilyEntryTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.registry = {
-            "families": [
-                {
-                    "family": "mixed_structured",
-                    "dataset_name": "loan_approval",
-                    "artifact_path": "/tmp/mixed.joblib",
-                },
-                {
-                    "family": "categorical_text",
-                    "dataset_name": "telco_churn",
-                    "artifact_path": "/tmp/categorical.joblib",
-                },
-                {
-                    "family": "numeric",
-                    "dataset_name": "numeric_sample",
-                    "artifact_path": "/tmp/numeric.joblib",
-                },
-            ]
+class ResolveModelEntryTest(unittest.TestCase):
+    def test_prefers_global_model_entry(self) -> None:
+        registry = {
+            "model": {
+                "artifact_path": "/tmp/global.joblib",
+                "model_name": "isolation_forest",
+                "protected_columns": ["id"],
+            }
         }
 
-    def test_normalizes_mixed_family(self) -> None:
-        self.assertEqual(_normalize_family_name("mixed"), "mixed_structured")
-        entry = _pick_family_entry(self.registry, "mixed")
+        entry = _resolve_model_entry(registry)
         self.assertIsNotNone(entry)
-        self.assertEqual(entry["family"], "mixed_structured")
-        self.assertEqual(entry["dataset_name"], "loan_approval")
+        self.assertEqual(entry["artifact_path"], "/tmp/global.joblib")
 
-    def test_normalizes_categorical_family(self) -> None:
-        self.assertEqual(_normalize_family_name("categorical"), "categorical_text")
-        entry = _pick_family_entry(self.registry, "categorical")
+    def test_falls_back_to_best_benchmark_model(self) -> None:
+        registry = {
+            "benchmark": {
+                "by_model": [
+                    {
+                        "model": "local_outlier_factor",
+                        "artifact_path": "/tmp/lof.joblib",
+                        "f1_mean": 0.61,
+                        "precision_mean": 0.55,
+                        "recall_mean": 0.66,
+                    },
+                    {
+                        "model": "isolation_forest",
+                        "artifact_path": "/tmp/if.joblib",
+                        "f1_mean": 0.74,
+                        "precision_mean": 0.7,
+                        "recall_mean": 0.69,
+                    },
+                ]
+            }
+        }
+
+        entry = _resolve_model_entry(registry)
         self.assertIsNotNone(entry)
-        self.assertEqual(entry["family"], "categorical_text")
-        self.assertEqual(entry["dataset_name"], "telco_churn")
+        self.assertEqual(entry["artifact_path"], "/tmp/if.joblib")
 
-    def test_unknown_family_returns_none(self) -> None:
-        self.assertIsNone(_pick_family_entry(self.registry, "unknown"))
+
+class ExplanationTest(unittest.TestCase):
+    def test_builds_human_explanations_from_profile_row(self) -> None:
+        class Detector:
+            threshold = 1.0
+
+            def explain_profile_row(self, row, score):
+                return ["forte unicité", "score au-dessus du seuil"]
+
+        row = pd.Series(
+            {
+                "missing_rate": 0.02,
+                "cardinality_ratio": 0.98,
+                "non_null_cardinality_ratio": 0.99,
+                "top_value_share": 0.05,
+                "is_numeric": 1,
+            }
+        )
+
+        reasons = _build_profile_explanations(Detector(), row, 1.4)
+        self.assertIn("forte unicité", reasons)
 
 
 if __name__ == "__main__":

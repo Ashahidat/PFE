@@ -15,11 +15,11 @@ for path in (str(DATA_QUALITY_DIR), str(ORCHESTRATION_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from ml_profile_eval_utils import inject_anomalies
+from ml_profile_eval_utils import inject_anomalies, run_model_suite
 
 
-class InjectAnomaliesMixedStructuredTest(unittest.TestCase):
-    def test_mixed_structured_injects_cross_field_corruptions(self) -> None:
+class InjectAnomaliesCrossFieldTest(unittest.TestCase):
+    def test_injects_cross_field_corruptions(self) -> None:
         df = pd.DataFrame(
             {
                 "age": [21, 22, 23, 24, 25, 26, 27, 28],
@@ -35,11 +35,10 @@ class InjectAnomaliesMixedStructuredTest(unittest.TestCase):
             df,
             anomaly_rate=0.6,
             seed=7,
-            family="mixed_structured",
         )
 
         self.assertFalse(corrupted_df.equals(df))
-        self.assertIn("mixed_relationship_break", set(anomaly_details["type"]))
+        self.assertIn("cross_field_break", set(anomaly_details["type"]))
 
         numeric_targets = anomaly_details.loc[anomaly_details["is_numeric"], "column"].unique().tolist()
         categorical_targets = anomaly_details.loc[~anomaly_details["is_numeric"], "column"].unique().tolist()
@@ -49,6 +48,22 @@ class InjectAnomaliesMixedStructuredTest(unittest.TestCase):
         self.assertTrue(any(not corrupted_df[col].equals(df[col]) for col in numeric_targets))
         self.assertTrue(any(not corrupted_df[col].equals(df[col]) for col in categorical_targets))
         self.assertGreater(sum(anomaly_mask.values()), 0)
+
+    def test_model_suite_contains_three_models(self) -> None:
+        X = pd.DataFrame(
+            {
+                "missing_rate": [0.0, 0.1, 0.2, 0.3],
+                "cardinality": [1, 2, 3, 4],
+                "entropy": [0.2, 0.3, 0.4, 0.5],
+            }
+        ).to_numpy()
+
+        suite = run_model_suite(X, contamination=0.2)
+
+        self.assertListEqual(
+            list(suite.keys()),
+            ["IsolationForest", "LocalOutlierFactor", "OneClassSVM"],
+        )
 
 
 if __name__ == "__main__":

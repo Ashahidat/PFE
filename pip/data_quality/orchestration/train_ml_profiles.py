@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Optional
 
+import numpy as np
 import pandas as pd
-from pyspark.sql import SparkSession
+try:
+    from pyspark.sql import SparkSession
+except Exception:  # pragma: no cover - Spark is optional in constrained envs
+    SparkSession = None
 
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
@@ -23,7 +28,7 @@ from ml_model_factory import (
     _fit_candidate,
     save_detector,
     save_registry,
-    select_family_champions,
+    select_global_champion,
     train_detector,
 )
 from ml_profile_eval_utils import (
@@ -78,56 +83,28 @@ MUSHROOM_COLUMNS = [
     "habitat",
 ]
 
-DEFAULT_CREDIT_COLUMNS = [
-    "ID",
-    "LIMIT_BAL",
-    "SEX",
-    "EDUCATION",
-    "MARRIAGE",
-    "AGE",
-    "PAY_0",
-    "PAY_2",
-    "PAY_3",
-    "PAY_4",
-    "PAY_5",
-    "PAY_6",
-    "BILL_AMT1",
-    "BILL_AMT2",
-    "BILL_AMT3",
-    "BILL_AMT4",
-    "BILL_AMT5",
-    "BILL_AMT6",
-    "PAY_AMT1",
-    "PAY_AMT2",
-    "PAY_AMT3",
-    "PAY_AMT4",
-    "PAY_AMT5",
-    "PAY_AMT6",
-    "default_payment_next_month",
-]
-
 
 DEFAULT_DATASET_SPECS = [
     DatasetSpec(
         name="creditcard",
-        path=ROOT_DIR / "data" / "datasets_benchmark2_off" / "default of credit card clients.xls",
-        family="numeric",
+        path=ROOT_DIR / "data" / "creditcard.csv",
         anomaly_rate=0.18,
-        protected_columns=("ID", "default_payment_next_month"),
+        protected_columns=("Class",),
+        tags=("benchmark", "numeric"),
     ),
     DatasetSpec(
         name="adult",
         path=ROOT_DIR / "data" / "datasets_benchmark2_off" / "adult.data",
-        family="mixed_structured",
         anomaly_rate=0.22,
         protected_columns=("income",),
+        tags=("benchmark", "hybrid"),
     ),
     DatasetSpec(
         name="mushroom",
         path=ROOT_DIR / "data" / "datasets_benchmark2_off" / "agaricus-lepiota.data",
-        family="categorical_text",
         anomaly_rate=0.18,
         protected_columns=("class",),
+        tags=("benchmark", "textual"),
     ),
 ]
 
@@ -135,24 +112,32 @@ DEFAULT_CANDIDATE_MODELS = [
     "isolation_forest",
     "local_outlier_factor",
     "one_class_svm",
-    "elliptic_envelope",
-    "kmeans",
 ]
 
 
-def _spark_session(app_name: str = "ml_profile_training") -> SparkSession:
-    return (
-        SparkSession.builder.master("local[*]")
-        .appName(app_name)
-        .config("spark.driver.host", "127.0.0.1")
-        .config("spark.driver.bindAddress", "127.0.0.1")
-        .config("spark.sql.shuffle.partitions", "4")
-        .getOrCreate()
-    )
+def _spark_session(app_name: str = "ml_profile_training") -> Optional["SparkSession"]:
+    if SparkSession is None:
+        return None
+
+    def _build_session() -> "SparkSession":
+        return (
+            SparkSession.builder.master("local[*]")
+            .appName(app_name)
+            .config("spark.driver.host", "127.0.0.1")
+            .config("spark.driver.bindAddress", "127.0.0.1")
+            .config("spark.sql.shuffle.partitions", "4")
+            .config("spark.ui.enabled", "false")
+            .getOrCreate()
+        )
+
+    try:
+        return _build_session()
+    except Exception:
+        return None
 
 
 def _load_clean_dataset_as_pandas(
-    spark: SparkSession,
+    spark: Optional["SparkSession"],
     spec: DatasetSpec,
     *,
     max_rows: int,
@@ -163,18 +148,9 @@ def _load_clean_dataset_as_pandas(
     This keeps the Spark path for large CSVs while preventing an accidental
     driver-side blowup when the raw dataset is very wide or very large.
     """
-    suffix = spec.path.suffix.lower()
     name = spec.path.name.lower()
 
-    if suffix == ".xls":
-        df = pd.read_excel(spec.path)
-        if "Unnamed: 0" in df.columns and isinstance(df.iloc[0, 0], str) and df.iloc[0, 0].strip() == "ID":
-            df = df.iloc[1:].copy()
-            df.columns = DEFAULT_CREDIT_COLUMNS
-            df = df.reset_index(drop=True)
-        else:
-            df.columns = DEFAULT_CREDIT_COLUMNS if len(df.columns) == len(DEFAULT_CREDIT_COLUMNS) else df.columns
-    elif name == "adult.test":
+    if name == "adult.test":
         df = pd.read_csv(
             spec.path,
             header=None,
@@ -215,6 +191,12 @@ def _load_clean_dataset_as_pandas(
             engine="python",
         )
     else:
+        if spark is None:
+            df = pd.read_csv(spec.path)
+            if spec.protected_columns:
+                df = df.drop(columns=[col for col in spec.protected_columns if col in df.columns])
+            return df.head(max_rows).copy()
+
         spark_df = (
             spark.read.option("header", True)
             .option("inferSchema", True)
@@ -226,17 +208,12 @@ def _load_clean_dataset_as_pandas(
 
     if spec.protected_columns:
         df = df.drop(columns=[col for col in spec.protected_columns if col in df.columns])
-
-    if suffix == ".xls":
-        for col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
     return df.head(max_rows).copy()
 
 
 def _benchmark_dataset(
     df: pd.DataFrame,
     dataset_name: str,
-    family: str,
     *,
     candidate_models: list[str],
     anomaly_rate: float,
@@ -247,7 +224,7 @@ def _benchmark_dataset(
     benchmark_rows: list[dict[str, object]] = []
 
     for seed in seeds:
-        corrupted_df, anomaly_mask, _ = inject_anomalies(df, anomaly_rate=anomaly_rate, seed=seed, family=family)
+        corrupted_df, anomaly_mask, _ = inject_anomalies(df, anomaly_rate=anomaly_rate, seed=seed)
         profile_df = profile_dataset(corrupted_df, f"{dataset_name}_seed_{seed}")
         X, imputer, scaler, feature_cols = prepare_features(profile_df)
         column_names = profile_df["column_name"].tolist()
@@ -255,7 +232,6 @@ def _benchmark_dataset(
         benchmark_rows.append(
             {
                 "dataset_name": dataset_name,
-                "family": family,
                 "seed": seed,
                 "anomaly_rate": anomaly_rate,
                 "n_columns": len(df.columns),
@@ -267,7 +243,6 @@ def _benchmark_dataset(
         for model_name in candidate_models:
             estimator, threshold = _fit_candidate(X, model_name, contamination=contamination, seed=seed)
             detector = ColumnAnomalyDetector(
-                family=family,
                 model_name=model_name,
                 feature_cols=feature_cols,
                 imputer=imputer,
@@ -281,7 +256,6 @@ def _benchmark_dataset(
             metrics.update(
                 {
                     "dataset_name": dataset_name,
-                    "family": family,
                     "seed": seed,
                     "anomaly_rate": anomaly_rate,
                     "feature_count": len(feature_cols),
@@ -293,7 +267,7 @@ def _benchmark_dataset(
 
     detail = pd.DataFrame(detail_rows)
     summary = (
-        detail.groupby(["family", "model"], as_index=False)
+        detail.groupby(["model"], as_index=False)
         .agg(
             precision_mean=("precision", "mean"),
             precision_std=("precision", "std"),
@@ -304,7 +278,7 @@ def _benchmark_dataset(
             detected_mean=("detected_anomalies", "mean"),
             true_anomalies_mean=("true_anomalies", "mean"),
         )
-        .sort_values(["f1_mean", "precision_mean", "recall_mean"], ascending=False)
+        .sort_values(["f1_mean", "precision_mean", "recall_mean"], ascending=[False, False, False])
         .reset_index(drop=True)
     )
 
@@ -325,88 +299,121 @@ def train_and_export(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     spark = _spark_session()
-    all_summaries: list[pd.DataFrame] = []
     all_details: list[pd.DataFrame] = []
     all_benchmarks: list[pd.DataFrame] = []
+    pooled_profiles: list[pd.DataFrame] = []
 
     try:
         for spec in dataset_specs:
             clean_df = _load_clean_dataset_as_pandas(spark, spec, max_rows=max_training_rows)
-            summary, detail, benchmark = _benchmark_dataset(
+            pooled_profiles.append(build_profile_frame(clean_df, spec.name))
+
+            _summary, detail, benchmark = _benchmark_dataset(
                 clean_df,
                 spec.name,
-                spec.family,
                 candidate_models=candidate_models,
                 anomaly_rate=spec.anomaly_rate,
                 contamination=spec.anomaly_rate,
                 seeds=seeds,
             )
-            all_summaries.append(summary)
             all_details.append(detail)
             all_benchmarks.append(benchmark)
     finally:
-        spark.stop()
-
-    overall_summary = pd.concat(all_summaries, ignore_index=True)
-    overall_detail = pd.concat(all_details, ignore_index=True)
-    overall_benchmark = pd.concat(all_benchmarks, ignore_index=True)
-
-    champions = select_family_champions(overall_summary)
-    registry: dict[str, object] = {
-        "generated_at": pd.Timestamp.utcnow().isoformat(),
-        "feature_cols": None,
-        "families": [],
-    }
-
-    artifact_paths: dict[str, str] = {}
-
-    for _, row in champions.iterrows():
-        spec = next(spec for spec in dataset_specs if spec.family == row["family"])
-        spark = _spark_session(f"ml_profile_fit_{spec.name}")
-        try:
-            clean_df = _load_clean_dataset_as_pandas(spark, spec, max_rows=max_training_rows)
-        finally:
+        if spark is not None:
             spark.stop()
 
-        clean_profile = build_profile_frame(clean_df, spec.name)
-        detector = train_detector(
-            clean_profile,
-            family=spec.family,
-            model_name=row["model"],
-            contamination=spec.anomaly_rate,
+    overall_detail = pd.concat(all_details, ignore_index=True)
+    overall_benchmark = pd.concat(all_benchmarks, ignore_index=True)
+    model_summary = (
+        overall_detail.groupby(["model"], as_index=False)
+        .agg(
+            precision_mean=("precision", "mean"),
+            precision_std=("precision", "std"),
+            recall_mean=("recall", "mean"),
+            recall_std=("recall", "std"),
+            f1_mean=("f1", "mean"),
+            f1_std=("f1", "std"),
+            detected_mean=("detected_anomalies", "mean"),
+            true_anomalies_mean=("true_anomalies", "mean"),
         )
-        artifact_path = save_detector(detector, output_dir, dataset_name=spec.name)
-        artifact_paths[spec.family] = str(artifact_path)
-        registry["feature_cols"] = detector.feature_cols
-        registry["families"].append(
-            {
-                "family": spec.family,
-                "dataset_name": spec.name,
-                "model_name": row["model"],
-                "artifact_path": str(artifact_path),
-                "protected_columns": list(spec.protected_columns),
-                "anomaly_rate": spec.anomaly_rate,
-                "metrics": row.to_dict(),
-            }
-        )
+        .sort_values(["f1_mean", "precision_mean", "recall_mean"], ascending=[False, False, False])
+        .reset_index(drop=True)
+    )
+
+    global_summary = select_global_champion(overall_detail).to_frame().T
+    champion_model = str(global_summary.iloc[0]["model"])
+    pooled_profile_df = pd.concat(pooled_profiles, ignore_index=True)
+    contamination = float(np.median([spec.anomaly_rate for spec in dataset_specs])) if dataset_specs else 0.1
+    detector = train_detector(
+        pooled_profile_df,
+        model_name=champion_model,
+        contamination=contamination,
+    )
+    artifact_path = save_detector(detector, output_dir, dataset_name="global_column_risk")
+
+    registry: dict[str, object] = {
+        "version": 2,
+        "generated_at": pd.Timestamp.utcnow().isoformat(),
+        "model": {
+            "scope": "global",
+            "model_name": detector.model_name,
+            "artifact_path": str(artifact_path),
+            "feature_cols": detector.feature_cols,
+            "contamination": detector.contamination,
+            "threshold": detector.threshold,
+            "trained_on_datasets": [spec.name for spec in dataset_specs],
+            "protected_columns": sorted({col for spec in dataset_specs for col in spec.protected_columns}),
+            "tags": sorted({tag for spec in dataset_specs for tag in spec.tags}),
+            "metrics": global_summary.iloc[0].to_dict(),
+        },
+        "benchmark": {
+            "by_model": model_summary.to_dict(orient="records"),
+            "datasets": [spec.name for spec in dataset_specs],
+            "detail_rows": int(len(overall_detail)),
+        },
+    }
 
     summary_path = output_dir / "model_summary.csv"
     detail_path = output_dir / "model_detail.csv"
     benchmark_path = output_dir / "model_benchmark.csv"
+    benchmark_summary_path = output_dir / "benchmark_summary.md"
     registry_path = save_registry(registry, output_dir)
 
-    overall_summary.to_csv(summary_path, index=False)
+    global_summary.to_csv(summary_path, index=False)
     overall_detail.to_csv(detail_path, index=False)
     overall_benchmark.to_csv(benchmark_path, index=False)
+    model_summary_path = output_dir / "model_summary_by_model.csv"
+    model_summary.to_csv(model_summary_path, index=False)
+
+    top_rows = model_summary.head(5).to_dict(orient="records")
+    benchmark_lines = [
+        "# ML Benchmark Summary",
+        "",
+        f"- Champion: `{champion_model}`",
+        f"- Datasets: {', '.join(spec.name for spec in dataset_specs)}",
+        f"- Tested models: {', '.join(candidate_models)}",
+        "",
+        "## Top models",
+        "",
+        "| model | f1_mean | precision_mean | recall_mean |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for row in top_rows:
+        benchmark_lines.append(
+            f"| {row['model']} | {float(row['f1_mean']):.3f} | {float(row['precision_mean']):.3f} | {float(row['recall_mean']):.3f} |"
+        )
+    benchmark_summary_path.write_text("\n".join(benchmark_lines) + "\n", encoding="utf-8")
 
     return {
         "registry_path": str(registry_path),
         "summary_path": str(summary_path),
+        "model_summary_path": str(model_summary_path),
+        "benchmark_summary_path": str(benchmark_summary_path),
         "detail_path": str(detail_path),
         "benchmark_path": str(benchmark_path),
-        "artifact_paths": artifact_paths,
-        "champions": champions,
-        "overall_summary": overall_summary,
+        "artifact_paths": {"global": str(artifact_path)},
+        "champions": global_summary,
+        "overall_summary": global_summary,
         "overall_detail": overall_detail,
         "overall_benchmark": overall_benchmark,
     }

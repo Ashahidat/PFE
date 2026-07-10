@@ -51,8 +51,8 @@ function normalizeStatus(status?: string): "success" | "error" | "warning" | "de
 
 function friendlyStatus(status?: string) {
   const tone = normalizeStatus(status);
-  if (tone === "success") return { label: "OK", tone };
-  if (tone === "error") return { label: "À vérifier", tone };
+  if (tone === "success") return { label: "Normal", tone };
+  if (tone === "error") return { label: "À revoir", tone };
   if (tone === "warning") return { label: "Ignoré", tone };
   return { label: String(status || "Inconnu"), tone };
 }
@@ -72,11 +72,11 @@ function humanizeRule(ruleType?: string): FriendlyRule {
     };
   }
 
-  if (raw.startsWith("ml_profile_")) {
+  if (raw.startsWith("ml_profile")) {
     return {
-      title: "Analyse intelligente de cohérence",
-      explanation: "Le système compare cette colonne à ce qu'il s'attend à voir dans ce type de données.",
-      whatItChecks: "On cherche des colonnes qui ressemblent trop à un identifiant, une valeur atypique ou une forme différente du reste du fichier."
+      title: "Analyse de profil",
+      explanation: "Le système compare le profil statistique de cette colonne à ce qu'il voit d'habitude.",
+      whatItChecks: "On cherche une unicité suspecte, des valeurs manquantes, des outliers ou une forme textuelle inhabituelle."
     };
   }
 
@@ -158,13 +158,13 @@ export default function ResultsPage() {
   const overviewText = useMemo(() => {
     if (!summary.total) return "Aucun contrôle à afficher pour le moment.";
     if (summary.failed > 0) {
-      return `Sur ${summary.total} contrôles, ${summary.ok} sont rassurants et ${summary.failed} mérite${summary.failed > 1 ? "nt" : ""} une vérification humaine.`;
+      return `Sur ${summary.total} contrôles, ${summary.ok} sont normaux et ${summary.failed} mérite${summary.failed > 1 ? "nt" : ""} une vérification humaine.`;
     }
     if (summary.skipped > 0) {
       const verb = summary.skipped > 1 ? "ont été" : "a été";
-      return `Sur ${summary.total} contrôles, ${summary.ok} sont rassurants et ${summary.skipped} contrôle${summary.skipped > 1 ? "s" : ""} ${verb} ignoré${summary.skipped > 1 ? "s" : ""}.`;
+      return `Sur ${summary.total} contrôles, ${summary.ok} sont normaux et ${summary.skipped} contrôle${summary.skipped > 1 ? "s" : ""} ${verb} ignoré${summary.skipped > 1 ? "s" : ""}.`;
     }
-    return `Tous les ${summary.total} contrôles affichés sont rassurants.`;
+    return `Tous les ${summary.total} contrôles affichés sont normaux.`;
   }, [summary]);
 
   async function loadOnce() {
@@ -320,15 +320,15 @@ export default function ResultsPage() {
                 Lecture simple
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {overviewText} Un statut "À vérifier" ne veut pas dire qu'il y a forcément une erreur grave. Cela veut
-                juste dire qu'une colonne mérite un regard humain avant la publication.
+                {overviewText} Un statut "À revoir" ne veut pas dire qu'il y a forcément une erreur grave. Cela veut
+                  juste dire qu'une colonne mérite un regard humain avant la publication.
               </Typography>
             </Box>
 
             <Stack direction="row" spacing={1} flexWrap="wrap">
               <Chip label={`Contrôles: ${summary.total}`} />
-              <Chip color="success" icon={<CheckCircleOutlineOutlinedIcon />} label={`Rassurants: ${summary.ok}`} />
-              <Chip color="error" icon={<WarningAmberOutlinedIcon />} label={`À vérifier: ${summary.failed}`} />
+              <Chip color="success" icon={<CheckCircleOutlineOutlinedIcon />} label={`Normaux: ${summary.ok}`} />
+              <Chip color="error" icon={<WarningAmberOutlinedIcon />} label={`À revoir: ${summary.failed}`} />
               <Chip color="warning" icon={<DoDisturbOnOutlinedIcon />} label={`Ignorés: ${summary.skipped}`} />
               <Chip variant="outlined" label={`État: ${state || "?"}`} />
               {resolvedDatasetId ? <Chip variant="outlined" label={`Dataset: ${resolvedDatasetId}`} /> : null}
@@ -377,9 +377,9 @@ export default function ResultsPage() {
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       {status.tone === "success"
-                        ? "Rien d'inquiétant n'a été détecté sur cette colonne."
+                        ? "Le profil paraît normal pour cette colonne."
                         : status.tone === "error"
-                          ? "Cette colonne sort du profil attendu. Elle mérite d'être revue par une personne."
+                          ? "Cette colonne s'écarte du profil attendu. Elle mérite une revue humaine."
                           : status.tone === "warning"
                             ? "Le contrôle a été ignoré ou n'a pas pu être appliqué."
                             : "Le résultat est disponible mais son statut est moins clair."}
@@ -420,7 +420,7 @@ export default function ResultsPage() {
         {items.length === 0 ? (
           <Paper elevation={0} sx={{ borderRadius: 2, p: 3 }}>
             <Typography variant="body2" color="text.secondary">
-              Aucun résultat pour le moment.
+              Aucun résultat de profil pour le moment.
             </Typography>
           </Paper>
         ) : null}
@@ -429,7 +429,7 @@ export default function ResultsPage() {
       <Divider sx={{ my: 3 }} />
 
       <Alert severity="info">
-        Astuce de lecture: si un contrôle est en "À vérifier", cela ne veut pas dire que le fichier est mauvais. Cela veut dire qu'une colonne attire l'attention et qu'il faut confirmer si c'est normal dans ton contexte.
+        Astuce de lecture: si un contrôle est en "À revoir", cela ne veut pas dire que le fichier est mauvais. Cela veut dire qu'une colonne attire l'attention et qu'il faut confirmer si c'est normal dans ton contexte.
       </Alert>
     </Box>
   );

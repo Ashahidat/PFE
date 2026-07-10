@@ -33,74 +33,8 @@ def _load_registry() -> dict | None:
     return None
 
 
-def _normalize_family_name(family: str) -> str:
-    family_aliases = {
-        "mixed": "mixed_structured",
-        "mixed_structured": "mixed_structured",
-        "categorical": "categorical_text",
-        "categorical_text": "categorical_text",
-        "numeric": "numeric",
-    }
-    return family_aliases.get(family, family)
-
-
-def _pick_family_entry(registry: dict, family: str) -> dict | None:
-    normalized_family = _normalize_family_name(family)
-
-    for entry in registry.get("families", []):
-        if entry.get("family") == normalized_family:
-            return entry
-    return None
-
-
-def _infer_dataset_name(registry: dict | None, family: str) -> str:
-    if not registry:
-        return family
-    entry = _pick_family_entry(registry, family)
-    if entry:
-        return entry.get("dataset_name") or family
-    return family
-
-
 def _normalized_name(column_name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", column_name.strip().lower())
-
-
-def _spark_schema_family_counts(df: DataFrame) -> tuple[int, int, int]:
-    from pyspark.sql.types import DateType, NumericType, TimestampType
-
-    numeric_count = 0
-    datetime_count = 0
-    text_count = 0
-
-    for field in df.schema.fields:
-        data_type = field.dataType
-        if isinstance(data_type, NumericType):
-            numeric_count += 1
-        elif isinstance(data_type, (DateType, TimestampType)):
-            datetime_count += 1
-        else:
-            text_count += 1
-
-    return numeric_count, datetime_count, text_count
-
-
-def _spark_infer_family(df: DataFrame) -> str:
-    if not df.columns:
-        return "mixed"
-
-    numeric_count, datetime_count, text_count = _spark_schema_family_counts(df)
-    total = max(len(df.columns), 1)
-
-    numeric_ratio = numeric_count / total
-    datetime_ratio = datetime_count / total
-    text_ratio = text_count / total
-
-    if numeric_ratio >= 0.8 and datetime_ratio <= 0.1:
-        return "numeric"
-    if text_ratio >= 0.6 and numeric_ratio <= 0.4 and datetime_ratio <= 0.2:
-        return "categorical_text"
-    return "mixed"
 
 
 def _spark_detect_protected_columns(df: DataFrame) -> dict[str, str]:
@@ -311,12 +245,80 @@ def _threshold_from_detector(detector, scores: np.ndarray) -> float:
     return float(np.percentile(scores, 90))
 
 
+def _resolve_model_entry(registry: dict) -> dict | None:
+    model_entry = registry.get("model")
+    if isinstance(model_entry, dict) and model_entry.get("artifact_path"):
+        return model_entry
+
+    if isinstance(registry.get("artifact_path"), str):
+        return {
+            "artifact_path": registry["artifact_path"],
+            "model_name": registry.get("model_name", "unknown"),
+            "feature_cols": registry.get("feature_cols"),
+            "protected_columns": registry.get("protected_columns", []),
+            "scope": registry.get("scope", "legacy"),
+        }
+
+    benchmark = registry.get("benchmark")
+    if isinstance(benchmark, dict):
+        candidates = benchmark.get("by_model")
+        if isinstance(candidates, list) and candidates:
+            def _benchmark_score(entry: dict) -> tuple[float, float, float]:
+                f1 = entry.get("f1_mean", 0.0) or 0.0
+                precision = entry.get("precision_mean", 0.0) or 0.0
+                recall = entry.get("recall_mean", 0.0) or 0.0
+                return float(f1), float(precision), float(recall)
+
+            best = max(candidates, key=_benchmark_score)
+            if isinstance(best, dict) and best.get("artifact_path"):
+                return best
+    return None
+
+
+def _build_profile_explanations(detector, row: pd.Series, score: float) -> list[str]:
+    if hasattr(detector, "explain_profile_row"):
+        try:
+            return list(detector.explain_profile_row(row, score))
+        except Exception:
+            pass
+
+    def as_float(key: str) -> float:
+        value = row.get(key)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float("nan")
+
+    reasons: list[str] = []
+    missing_rate = as_float("missing_rate")
+    cardinality_ratio = as_float("cardinality_ratio")
+    non_null_cardinality_ratio = as_float("non_null_cardinality_ratio")
+    top_value_share = as_float("top_value_share")
+    is_numeric = int(row.get("is_numeric", 0) or 0) == 1
+
+    if np.isfinite(missing_rate) and missing_rate >= 0.25:
+        reasons.append("beaucoup de valeurs manquantes")
+    if np.isfinite(non_null_cardinality_ratio) and non_null_cardinality_ratio >= 0.95:
+        if np.isfinite(top_value_share) and top_value_share <= 0.2:
+            reasons.append("forte unicité, ressemble à un identifiant")
+        else:
+            reasons.append("quasi toutes les valeurs sont distinctes")
+    elif np.isfinite(cardinality_ratio) and cardinality_ratio <= 0.05:
+        reasons.append("faible diversité, proche d'une colonne constante")
+    outlier_share = as_float("outlier_share")
+    if is_numeric and np.isfinite(outlier_share) and outlier_share >= 0.2:
+        reasons.append("présence d'outliers marqués")
+    if not reasons:
+        reasons.append("profil globalement cohérent")
+    return reasons
+
+
 def run(spark: SparkSession, df: DataFrame, rules: Any = None) -> List[Dict[str, Any]]:
     """
     ML column-risk validator.
 
-    It profiles each column, routes the dataset to the best champion model by family,
-    then returns one standardized check per profiled column.
+    It profiles each column, loads the single global detector when available,
+    and returns one standardized check per profiled column.
     """
     registry = _load_registry()
     if not registry:
@@ -343,17 +345,16 @@ def run(spark: SparkSession, df: DataFrame, rules: Any = None) -> List[Dict[str,
             }
         ]
 
-    family = _spark_infer_family(df)
-    entry = _pick_family_entry(registry, family)
+    entry = _resolve_model_entry(registry)
     if not entry:
         return [
             {
-                "type de test": f"ml_profile_{family}",
+                "type de test": "ml_profile",
                 "statut": "ignoré",
                 "colonne testée": "N/A",
                 "nombre": 0,
                 "ratio": "0/0",
-                "exemples": [f"Aucun modèle trouvé pour la famille '{family}'"],
+                "exemples": ["Aucun modèle ML global trouvé dans le registre"],
             }
         ]
 
@@ -361,7 +362,7 @@ def run(spark: SparkSession, df: DataFrame, rules: Any = None) -> List[Dict[str,
     if not artifact_path.exists():
         return [
             {
-                "type de test": f"ml_profile_{family}",
+                "type de test": "ml_profile",
                 "statut": "échoué",
                 "colonne testée": "N/A",
                 "nombre": 0,
@@ -372,16 +373,19 @@ def run(spark: SparkSession, df: DataFrame, rules: Any = None) -> List[Dict[str,
 
     detector = joblib.load(artifact_path)
 
-    dataset_name = _infer_dataset_name(registry, family)
     auto_protected = _spark_detect_protected_columns(df)
-    registry_protected = {column_name: "registry_protected" for column_name in entry.get("protected_columns", []) if column_name in df.columns}
+    registry_protected = {
+        column_name: "registry_protected"
+        for column_name in entry.get("protected_columns", [])
+        if column_name in df.columns
+    }
     protected_columns = {**auto_protected, **registry_protected}
-    profile_df = _spark_profile_dataset(df, dataset_name, protected_columns)
+    profile_df = _spark_profile_dataset(df, entry.get("scope", "global_profile"), protected_columns)
 
     if profile_df.empty:
         return [
             {
-                "type de test": f"ml_profile_{family}",
+                "type de test": "ml_profile",
                 "statut": "ignoré",
                 "colonne testée": "N/A",
                 "nombre": 0,
@@ -404,19 +408,20 @@ def run(spark: SparkSession, df: DataFrame, rules: Any = None) -> List[Dict[str,
         pred = int(predictions[idx])
         score = float(scores[idx]) if len(scores) > idx else 0.0
         status = "échoué" if pred == -1 else "réussi"
-        message = "Signal ML de risque élevé" if pred == -1 else "Profil cohérent avec le modèle ML"
+        message = "Profil atypique détecté" if pred == -1 else "Profil cohérent"
+        reasons = _build_profile_explanations(detector, profile_df.iloc[idx], score)
         examples = [
-            f"family={family}",
             f"model={entry.get('model_name', 'unknown')}",
             f"score={score:.4f}",
             f"threshold={threshold:.4f}",
+            *[f"raison={reason}" for reason in reasons],
         ]
         if column_name in protected_columns:
             examples.append(f"excluded={protected_columns[column_name]}")
         results.append(
             {
                 "alerte": message if pred == -1 else None,
-                "type de test": f"ml_profile_{family}",
+                "type de test": "ml_profile",
                 "statut": status,
                 "colonne testée": column_name,
                 "nombre": 1 if pred == -1 else 0,
