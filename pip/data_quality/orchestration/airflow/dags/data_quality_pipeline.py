@@ -101,27 +101,27 @@ def validate_duplicates(init_data: Dict) -> List[Dict]:
 
 @task
 def validate_regex(init_data: Dict) -> List[Dict]:
-    """Valide les regex"""
-    from validators.regex_validator import run as run_regex
+    """Valide les contrôles Great Expectations (formats / contrats)."""
+    from validators.ge_validator import run as run_ge
     from pyspark.sql import SparkSession
     
     # Créer une nouvelle session Spark pour cette tâche
     spark = SparkSession.builder \
         .master("local[*]") \
-        .appName("ValidateRegex") \
+        .appName("ValidateGreatExpectations") \
         .config("spark.jars.packages", "com.amazon.deequ:deequ:2.0.3-spark-3.3") \
         .getOrCreate()
     
     file_path = init_data["file_path"]
-    rules = init_data["rules"].get("regex", {})
-    
+    rules = init_data["rules"].get("ge") or init_data["rules"].get("regex", {})
+
     df = spark.read.parquet(file_path)
-    results = run_regex(df, rules)
+    results = run_ge(spark, df, rules)
     
     # Arrêter Spark
     spark.stop()
     
-    return results.get("regex", [])
+    return results.get("ge", [])
 
 
 # Dans le DAG, AJOUTER cette tâche APRES validate_regex
@@ -175,7 +175,7 @@ def validate_ml_profile(init_data: Dict) -> List[Dict]:
 def aggregate_results(
     init_data: Dict,
     duplicates_results: List[Dict],
-    regex_results: List[Dict],
+    ge_results: List[Dict],
     deequ_results: List[Dict],
     ml_profile_results: List[Dict]
 ) -> Dict:
@@ -213,10 +213,10 @@ def aggregate_results(
             "examples": check.get("exemples", [])
         })
     
-    # Standardiser les résultats des regex
-    for check in regex_results:
+    # Standardiser les résultats Great Expectations
+    for check in ge_results:
         standardized["checks"].append({
-            "rule_type": check.get("type de test", "regex"),
+            "rule_type": check.get("type de test", "ge"),
             "column_name": check.get("colonne testée"),
             "status": map_status(check.get("statut")),
             "error_count": check.get("nombre", 0),
@@ -280,8 +280,8 @@ with DAG(
     # 2. Validation des doublons (1 tâche)
     duplicates = validate_duplicates(init)
     
-    # 3. Validation des regex (1 tâche)
-    regex = validate_regex(init)
+    # 3. Validation Great Expectations (1 tâche)
+    ge = validate_regex(init)
     
     # 4. Validation Deequ (1 tâche) - NOUVEAU
     deequ = validate_deequ(init)
@@ -290,11 +290,11 @@ with DAG(
     ml_profile = validate_ml_profile(init)
 
     # 6. Agrégation
-    final = aggregate_results(init, duplicates, regex, deequ, ml_profile)
+    final = aggregate_results(init, duplicates, ge, deequ, ml_profile)
     
-    # Dépendances : duplicates, regex, deequ et ml_profile s'exécutent en parallèle
-    init >> [duplicates, regex, deequ, ml_profile]  # ← Les tâches en parallèle
+    # Dépendances : duplicates, ge, deequ et ml_profile s'exécutent en parallèle
+    init >> [duplicates, ge, deequ, ml_profile]  # ← Les tâches en parallèle
     duplicates >> final
-    regex >> final
+    ge >> final
     deequ >> final
     ml_profile >> final

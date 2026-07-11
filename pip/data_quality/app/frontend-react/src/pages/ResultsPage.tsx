@@ -80,11 +80,24 @@ function humanizeRule(ruleType?: string): FriendlyRule {
     };
   }
 
+  if (raw.startsWith("ge_")) {
+    return {
+      title: "Contrôle Great Expectations",
+      explanation: "On vérifie si les valeurs suivent le format attendu par le contrat de données.",
+      whatItChecks: "Exemple: email, téléphone, code postal ou autre format métier."
+    };
+  }
+
   const directMap: Record<string, FriendlyRule> = {
     "doublons sur ligne entière": {
       title: "Doublons sur des lignes complètes",
       explanation: "On vérifie si des lignes identiques se répètent dans le fichier.",
       whatItChecks: "Deux lignes exactement identiques sont comptées comme doublons."
+    },
+    ge: {
+      title: "Contrôle Great Expectations",
+      explanation: "On vérifie si les valeurs suivent le format attendu par le contrat de données.",
+      whatItChecks: "Exemple: email, téléphone, code postal ou autre format métier."
     },
     regex: {
       title: "Contrôle de format",
@@ -95,6 +108,26 @@ function humanizeRule(ruleType?: string): FriendlyRule {
       title: "Contrôle de cohérence",
       explanation: "On vérifie des règles de qualité sur les valeurs.",
       whatItChecks: "Ce contrôle peut tester les valeurs manquantes, les bornes ou d'autres règles définies."
+    },
+    deequ_non_negative: {
+      title: "Valeurs non négatives",
+      explanation: "On vérifie que les nombres restent à zéro ou au-dessus.",
+      whatItChecks: "Utile pour des montants, des compteurs ou des mesures qui ne doivent jamais descendre sous zéro."
+    },
+    deequ_positive: {
+      title: "Valeurs strictement positives",
+      explanation: "On vérifie que les nombres sont strictement supérieurs à zéro.",
+      whatItChecks: "Utile pour des quantités, des prix ou des identifiants numériques attendus comme positifs."
+    },
+    deequ_min_length: {
+      title: "Longueur minimale",
+      explanation: "On vérifie qu'une valeur texte n'est pas trop courte.",
+      whatItChecks: "Pratique pour imposer une longueur minimale sur un identifiant, un libellé ou un code."
+    },
+    deequ_max_length: {
+      title: "Longueur maximale",
+      explanation: "On vérifie qu'une valeur texte ne dépasse pas une taille fixée.",
+      whatItChecks: "Pratique pour limiter la taille d'un nom, d'un commentaire ou d'un champ libre."
     }
   };
 

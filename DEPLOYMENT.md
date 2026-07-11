@@ -86,6 +86,29 @@ npm run dev
 
 L'UI de production est ensuite servie par FastAPI sur `http://<host>:8000/`.
 
+## 5bis. Decoupage des validations
+
+Le pipeline de qualite est volontairement decoupe pour eviter les redondances:
+
+- `Great Expectations` gere les contrats lisibles metier et les formats
+- `Deequ` gere les contraintes de qualite et de coherence sur les valeurs
+- les validations `Spark` custom restent pour les cas specifiques, comme les doublons
+- le modele `ML profile` sert a detecter des profils inhabituels ou du drift
+
+Concretement:
+
+- l'UI de validation envoie maintenant un bloc `ge` pour les formats
+- l'UI envoie un bloc `deequ` pour les contraintes numeriques et textuelles
+- les doublons restent dans le validateur Spark dedie
+- le resultat final est standardise dans le JSON de sortie pour etre relu de la meme facon dans l'interface
+
+Cette separation permet de presenter un discours simple a l'encadrant:
+
+- `GE` = contrat de donnees
+- `Deequ` = regles de qualite
+- `Spark` = calcul et doublons
+- `ML` = anomalie et drift
+
 ## 6. Atlas
 
 Deux couches sont utilisees:
@@ -151,4 +174,3 @@ Si tu dois resumer le deploiement:
 - FastAPI sert l'API et l'UI compilee
 - Atlas est accessible en interne pour les ecritures et en read-only pour la consultation
 - Grafana est proxye via le backend
-

@@ -38,7 +38,11 @@ type DeequRule =
   | { id: string; type: "completeness"; column: string; threshold: number }
   | { id: string; type: "min"; column: string; threshold: number }
   | { id: string; type: "max"; column: string; threshold: number }
-  | { id: string; type: "allowed_values"; column: string; values: string[] };
+  | { id: string; type: "allowed_values"; column: string; values: string[] }
+  | { id: string; type: "non_negative"; column: string }
+  | { id: string; type: "positive"; column: string }
+  | { id: string; type: "min_length"; column: string; threshold: number }
+  | { id: string; type: "max_length"; column: string; threshold: number };
 
 function uid() {
   return Math.random().toString(16).slice(2) + Date.now().toString(16);
@@ -56,10 +60,10 @@ export default function RunTestsPage() {
   const [dupSensitive, setDupSensitive] = useState<string[]>([]);
   const [dupFullRow, setDupFullRow] = useState(false);
 
-  // Regex selections (backend expects {email:[...], phone:[...], postal_code:[...]})
-  const [regexEmail, setRegexEmail] = useState<string[]>([]);
-  const [regexPhone, setRegexPhone] = useState<string[]>([]);
-  const [regexPostal, setRegexPostal] = useState<string[]>([]);
+  // Great Expectations selections (backend expects {email:[...], phone:[...], postal_code:[...]})
+  const [geEmail, setGeEmail] = useState<string[]>([]);
+  const [gePhone, setGePhone] = useState<string[]>([]);
+  const [gePostal, setGePostal] = useState<string[]>([]);
 
   // Deequ
   const [deequ, setDeequ] = useState<DeequRule[]>([]);
@@ -93,8 +97,18 @@ export default function RunTestsPage() {
   function addRule(type: DeequRule["type"]) {
     if (type === "allowed_values") {
       setDeequ((prev) => [...prev, { id: uid(), type, column: "", values: [] }]);
+    } else if (type === "non_negative" || type === "positive") {
+      setDeequ((prev) => [...prev, { id: uid(), type, column: "" } as DeequRule]);
     } else {
-      setDeequ((prev) => [...prev, { id: uid(), type, column: "", threshold: type === "completeness" ? 1 : 0 } as any]);
+      setDeequ((prev) => [
+        ...prev,
+        {
+          id: uid(),
+          type,
+          column: "",
+          threshold: type === "completeness" ? 1 : type === "min_length" ? 1 : 0
+        } as DeequRule
+      ]);
     }
   }
 
@@ -112,14 +126,17 @@ export default function RunTestsPage() {
         dataset_id: datasetId,
         rules: {
           duplicates: { sensitive: dupSensitive, full_row: dupFullRow },
-          regex: {
-            email: regexEmail,
-            phone: regexPhone,
-            postal_code: regexPostal
+          ge: {
+            email: geEmail,
+            phone: gePhone,
+            postal_code: gePostal
           },
           deequ: deequ.map((r) => {
             if (r.type === "allowed_values") {
               return { type: r.type, column: r.column, values: r.values };
+            }
+            if (r.type === "non_negative" || r.type === "positive") {
+              return { type: r.type, column: r.column };
             }
             return { type: r.type, column: r.column, threshold: (r as any).threshold };
           })
@@ -201,16 +218,16 @@ export default function RunTestsPage() {
 
           <Divider />
 
-          <Typography variant="subtitle1">Regex (formats)</Typography>
+          <Typography variant="subtitle1">Great Expectations (formats)</Typography>
           <Stack spacing={1}>
             <FormControl fullWidth>
               <InputLabel id="re-email">Email</InputLabel>
               <Select
                 labelId="re-email"
                 multiple
-                value={regexEmail}
+                value={geEmail}
                 label="Email"
-                onChange={(e) => setRegexEmail(e.target.value as string[])}
+                onChange={(e) => setGeEmail(e.target.value as string[])}
                 renderValue={(selected) => (selected as string[]).join(", ")}
               >
                 {columns.map((c) => (
@@ -225,9 +242,9 @@ export default function RunTestsPage() {
               <Select
                 labelId="re-phone"
                 multiple
-                value={regexPhone}
+                value={gePhone}
                 label="Téléphone"
-                onChange={(e) => setRegexPhone(e.target.value as string[])}
+                onChange={(e) => setGePhone(e.target.value as string[])}
                 renderValue={(selected) => (selected as string[]).join(", ")}
               >
                 {columns.map((c) => (
@@ -242,9 +259,9 @@ export default function RunTestsPage() {
               <Select
                 labelId="re-postal"
                 multiple
-                value={regexPostal}
+                value={gePostal}
                 label="Code postal"
-                onChange={(e) => setRegexPostal(e.target.value as string[])}
+                onChange={(e) => setGePostal(e.target.value as string[])}
                 renderValue={(selected) => (selected as string[]).join(", ")}
               >
                 {columns.map((c) => (
@@ -272,6 +289,18 @@ export default function RunTestsPage() {
               </Button>
               <Button size="small" variant="outlined" startIcon={<AddOutlinedIcon />} onClick={() => addRule("allowed_values")}>
                 Valeurs
+              </Button>
+              <Button size="small" variant="outlined" startIcon={<AddOutlinedIcon />} onClick={() => addRule("non_negative")}>
+                {"\u2265 0"}
+              </Button>
+              <Button size="small" variant="outlined" startIcon={<AddOutlinedIcon />} onClick={() => addRule("positive")}>
+                {"\u003e 0"}
+              </Button>
+              <Button size="small" variant="outlined" startIcon={<AddOutlinedIcon />} onClick={() => addRule("min_length")}>
+                Longueur min
+              </Button>
+              <Button size="small" variant="outlined" startIcon={<AddOutlinedIcon />} onClick={() => addRule("max_length")}>
+                Longueur max
               </Button>
             </Stack>
           </Stack>
@@ -333,10 +362,10 @@ export default function RunTestsPage() {
                         )
                       }
                     />
-                  ) : (
+                  ) : r.type === "non_negative" || r.type === "positive" ? null : (
                     <TextField
                       type="number"
-                      label={r.type === "completeness" ? "Seuil (0..1)" : "Seuil"}
+                      label={r.type === "completeness" ? "Seuil (0..1)" : r.type.includes("length") ? "Seuil longueur" : "Seuil"}
                       value={(r as any).threshold}
                       onChange={(e) =>
                         setDeequ((prev) =>

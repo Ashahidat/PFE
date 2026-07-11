@@ -4,8 +4,40 @@ import os
 os.environ["SPARK_VERSION"] = "3.3"
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
-from pydeequ.verification import VerificationSuite, VerificationResult 
+from pydeequ.verification import VerificationSuite
 from pydeequ.checks import Check, CheckLevel  
+
+SUPPORTED_CONSTRAINTS = {
+    "completeness",
+    "min",
+    "max",
+    "allowed_values",
+    "non_negative",
+    "positive",
+    "min_length",
+    "max_length",
+}
+
+
+def _unsupported_result(constraint_type: str, column: str, total_rows: int, message: str) -> Dict[str, Any]:
+    return {
+        "type de test": f"deequ_{constraint_type}",
+        "statut": "ignoré",
+        "colonne testée": column or "N/A",
+        "nombre": 0,
+        "ratio": f"0/{total_rows}",
+        "exemples": [message]
+    }
+
+
+def _count_bad_string_lengths(df: DataFrame, column: str, predicate) -> tuple[int, List[str]]:
+    failed_df = df.filter(F.col(column).isNotNull() & predicate(F.length(F.trim(F.col(column).cast("string")))))
+    error_count = failed_df.count()
+    bad_vals = [
+        "NULL" if r[0] is None else str(r[0])
+        for r in failed_df.select(column).limit(5).collect()
+    ]
+    return error_count, bad_vals
 
 
 def run(spark: SparkSession, df: DataFrame, constraints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -17,7 +49,11 @@ def run(spark: SparkSession, df: DataFrame, constraints: List[Dict[str, Any]]) -
         {"type": "completeness", "column": "email", "threshold": 0.95},
         {"type": "min", "column": "age", "threshold": 18},
         {"type": "max", "column": "age", "threshold": 120},
-        {"type": "allowed_values", "column": "status", "values": ["ACTIF", "INACTIF"]}
+        {"type": "allowed_values", "column": "status", "values": ["ACTIF", "INACTIF"]},
+        {"type": "non_negative", "column": "amount"},
+        {"type": "positive", "column": "amount"},
+        {"type": "min_length", "column": "code", "threshold": 3},
+        {"type": "max_length", "column": "label", "threshold": 255}
     ]
     """
     results = []
@@ -34,26 +70,31 @@ def run(spark: SparkSession, df: DataFrame, constraints: List[Dict[str, Any]]) -
         print(f"[DEEQU][BACK] contrainte en cours: type={constraint_type}, column={column}")
         
         # Validation de base
+        if constraint_type not in SUPPORTED_CONSTRAINTS:
+            results.append(_unsupported_result(
+                constraint_type,
+                column,
+                total_rows,
+                f"Type '{constraint_type}' non supporté"
+            ))
+            continue
+
         if not column:
-            results.append({
-                "type de test": f"deequ_{constraint_type}",
-                "statut": "ignoré",
-                "colonne testée": "N/A",
-                "nombre": 0,
-                "ratio": f"0/{total_rows}",
-                "exemples": ["Colonne non spécifiée"]
-            })
+            results.append(_unsupported_result(
+                constraint_type,
+                column,
+                total_rows,
+                "Colonne non spécifiée"
+            ))
             continue
         
         if column not in df.columns:
-            results.append({
-                "type de test": f"deequ_{constraint_type}",
-                "statut": "ignoré",
-                "colonne testée": column,
-                "nombre": 0,
-                "ratio": f"0/{total_rows}",
-                "exemples": [f"Colonne '{column}' inexistante"]
-            })
+            results.append(_unsupported_result(
+                constraint_type,
+                column,
+                total_rows,
+                f"Colonne '{column}' inexistante"
+            ))
             continue
         
         try:
@@ -80,16 +121,32 @@ def run(spark: SparkSession, df: DataFrame, constraints: List[Dict[str, Any]]) -
                 print(f"[DEEQU][BACK] allowed_values params: column={column}, values={values}")
                 check = check.isContainedIn(column, values)
                 description = f"Valeurs autorisées: {values}"
+
+            elif constraint_type == "non_negative":
+                check = check.isNonNegative(column)
+                description = "Valeurs >= 0"
+
+            elif constraint_type == "positive":
+                check = check.isPositive(column)
+                description = "Valeurs > 0"
+
+            elif constraint_type == "min_length":
+                threshold = constraint.get("threshold", 1)
+                check = check.hasMinLength(column, lambda c: c >= threshold)
+                description = f"Longueur minimale >= {threshold}"
+
+            elif constraint_type == "max_length":
+                threshold = constraint.get("threshold", 255)
+                check = check.hasMaxLength(column, lambda c: c <= threshold)
+                description = f"Longueur maximale <= {threshold}"
                 
             else:
-                results.append({
-                    "type de test": f"deequ_{constraint_type}",
-                    "statut": "ignoré",
-                    "colonne testée": column,
-                    "nombre": 0,
-                    "ratio": f"0/{total_rows}",
-                    "exemples": [f"Type '{constraint_type}' non supporté"]
-                })
+                results.append(_unsupported_result(
+                    constraint_type,
+                    column,
+                    total_rows,
+                    f"Type '{constraint_type}' non supporté"
+                ))
                 continue
             
             # Exécuter la vérification
@@ -100,9 +157,6 @@ def run(spark: SparkSession, df: DataFrame, constraints: List[Dict[str, Any]]) -
             
             # Extraire le résultat
             success = verification_result.status == "Success"
-            
-            # pydeequ retourne checkResults en JSON (dict/list), pas en objets Python attributés
-            check_results_json = verification_result.checkResults
             
             if success:
                 results.append({
@@ -156,6 +210,40 @@ def run(spark: SparkSession, df: DataFrame, constraints: List[Dict[str, Any]]) -
                         "NULL" if r[0] is None else str(r[0])
                         for r in failed_df.select(column).distinct().limit(5).collect()
                     ]
+                    if bad_vals:
+                        examples = bad_vals
+                elif constraint_type == "non_negative":
+                    failed_df = df.filter(
+                        F.col(column).isNotNull() & (F.col(column) < F.lit(0))
+                    )
+                    error_count = failed_df.count()
+                    bad_vals = [str(r[0]) for r in failed_df.select(column).limit(5).collect()]
+                    if bad_vals:
+                        examples = bad_vals
+                elif constraint_type == "positive":
+                    failed_df = df.filter(
+                        F.col(column).isNotNull() & (F.col(column) <= F.lit(0))
+                    )
+                    error_count = failed_df.count()
+                    bad_vals = [str(r[0]) for r in failed_df.select(column).limit(5).collect()]
+                    if bad_vals:
+                        examples = bad_vals
+                elif constraint_type == "min_length":
+                    threshold = constraint.get("threshold", 1)
+                    error_count, bad_vals = _count_bad_string_lengths(
+                        df,
+                        column,
+                        lambda length_expr: length_expr < F.lit(threshold)
+                    )
+                    if bad_vals:
+                        examples = bad_vals
+                elif constraint_type == "max_length":
+                    threshold = constraint.get("threshold", 255)
+                    error_count, bad_vals = _count_bad_string_lengths(
+                        df,
+                        column,
+                        lambda length_expr: length_expr > F.lit(threshold)
+                    )
                     if bad_vals:
                         examples = bad_vals
                 

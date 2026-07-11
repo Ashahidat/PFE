@@ -30,6 +30,20 @@ for path in paths_to_add:
         sys.path.insert(0, path)
 
 
+VALIDATOR_ALIASES = {
+    "regex": "ge",
+    "great_expectations": "ge",
+    "ge": "ge",
+    "duplicates": "duplicates",
+    "deequ": "deequ",
+    "ml_profile": "ml_profile",
+}
+
+
+def _resolve_validator_name(validation_type: str) -> str:
+    return VALIDATOR_ALIASES.get(validation_type, validation_type)
+
+
 def run_modular_validations(**kwargs):
     from settings.config_paths import RESULTS_DIR
     
@@ -58,16 +72,17 @@ def run_modular_validations(**kwargs):
     # EXECUTION DYNAMIQUE DES VALIDATORS
     for validation_type, validation_rules in rules.items():
         try:
-            module_name = f"validators.{validation_type}_validator"
+            resolved_validation_type = _resolve_validator_name(validation_type)
+            module_name = f"validators.{resolved_validation_type}_validator"
             module = importlib.import_module(module_name)
 
             print(f"🚀 Exécution du validator '{validation_type}'")
 
             if hasattr(module, "run") and callable(module.run):
                 try:
-                    results[validation_type] = module.run(spark, df, validation_rules)
+                    results[resolved_validation_type] = module.run(spark, df, validation_rules)
                 except TypeError:
-                    results[validation_type] = module.run(df, validation_rules)
+                    results[resolved_validation_type] = module.run(df, validation_rules)
 
             print(f"✅ Validator '{validation_type}' terminé")
 
@@ -75,7 +90,7 @@ def run_modular_validations(**kwargs):
             print(f"⚠️ Module '{module_name}' introuvable. Ignoré.")
         except Exception as e:
             print(f"❌ Erreur dans '{validation_type}': {e}")
-            results[validation_type] = {"error": str(e)}
+            results[_resolve_validator_name(validation_type)] = {"error": str(e)}
 
     # STANDARDISATION DES RESULTATS
     standardized = {

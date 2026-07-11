@@ -2,6 +2,20 @@
 
 Cette UI remplace l'ancienne UI statique et est désormais la seule interface servie par le backend.
 
+## Pré-requis local
+
+- Node.js 18 LTS
+- `npm`
+
+Si `nvm` est installé, tu peux charger la version du projet avec:
+
+```bash
+cd pip/data_quality/app/frontend-react
+nvm use
+```
+
+Le fichier [.nvmrc](./.nvmrc) force Node `18.20.8` pour éviter de retomber sur le Node système trop ancien.
+
 ## Dev (Vite)
 
 Dans un terminal :
