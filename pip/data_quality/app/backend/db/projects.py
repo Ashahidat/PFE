@@ -19,3 +19,8 @@ class Project(Base):
     
     # Relations
     datasets = relationship("Dataset", back_populates="project")
+
+
+# Import the related model so SQLAlchemy can resolve the string-based relationship
+# even when Project is loaded before Dataset.
+from db.datasets import Dataset  # noqa: E402,F401

@@ -25,10 +25,11 @@ class GrafanaClient:
     def __init__(self, settings: GrafanaSettings, *, extra_headers: dict[str, str] | None = None):
         self.settings = settings
         self.base_url = settings.url
+        auth_proxy_user = (extra_headers or {}).get("X-WEBAUTH-USER")
         self.auth = GrafanaAuth(
             bearer_token=settings.service_token,
-            basic_user=settings.admin_user,
-            basic_password=settings.admin_password,
+            basic_user=None if auth_proxy_user else settings.admin_user,
+            basic_password=None if auth_proxy_user else settings.admin_password,
         )
         self.extra_headers = dict(extra_headers or {})
 
@@ -40,20 +41,36 @@ class GrafanaClient:
             headers.update(self.extra_headers)
         return headers
 
-    def _request(self, method: str, path: str, *, json: Any | None = None, allow_404: bool = False):
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Any | None = None,
+        params: dict[str, Any] | None = None,
+        allow_404: bool = False,
+    ):
         url = f"{self.base_url}{path}"
         auth = None
         if not self.auth.bearer_token and self.auth.basic_user and self.auth.basic_password:
             auth = (self.auth.basic_user, self.auth.basic_password)
 
         try:
-            resp = requests.request(method, url, headers=self._headers(), json=json, auth=auth, timeout=15)
+            resp = requests.request(
+                method,
+                url,
+                headers=self._headers(),
+                json=json,
+                params=params,
+                auth=auth,
+                timeout=15,
+            )
         except requests_exceptions.RequestException as e:
             hint = ""
             if "localhost" in (self.base_url or "") or "127.0.0.1" in (self.base_url or ""):
                 hint = (
                     " (hint: if Grafana runs on your host but this backend runs in Docker, "
-                    "http://localhost:3000 points to the container itself; use the Docker service name "
+                    "http://localhost:3300 points to the container itself; use the Docker service name "
                     "or host.docker.internal instead)"
                 )
             raise RuntimeError(f"Grafana API request failed {method} {url}: {e}{hint}") from e
@@ -165,12 +182,27 @@ class GrafanaClient:
         """
         self._request("POST", f"/api/folders/{folder_uid}/permissions", json={"items": items})
 
+    def delete_folder_by_uid(self, uid: str) -> dict[str, Any] | None:
+        return self._request("DELETE", f"/api/folders/{requests.utils.quote(uid)}", allow_404=True)
+
     # -------------------------
     # Dashboards
     # -------------------------
     def upsert_dashboard(self, dashboard: dict[str, Any], *, folder_id: int, overwrite: bool = True) -> dict[str, Any]:
         payload = {"dashboard": dashboard, "folderId": folder_id, "overwrite": overwrite}
         return self._request("POST", "/api/dashboards/db", json=payload)
+
+    def delete_dashboard_by_uid(self, uid: str) -> dict[str, Any] | None:
+        return self._request("DELETE", f"/api/dashboards/uid/{requests.utils.quote(uid)}", allow_404=True)
+
+    def search(self, *, query: str | None = None, type: str | None = None) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {}
+        if query is not None:
+            params["query"] = query
+        if type is not None:
+            params["type"] = type
+        data = self._request("GET", "/api/search", params=params or None)
+        return list(data or [])
 
     # -------------------------
     # Teams / Users (optional but useful for RBAC)

@@ -31,7 +31,7 @@ def get_grafana_settings() -> GrafanaSettings:
     """
     Minimal configuration. Keep it environment-driven so deployments stay simple.
 
-    - `GRAFANA_URL`: base URL (default: http://localhost:3000)
+    - `GRAFANA_URL`: base URL (default: http://127.0.0.1:3300)
     - `GRAFANA_SERVICE_TOKEN`: optional Bearer token (recommended for normal org APIs)
     - `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`: optional basic auth for admin endpoints
     - `GRAFANA_ORG_ID`: default 1
@@ -46,12 +46,11 @@ def get_grafana_settings() -> GrafanaSettings:
     enabled = os.getenv("GRAFANA_PROVISIONING_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 
     return GrafanaSettings(
-        url=os.getenv("GRAFANA_URL", "http://localhost:3000").rstrip("/"),
+        url=os.getenv("GRAFANA_URL", "http://127.0.0.1:3300").rstrip("/"),
         service_token=os.getenv("GRAFANA_SERVICE_TOKEN"),
-        admin_user=os.getenv("GRAFANA_ADMIN_USER"),
-        admin_password=os.getenv("GRAFANA_ADMIN_PASSWORD"),
+        admin_user=os.getenv("GRAFANA_ADMIN_USER", "admin"),
+        admin_password=os.getenv("GRAFANA_ADMIN_PASSWORD", "admin"),
         org_id=int(os.getenv("GRAFANA_ORG_ID", "1")),
         templates_dir=templates_path,
         enabled=enabled,
     )
-

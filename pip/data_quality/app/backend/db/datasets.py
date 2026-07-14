@@ -31,3 +31,8 @@ class Dataset(Base):
         back_populates="dataset",
         cascade="all, delete-orphan"
     )
+
+
+# Import the related model so SQLAlchemy can resolve the string-based relationship
+# even when Dataset is loaded before Project.
+from db.projects import Project  # noqa: E402,F401

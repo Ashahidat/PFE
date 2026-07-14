@@ -134,9 +134,14 @@ Le backend expose le proxy Grafana sur:
 
 - `http://localhost:8000/api/grafana/`
 
+Le point d'entree navigateur recommande est:
+
+- `http://localhost:8081/api/grafana/`
+
 Le demarrage local passe par:
 
 - `pip/data_governance/start_grafana_readonly_stack.sh`
+- `pip/data_governance/start_grafana_readonly_stack_bg.sh`
 
 Le provisioning depend de:
 

@@ -27,6 +27,7 @@ from core.permissions import (
 from core.roles import ADMINISTRATORS, PROJECT_CREATORS
 from grafana.settings import get_grafana_settings
 from grafana.client import GrafanaClient
+from grafana.maintenance import cleanup_project_artifacts
 from grafana.provisioning import provision_project_dashboards
 from grafana.links import build_project_grafana_links
 
@@ -140,7 +141,7 @@ def create_new_project(
         logger.exception(
             "⚠️ Grafana provisioning failed for project %s (url=%s enabled=%s): %s",
             db_project.id,
-            os.getenv("GRAFANA_URL", "http://localhost:3000"),
+            os.getenv("GRAFANA_URL", "http://127.0.0.1:3300"),
             os.getenv("GRAFANA_PROVISIONING_ENABLED", "true"),
             e,
         )
@@ -504,7 +505,14 @@ def delete_project_endpoint(
             status_code=400, 
             detail=f"Impossible de supprimer : {datasets_count} dataset(s) encore associé(s)"
         )
-    
+
+    try:
+        settings = get_grafana_settings()
+        if settings.enabled:
+            cleanup_project_artifacts(settings, project_id=str(project.id))
+    except Exception:
+        logger.exception("⚠️ Grafana cleanup failed for deleted project %s", project_id)
+
     db.delete(project)
     db.commit()
     

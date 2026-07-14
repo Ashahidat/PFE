@@ -4,8 +4,8 @@ Objectif : accès **lecture seule** pour tous les humains, visibilité selon rô
 
 ## 1) Pré-requis
 
-- Grafana OSS installé via APT (comme ton alias `grafana-start`)
-- URL Grafana interne : `http://127.0.0.1:3000`
+- Grafana OSS peut exister sur la machine, mais ce repo utilise désormais sa propre stack locale via `grafana-start`
+- URL Grafana interne : `http://127.0.0.1:3300`
 - Backend FastAPI qui délivre un JWT (`Authorization: Bearer ...`)
 
 ## 2) Config Grafana (`/etc/grafana/grafana.ini`)
@@ -46,7 +46,7 @@ server {
   listen 8081;
 
   location /api/grafana/ {
-    proxy_pass http://127.0.0.1:3000/grafana/;
+    proxy_pass http://127.0.0.1:3300/grafana/;
 
     # Auth : appel backend (doit retourner 200 si token OK)
     auth_request /_auth_grafana;
@@ -99,7 +99,7 @@ Astuce (fix automatique du reload loop) :
 Le backend provisionne folders/permissions/dashboards via l’API Grafana.
 
 Variables :
-- `GRAFANA_URL=http://127.0.0.1:3000`
+- `GRAFANA_URL=http://127.0.0.1:3300`
 - `GRAFANA_PROVISIONING_ENABLED=true`
 - `GRAFANA_DASHBOARD_TEMPLATES_DIR=grafana/dashboard_templates`
 

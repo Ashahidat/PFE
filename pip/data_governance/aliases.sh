@@ -21,9 +21,13 @@ alias atlas-ro-start='(cd /home/ashahi/PFE && ./pip/data_governance/start_atlas_
 alias atlas-ro-stop='(cd /home/ashahi/PFE && ./pip/data_governance/stop_atlas_readonly_stack.sh)'
 
 # Grafana read-only stack
-# Everything converges on the backend proxy at http://localhost:8000/api/grafana/
-alias grafana-start='(cd /home/ashahi/PFE && ./pip/data_governance/start_grafana_readonly_stack.sh)'
-alias grafana-ro-start='(cd /home/ashahi/PFE && ./pip/data_governance/start_grafana_readonly_stack.sh)'
-alias grafana-ro-stop='(cd /home/ashahi/PFE && ./pip/data_governance/stop_nginx_grafana_readonly.sh)'
-alias grafana-ui-start='(cd /home/ashahi/PFE && ./pip/data_governance/start_grafana_readonly_stack.sh)'
-alias grafana-ui-stop='(cd /home/ashahi/PFE && ./pip/data_governance/stop_nginx_grafana_readonly.sh)'
+# Browser entrypoint: http://localhost:8081/api/grafana/
+# The backend still serves /api/grafana/ on port 8000 for internal routing.
+alias grafana-start='(cd /home/ashahi/PFE && ./pip/data_governance/start_grafana_readonly_stack_bg.sh)'
+alias grafana-start-now='(cd /home/ashahi/PFE && ./pip/data_governance/start_grafana_readonly_stack.sh)'
+alias grafana-stop='(cd /home/ashahi/PFE && ./pip/data_governance/stop_grafana_readonly_stack.sh)'
+
+# Legacy Grafana system service aliases are intentionally neutralized.
+# The local repo stack is the supported path.
+alias grafana-system-start='echo "Deprecated: use grafana-start (local stack)" >&2; false'
+alias grafana-system-stop='echo "Deprecated: use grafana-stop (local stack)" >&2; false'

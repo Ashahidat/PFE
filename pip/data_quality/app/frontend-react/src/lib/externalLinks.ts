@@ -14,9 +14,9 @@ function defaultAtlasUiUrl() {
 }
 
 function defaultGrafanaUrl() {
-  // Use the backend as the single browser entrypoint for Grafana.
-  // This avoids inheriting a stale origin such as :8081 from the current page.
-  return "http://localhost:8000/api/grafana/dashboards";
+  // Use the Nginx proxy as the default browser entrypoint for Grafana.
+  // The backend path remains available via VITE_GRAFANA_DASHBOARDS_URL=/api/grafana/.
+  return "http://localhost:8081/api/grafana/dashboards";
 }
 
 export const ATLAS_UI_URL = viteEnv.VITE_ATLAS_UI_URL || defaultAtlasUiUrl();
