@@ -17,6 +17,7 @@ if [[ -f "${PID_FILE}" ]]; then
 fi
 
 pkill -f '/usr/sbin/grafana-server --config /etc/grafana/grafana.ini --homepath /usr/share/grafana' || true
-pkill -f 'grafana-server' || true
+# pkill -f 'grafana-server' || true
+pkill -f 'grafana server' || true
 
 echo "OK: Grafana read-only stack stopped"
