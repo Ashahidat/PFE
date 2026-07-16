@@ -34,6 +34,24 @@ from grafana.links import build_project_grafana_links
 router = APIRouter(prefix="/projects", tags=["projects"])
 logger = logging.getLogger("projects")
 
+
+def _grafana_identity_headers(user: dict, *, for_project_creator: bool = False) -> dict[str, str] | None:
+    """
+    Build the trusted auth-proxy headers Grafana can use during server-side provisioning.
+
+    Project creation can be performed by DATA_OWNER too, so we allow the broader
+    PROJECT_CREATORS group there. Other privileged provisioning paths keep the stricter
+    admin-only gate.
+    """
+    allowed_roles = PROJECT_CREATORS if for_project_creator else ADMINISTRATORS
+    if str(user.get("role") or "").upper() not in allowed_roles:
+        return None
+    return {
+        "X-WEBAUTH-USER": str(user.get("employee_id") or user.get("sub") or ""),
+        "X-WEBAUTH-NAME": str(user.get("username") or ""),
+        "X-WEBAUTH-ROLE": "Admin",
+    }
+
 # ========== Schémas Pydantic ==========
 class ProjectCreate(BaseModel):
     name: str
@@ -115,13 +133,7 @@ def create_new_project(
     # Grafana provisioning (Dashboard as Code) - best effort, never blocks project creation.
     try:
         settings = get_grafana_settings()
-        identity_headers = None
-        if str(user.get("role") or "").upper() in ADMINISTRATORS:
-            identity_headers = {
-                "X-WEBAUTH-USER": str(user.get("employee_id") or user.get("sub") or ""),
-                "X-WEBAUTH-NAME": str(user.get("username") or ""),
-                "X-WEBAUTH-ROLE": "Admin",
-            }
+        identity_headers = _grafana_identity_headers(user, for_project_creator=True)
         result = provision_project_dashboards(
             settings,
             project_id=str(db_project.id),
@@ -331,14 +343,8 @@ def get_project_grafana_links(
             project_name=project.name,
             org_id=None,
         )["folder"]["uid"]
-        identity_headers = None
-        if str(user.get("role") or "").upper() in PROJECT_CREATORS:
-            # Allow provisioning through Grafana auth-proxy when no API creds are configured.
-            identity_headers = {
-                "X-WEBAUTH-USER": str(user.get("employee_id") or user.get("sub") or ""),
-                "X-WEBAUTH-NAME": str(user.get("username") or ""),
-                "X-WEBAUTH-ROLE": "Admin",
-            }
+        # Allow provisioning through Grafana auth-proxy when no API creds are configured.
+        identity_headers = _grafana_identity_headers(user, for_project_creator=True)
 
         if settings.enabled:
             client = GrafanaClient(settings, extra_headers=identity_headers)
@@ -382,13 +388,7 @@ def provision_grafana_for_project(
 
     settings = get_grafana_settings()
     try:
-        identity_headers = None
-        if str(user.get("role") or "").upper() in ADMINISTRATORS:
-            identity_headers = {
-                "X-WEBAUTH-USER": str(user.get("employee_id") or user.get("sub") or ""),
-                "X-WEBAUTH-NAME": str(user.get("username") or ""),
-                "X-WEBAUTH-ROLE": "Admin",
-            }
+        identity_headers = _grafana_identity_headers(user)
         result = provision_project_dashboards(
             settings,
             project_id=str(project.id),

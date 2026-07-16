@@ -71,12 +71,35 @@ class GrafanaMaintenanceTests(unittest.TestCase):
         self.assertEqual(client.deleted_dashboards, ["legacy-one", "legacy-two"])
         self.assertEqual(client.deleted_folders, ["folder-one"])
 
-    def test_auth_proxy_headers_disable_basic_auth(self) -> None:
+    def test_auth_proxy_headers_keep_basic_auth_when_admin_credentials_exist(self) -> None:
         settings = GrafanaSettings(
             url="http://localhost:3000",
             service_token=None,
             admin_user="admin",
             admin_password="admin",
+            org_id=1,
+            templates_dir=Path("/tmp"),
+            enabled=True,
+        )
+
+        client = GrafanaClient(
+            settings,
+            extra_headers={
+                "X-WEBAUTH-USER": "grafana-sync",
+                "X-WEBAUTH-NAME": "Grafana Sync",
+                "X-WEBAUTH-ROLE": "Admin",
+            },
+        )
+
+        self.assertEqual(client.auth.basic_user, "admin")
+        self.assertEqual(client.auth.basic_password, "admin")
+
+    def test_auth_proxy_headers_disable_basic_auth_without_admin_credentials(self) -> None:
+        settings = GrafanaSettings(
+            url="http://localhost:3000",
+            service_token=None,
+            admin_user=None,
+            admin_password=None,
             org_id=1,
             templates_dir=Path("/tmp"),
             enabled=True,

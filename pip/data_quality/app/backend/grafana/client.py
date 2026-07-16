@@ -26,11 +26,19 @@ class GrafanaClient:
         self.settings = settings
         self.base_url = settings.url
         auth_proxy_user = (extra_headers or {}).get("X-WEBAUTH-USER")
+        has_basic_auth = bool(settings.admin_user and settings.admin_password)
+        use_auth_proxy = bool(auth_proxy_user) and not settings.service_token and not has_basic_auth
         self.auth = GrafanaAuth(
             bearer_token=settings.service_token,
-            basic_user=None if auth_proxy_user else settings.admin_user,
-            basic_password=None if auth_proxy_user else settings.admin_password,
+            basic_user=None if not has_basic_auth else settings.admin_user,
+            basic_password=None if not has_basic_auth else settings.admin_password,
         )
+        if use_auth_proxy:
+            self.auth = GrafanaAuth(
+                bearer_token=None,
+                basic_user=None,
+                basic_password=None,
+            )
         self.extra_headers = dict(extra_headers or {})
 
     def _headers(self) -> dict[str, str]:
