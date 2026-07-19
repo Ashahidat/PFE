@@ -36,7 +36,12 @@ def check_classification_exists(entity_guid: str, classification_name: str) -> b
         return False
 
 
-def add_classification(entity_guid: str, classification_name: str, attributes: dict = None):
+def add_classification(
+    entity_guid: str,
+    classification_name: str,
+    attributes: dict = None,
+    force_replace: bool = False,
+):
     """
     Essaie plusieurs fois avec des délais car Atlas est asynchrone
     """
@@ -53,7 +58,11 @@ def add_classification(entity_guid: str, classification_name: str, attributes: d
                 time.sleep(wait_time)
             
             # VÉRIFIER SI LA CLASSIFICATION EXISTE DÉJÀ
-            if check_classification_exists(entity_guid, classification_name):
+            if force_replace:
+                logger.info(f"🔁 Remplacement forcé de '{classification_name}'")
+                remove_classification(entity_guid, classification_name)
+                time.sleep(0.8)
+            elif check_classification_exists(entity_guid, classification_name):
                 logger.info(f"✅ Classification '{classification_name}' existe déjà")
                 return {"status": "already_exists", "message": "Classification déjà présente"}
             
@@ -131,12 +140,22 @@ def add_classification(entity_guid: str, classification_name: str, attributes: d
     return {"status": "error", "message": "Échec après plusieurs tentatives"}
 
 
-def add_classification_to_entity(entity_guid: str, classification_name: str, attributes: dict = None):
+def add_classification_to_entity(
+    entity_guid: str,
+    classification_name: str,
+    attributes: dict = None,
+    force_replace: bool = False,
+):
     """
     Version simplifiée qui appelle add_classification
     Gardée pour compatibilité avec le code existant
     """
-    result = add_classification(entity_guid, classification_name, attributes)
+    result = add_classification(
+        entity_guid,
+        classification_name,
+        attributes,
+        force_replace=force_replace,
+    )
     return result.get("status") in ["added", "already_exists"]
 
 
@@ -238,10 +257,20 @@ def add_quality_summary_classification(entity_guid: str, checks_data: List[Dict]
         "failed_count": failed  # important pour requêtes analytiques
     }
 
+    # DQ_SUMMARY doit se rafraîchir à chaque push Atlas.
+    # Si on se contente d'un "add if missing", Atlas garde la première version
+    # et les pushes suivants n'actualisent pas le résumé.
+    try:
+        remove_classification(entity_guid, "DQ_SUMMARY")
+        time.sleep(0.2)
+    except Exception as exc:
+        logger.warning(f"⚠️ Impossible de supprimer l'ancien DQ_SUMMARY avant remplacement: {exc}")
+
     return add_classification_to_entity(
         entity_guid=entity_guid,
         classification_name="DQ_SUMMARY",
-        attributes=attributes
+        attributes=attributes,
+        force_replace=True,
     )
 
 

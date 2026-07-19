@@ -306,18 +306,16 @@ export default function MyUploadsPage() {
                         <button
                           type="button"
                           onClick={() => pushAtlas(d.id)}
-                          disabled={loading || d.atlas_synced}
+                          disabled={loading}
                           style={{
                             ...secondaryButton,
-                            opacity: loading || d.atlas_synced ? 0.6 : 1,
-                            cursor: loading || d.atlas_synced ? "not-allowed" : "pointer"
+                            opacity: loading ? 0.6 : 1,
+                            cursor: loading ? "not-allowed" : "pointer"
                           }}
                           title={
-                            d.atlas_synced
-                              ? "Déjà synchronisé avec Atlas"
-                              : !d.atlas_guid
-                                ? "1ère synchro Atlas (push) crée le guid"
-                                : undefined
+                            !d.atlas_guid
+                              ? "1ère synchro Atlas (push) crée le guid"
+                              : "Relance une synchronisation Atlas pour créer une nouvelle version"
                           }
                         >
                           Finaliser Atlas

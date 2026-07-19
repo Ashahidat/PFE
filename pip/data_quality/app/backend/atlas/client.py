@@ -45,7 +45,10 @@ HEADERS = {"Content-Type": "application/json"}
 logger = logging.getLogger("atlas.client")
 
 _DEFAULT_CONNECT_TIMEOUT = float(os.getenv("ATLAS_CONNECT_TIMEOUT", "3.05"))
-_DEFAULT_READ_TIMEOUT = float(os.getenv("ATLAS_READ_TIMEOUT", "120"))
+# Atlas pushes can create/update many entities sequentially and some requests
+# may legitimately take longer than the default 120s. Keep the timeout
+# configurable, but use a safer default for write-heavy operations.
+_DEFAULT_READ_TIMEOUT = float(os.getenv("ATLAS_READ_TIMEOUT", "600"))
 _DEFAULT_MAX_RETRIES = int(os.getenv("ATLAS_HTTP_MAX_RETRIES", "3"))
 _DEFAULT_BACKOFF_SECONDS = float(os.getenv("ATLAS_HTTP_BACKOFF_SECONDS", "0.8"))
 _DEFAULT_LOCK_MAX_RETRIES = int(os.getenv("ATLAS_HTTP_LOCK_MAX_RETRIES", "8"))

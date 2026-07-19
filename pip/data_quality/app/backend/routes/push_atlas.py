@@ -58,6 +58,7 @@ from db.dataset_glossary_crud import get_assignments_for_dataset
 from db.glossary_crud import get_glossaries_with_categories
 from atlas.data_quality import create_data_quality_checks_from_json
 from db.data_quality_to_db import save_data_quality_results_from_json
+from db.data_quality_results import DataQualityResult
 
 
 def _apply_saved_glossary_assignments(
@@ -129,11 +130,81 @@ def _atlas_entity_exists(entity_guid: str) -> bool:
         return False
 
 
-def _deploy_typedef_with_retry(payload_key: str, entity_def: Dict, max_attempts: int = 4, backoff: float = 1.5):
+def _load_quality_checks_from_db(db: Session, dataset_version_id) -> list[dict]:
+    """
+    Reconstruit les checks qualité depuis PostgreSQL.
+    Utile quand les fichiers JSON ont déjà été archivés mais que l'on veut
+    quand même générer le résumé DQ_SUMMARY pour la version Atlas courante.
+    """
+    rows = (
+        db.query(DataQualityResult)
+        .filter(DataQualityResult.dataset_version_id == dataset_version_id)
+        .order_by(DataQualityResult.created_at.asc())
+        .all()
+    )
+
+    checks = []
+    for row in rows:
+        checks.append(
+            {
+                "rule_type": row.validator_name or row.check_type or "UNKNOWN",
+                "column_name": row.column_name,
+                "status": row.status,
+                "error_count": row.error_count or 0,
+                "ratio": row.ratio if row.ratio is not None else 0.0,
+                "examples": row.examples or [],
+            }
+        )
+    return checks
+
+
+def _normalize_typedef(defn: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Reduce Atlas typedef payloads to the fields that matter for drift detection.
+    Atlas often returns extra metadata, so we compare a stable subset only.
+    """
+    attrs = []
+    for attr in sorted(defn.get("attributeDefs") or [], key=lambda a: str(a.get("name") or "")):
+        attrs.append(
+            {
+                "name": attr.get("name"),
+                "typeName": attr.get("typeName"),
+                "isOptional": attr.get("isOptional"),
+                "cardinality": attr.get("cardinality"),
+                "defaultValue": attr.get("defaultValue"),
+                "displayName": attr.get("displayName"),
+                "isUnique": attr.get("isUnique"),
+                "isIndexable": attr.get("isIndexable"),
+            }
+        )
+
+    return {
+        "name": defn.get("name"),
+        "description": defn.get("description"),
+        "superTypes": sorted(defn.get("superTypes") or []),
+        "attributeDefs": attrs,
+    }
+
+
+def _typedef_needs_refresh(existing: Dict[str, Any], desired: Dict[str, Any]) -> bool:
+    return _normalize_typedef(existing) != _normalize_typedef(desired)
+
+
+def _deploy_typedef_with_retry(
+    payload_key: str,
+    entity_def: Dict,
+    max_attempts: int = 4,
+    backoff: float = 1.5,
+    method: str = "POST",
+):
     attempt = 0
     while attempt < max_attempts:
         try:
-            atlas_post(ATLAS_TYPEDEF_URL, {payload_key: [entity_def]})
+            payload = {payload_key: [entity_def]}
+            if method.upper() == "PUT":
+                atlas_put(ATLAS_TYPEDEF_URL, payload)
+            else:
+                atlas_post(ATLAS_TYPEDEF_URL, payload)
             return
         except Exception as exc:
             error_text = str(exc)
@@ -206,14 +277,7 @@ def push_atlas(
                 detail="Un push Atlas est déjà en cours pour ce dataset",
             )
 
-        if dataset.atlas_guid and dataset.atlas_synced:
-            if _atlas_entity_exists(dataset.atlas_guid):
-                logger.info("ℹ️ Push ignoré: dataset déjà synchronisé avec Atlas")
-                return {
-                    "message": "Dataset déjà synchronisé avec Atlas",
-                    "dataset_guid": dataset.atlas_guid,
-                    "already_synced": True,
-                }
+        if dataset.atlas_guid and dataset.atlas_synced and not _atlas_entity_exists(dataset.atlas_guid):
             logger.warning(
                 f"⚠️ Dataset marqué synchronisé mais GUID Atlas introuvable: {dataset.atlas_guid}. "
                 f"Reprise en mode création."
@@ -316,12 +380,22 @@ def push_atlas(
             # ⚡ 5️⃣ Déployer les classifications
             for class_def in typedefs_payload.get("classificationDefs", []):
                 class_name = class_def.get("name")
-                if class_name and not force_update_typedefs and get_typedef_by_name(class_name, "classification"):
+                existing_class_def = get_typedef_by_name(class_name, "classification") if class_name else None
+                if (
+                    class_name
+                    and existing_class_def
+                    and not force_update_typedefs
+                    and not _typedef_needs_refresh(existing_class_def, class_def)
+                ):
                     logger.info(f"ℹ️ Classification existante (skip): {class_name}")
                     continue
                 try:
-                    _deploy_typedef_with_retry("classificationDefs", class_def)
-                    logger.info(f"✅ Classification: {class_def['name']}")
+                    if existing_class_def and not force_update_typedefs:
+                        _deploy_typedef_with_retry("classificationDefs", class_def, method="PUT")
+                        logger.info(f"🔁 Classification mise à jour: {class_def['name']}")
+                    else:
+                        _deploy_typedef_with_retry("classificationDefs", class_def)
+                        logger.info(f"✅ Classification: {class_def['name']}")
                 except Exception as e:
                     if "409" not in str(e):
                         raise
@@ -859,6 +933,22 @@ def push_atlas(
                     add_quality_classification(new_version.atlas_guid, "SUCCESS")
                 else:
                     add_quality_classification(new_version.atlas_guid, "WARNING")
+        else:
+            logger.info("📊 Aucun JSON qualité trouvé dans RESULTS_DIR, fallback vers PostgreSQL...")
+            db_checks_data = _load_quality_checks_from_db(db, new_version.id)
+            if db_checks_data:
+                quality_success = add_quality_summary_classification(
+                    entity_guid=new_version.atlas_guid,
+                    checks_data=db_checks_data
+                )
+                if quality_success:
+                    logger.info("✅ Résumé qualité ajouté depuis PostgreSQL")
+                else:
+                    logger.warning("⚠️ Échec de l'ajout du résumé qualité depuis PostgreSQL")
+            else:
+                logger.warning(
+                    f"⚠️ Aucun résultat qualité trouvé ni dans RESULTS_DIR ni en base pour la version {new_version.id}"
+                )
 
         # ----------------------
         # 9️⃣ ENREGISTRER L'HISTORIQUE DE PUSH
